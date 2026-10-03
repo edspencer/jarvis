@@ -1,0 +1,484 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "JARVIS site manifest (jarvis-site/1)",
+  "description": "One building for the JARVIS viewer: where it is, its model files, viewpoints, layers and plugin configuration. Plan positions and heights are in the plan frame's units (frame.units); walk.* is in metres. Paths are relative to the manifest, or absolute URLs.",
+  "type": "object",
+  "required": ["jarvis", "id", "name", "geo", "models", "viewpoints"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "An editor hint; ignored."
+    },
+    "jarvis": {
+      "type": "string",
+      "const": "jarvis-site/1",
+      "description": "The manifest format."
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$",
+      "description": "A short id: letters, digits, '-', '_'."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Shown in the title, the help and the loading screen."
+    },
+    "description": {
+      "type": "string",
+      "description": "A line under the name in the help."
+    },
+    "geo": {
+      "type": "object",
+      "required": ["lat", "lon", "timeZone"],
+      "additionalProperties": false,
+      "properties": {
+        "lat": {
+          "type": "number",
+          "minimum": -90,
+          "maximum": 90,
+          "description": "Degrees, north positive."
+        },
+        "lon": {
+          "type": "number",
+          "minimum": -180,
+          "maximum": 180,
+          "description": "Degrees, east positive."
+        },
+        "timeZone": {
+          "type": "string",
+          "minLength": 1,
+          "description": "IANA time zone, e.g. Europe/London."
+        }
+      }
+    },
+    "frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "units": {
+          "type": "string",
+          "enum": ["ft", "m"],
+          "description": "Plan units (default ft). The model is always glTF metres."
+        },
+        "northAzimuth": {
+          "type": "number",
+          "minimum": -360,
+          "maximum": 360,
+          "description": "True bearing of plan +Y, degrees clockwise from true north (default 0)."
+        }
+      }
+    },
+    "centre": {
+      "$ref": "#/$defs/planXY",
+      "description": "The building's centre on the plan (default 0, 0)."
+    },
+    "overview": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "camera": {
+          "$ref": "#/$defs/planXYZ",
+          "description": "Where the overview camera starts (default: fitted to the model)."
+        }
+      }
+    },
+    "ground": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "z": {
+          "type": "number",
+          "description": "The far ground's level, plan units (default 0)."
+        },
+        "colour": {
+          "$ref": "#/$defs/colour",
+          "description": "The far ground's colour (default grass green)."
+        }
+      }
+    },
+    "sun": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "shadowRadius": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "Half the side of the shadowed square round the centre, plan units (default: fitted to the model)."
+        }
+      }
+    },
+    "models": {
+      "type": "object",
+      "required": ["main"],
+      "additionalProperties": false,
+      "properties": {
+        "main": {
+          "$ref": "#/$defs/modelRef"
+        },
+        "extra": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "url"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/id"
+              },
+              "url": {
+                "$ref": "#/$defs/path"
+              },
+              "parts": {
+                "$ref": "#/$defs/path"
+              },
+              "layer": {
+                "$ref": "#/$defs/id",
+                "description": "Every top-level node of this model joins this layer."
+              }
+            }
+          }
+        }
+      }
+    },
+    "storeys": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "z"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "short": {
+            "type": "string",
+            "minLength": 1
+          },
+          "z": {
+            "type": "number",
+            "description": "Finished floor level, plan units."
+          },
+          "from": {
+            "type": "number",
+            "description": "A standing position at or above this is on this storey (default z)."
+          },
+          "objectsFrom": {
+            "type": "number",
+            "description": "An object whose bottom is above this belongs to this storey (default from)."
+          }
+        }
+      }
+    },
+    "viewpoints": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 9,
+      "items": {
+        "type": "object",
+        "required": ["name", "at", "yaw"],
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "at": {
+            "$ref": "#/$defs/planXYZ"
+          },
+          "yaw": {
+            "type": "number",
+            "description": "Degrees: 0 = plan north, 90 = west, 180 = south, -90 = east."
+          }
+        }
+      }
+    },
+    "startView": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "The viewpoint to open at, 1-based (default 1)."
+    },
+    "layers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/$defs/id",
+            "description": "roof, ceiling and door are built in; others are the site's own."
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1
+          },
+          "key": {
+            "type": "string",
+            "pattern": "^[A-Z]$",
+            "description": "The toggle key, one capital letter."
+          },
+          "help": {
+            "type": "string",
+            "minLength": 1
+          },
+          "hidden": {
+            "type": "boolean",
+            "description": "Hidden at start."
+          },
+          "match": {
+            "$ref": "#/$defs/match"
+          }
+        }
+      }
+    },
+    "materials": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "glass": {
+          "$ref": "#/$defs/names"
+        },
+        "water": {
+          "$ref": "#/$defs/names"
+        },
+        "screens": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "required": ["wire"],
+            "additionalProperties": false,
+            "properties": {
+              "wire": {
+                "type": "number",
+                "minimum": 0,
+                "exclusiveMaximum": 1
+              }
+            }
+          }
+        }
+      }
+    },
+    "colliders": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "passable": {
+          "$ref": "#/$defs/match"
+        }
+      }
+    },
+    "rooms": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "floorPrefix": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "walk": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The walker's body, in metres.",
+      "properties": {
+        "eyeHeight": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "crouchEyeHeight": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "radius": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "maxStep": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "plugins": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "home-assistant": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "url": {
+              "type": "string",
+              "pattern": "^https?://",
+              "description": "Home Assistant's base URL."
+            },
+            "map": {
+              "$ref": "#/$defs/path"
+            },
+            "controls": {
+              "$ref": "#/$defs/path"
+            },
+            "emitterHints": {
+              "type": "string",
+              "minLength": 1,
+              "description": "A regular expression on material names."
+            }
+          }
+        },
+        "faults": {
+          "type": "object",
+          "required": ["devices"],
+          "additionalProperties": false,
+          "properties": {
+            "devices": {
+              "$ref": "#/$defs/path"
+            },
+            "source": {
+              "type": "string"
+            }
+          }
+        },
+        "pins": {
+          "type": "object",
+          "required": ["registry"],
+          "additionalProperties": false,
+          "properties": {
+            "registry": {
+              "$ref": "#/$defs/path"
+            },
+            "sourceLink": {
+              "type": "string",
+              "pattern": "^https?://.*\\{file\\}"
+            },
+            "stripPrefix": {
+              "type": "string"
+            },
+            "categories": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "required": ["letter", "colour", "name"],
+                "additionalProperties": false,
+                "properties": {
+                  "letter": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2
+                  },
+                  "colour": {
+                    "$ref": "#/$defs/colour"
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              }
+            }
+          }
+        },
+        "switches": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "boxIdPattern": {
+              "type": "string",
+              "minLength": 1,
+              "description": "A regular expression; group 1 the box id."
+            },
+            "source": {
+              "type": "string"
+            }
+          }
+        },
+        "blueprints": {
+          "type": "object",
+          "required": ["index"],
+          "additionalProperties": false,
+          "properties": {
+            "index": {
+              "$ref": "#/$defs/path"
+            },
+            "default": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Relative to the manifest, or an absolute URL."
+    },
+    "colour": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}$"
+    },
+    "names": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "planXY": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "planXYZ": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      },
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "modelRef": {
+      "type": "object",
+      "required": ["url"],
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "$ref": "#/$defs/path"
+        },
+        "parts": {
+          "$ref": "#/$defs/path"
+        }
+      }
+    },
+    "match": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Top-level nodes taken: any one rule matching is enough.",
+      "properties": {
+        "namePrefix": {
+          "$ref": "#/$defs/names"
+        },
+        "layer": {
+          "$ref": "#/$defs/names"
+        },
+        "material": {
+          "$ref": "#/$defs/names"
+        },
+        "extra": {
+          "$ref": "#/$defs/names"
+        }
+      }
+    }
+  }
+}

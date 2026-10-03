@@ -1,0 +1,9 @@
+dist/
+coverage/
+sites/
+node_modules/
+package-lock.json
+test-results/
+playwright-report/
+docs/design/
+index.html

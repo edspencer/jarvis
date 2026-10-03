@@ -1,0 +1,159 @@
+# JARVIS
+
+A browser walkthrough for a building's digital twin (three.js): walk or orbit a glTF model, inspect objects, and layer
+live data on it through plugins (Home Assistant, an equipment registry, wall plates, blueprints, …).
+
+Status: being extracted from a single-building prototype into a general, plugin-based viewer. The viewer holds no
+building: everything about one comes from a **site folder** with a `site.json` manifest
+([schema](schema/site.schema.json)) and a model that follows the [model format](docs/model-format.md).
+
+Licence: MIT.
+
+## Develop
+
+Needs Node 20 or newer.
+
+```sh
+npm install            # if NODE_ENV=production is set in your shell: npm install --include=dev
+npm run dev            # http://localhost:5173
+```
+
+### The site folder
+
+The app holds no building. One building's manifest, model and data files live in a **site folder**, served next to the
+app (never bundled into it). Point `JARVIS_SITE` at one in development (default `sites/default`; everything under
+`sites/` is git-ignored):
+
+```sh
+JARVIS_SITE=sites/mine npm run dev
+```
+
+The viewer reads `site.json` next to the page, or the manifest named by `?site=<url>` (relative to the page or
+absolute; a manifest on another origin needs CORS for it and its files). Paths in the manifest are relative to the
+manifest. A missing or invalid manifest is listed, field by field, on the loading screen.
+
+### Your own building
+
+1. Export the building as glTF (metres, Y up), ideally compressed with `gltfpack -cc -tc`. Name the nodes or write
+   layer rules as the [model format](docs/model-format.md) describes: floors with a `room` extra, roofs, ceilings,
+   doors, light fixtures with a `fixture_id`. A plain model works too; each convention adds a feature.
+2. Make a folder with the model and a `site.json`. The minimum:
+
+   ```json
+   {
+     "jarvis": "jarvis-site/1",
+     "id": "my-house",
+     "name": "My house",
+     "geo": { "lat": 51.5007, "lon": -0.1246, "timeZone": "Europe/London" },
+     "models": { "main": { "url": "model.glb" } },
+     "viewpoints": [{ "name": "Front door", "at": [10, -5, 0], "yaw": 0 }]
+   }
+   ```
+
+   Viewpoints are in the plan frame: X east, Y north, Z up, in feet unless `frame.units` is `"m"`; yaw 0 looks plan
+   north, 90 west.
+
+3. Check it: `npm run validate-site -- path/to/folder` (the manifest against the schema, every file it names, the
+   models against the model format), then `JARVIS_SITE=path/to/folder npm run dev`.
+
+More of the manifest, all optional (the [schema](schema/site.schema.json) documents every field):
+
+```jsonc
+{
+  "frame": { "units": "m", "northAzimuth": 12.5 }, // true bearing of plan +Y; the sun depends on it
+  "centre": [20, 15], // the building's centre: shadows, far ground, overview
+  "overview": { "camera": [60, -40, 40] },
+  "ground": { "z": -0.2 }, // the far ground, just under the site's grade
+  "models": {
+    "main": { "url": "model.glb", "parts": "model.parts.json" },
+    "extra": [{ "id": "furniture", "url": "furniture.glb", "layer": "furniture" }],
+  },
+  "storeys": [
+    { "name": "ground floor", "z": 0 },
+    { "name": "first floor", "short": "upstairs", "z": 3.2, "from": 1.8, "objectsFrom": 2.9 },
+  ],
+  "startView": 1,
+  "layers": [
+    // roof, ceiling and door are built in (X, U, O); add your own toggles with a free key
+    { "id": "door", "match": { "extra": ["door_leaf"], "material": ["door_oak"] } },
+    { "id": "pergola", "label": "Pergola", "key": "K", "help": "the pergola", "match": { "namePrefix": ["Pergola_"] } },
+    { "id": "furniture", "label": "Furniture", "key": "F", "help": "the furniture" },
+  ],
+  "materials": { "glass": ["glass"], "water": ["pond"], "screens": { "insect_screen": { "wire": 0.2 } } },
+  "colliders": { "passable": { "namePrefix": ["Win_"], "extra": ["passable"] } },
+  "walk": { "maxStep": 0.4 }, // metres; also eyeHeight, crouchEyeHeight, radius
+  "plugins": {
+    "home-assistant": {
+      "url": "https://homeassistant.example.org",
+      "map": "ha_map.json",
+      "controls": "ha_controls.json",
+    },
+    "faults": { "devices": "ha_devices.json" },
+    "pins": { "registry": "registry_pins.json", "sourceLink": "https://example.org/repo/{file}" },
+    "switches": {},
+    "blueprints": { "index": "blueprints/index.json", "default": "A-1" },
+  },
+}
+```
+
+A plugin starts only if the manifest has its section under `plugins`.
+
+### Home Assistant
+
+The live connection logs in with Home Assistant's own OAuth flow, to the URL in `plugins["home-assistant"].url`. Add
+the viewer's origin to HA's `http: cors_allowed_origins`. Without a URL only the mock works. `?ha=mock` plays a seeded
+fake state stream instead (`&hamock=static` for no changes), and nothing reaches Home Assistant. Every service call goes
+through one allowlist (`src/plugins/home-assistant/policy.ts`): lights and switches on / off / toggle, scripts and
+scenes turned on; anything else (locks, covers, alarm, climate, fans, media) is refused.
+
+## Scripts
+
+|                                   |                                                                                                                   |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`                     | Vite dev server with the site folder                                                                              |
+| `npm run build`                   | type-check, then build to `dist/` (works offline: the meshopt decoder and the Basis / KTX2 transcoder ship in it) |
+| `npm run preview`                 | serve `dist/` with the site folder                                                                                |
+| `npm run typecheck`               | `tsc --noEmit` (strict)                                                                                           |
+| `npm run lint` / `npm run format` | ESLint (typescript-eslint) / Prettier                                                                             |
+| `npm test`                        | unit tests (Vitest)                                                                                               |
+| `npm run test:e2e`                | Playwright smoke tests against the dev server and a real site folder, in `?ha=mock`                               |
+| `npm run validate-site -- <dir>`  | check a site folder: manifest, files, models (exit 1 on errors)                                                   |
+
+**E2E notes.** Headless Chromium renders WebGL in software, so a full model takes a minute or more to load; the tests
+share one page and allow minutes. `npx playwright install chromium` once, or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to a
+local Chromium. `PROTOTYPE_URL=http://host:port npm run test:e2e -- parity` also renders the same views in a running copy
+of the prototype and compares them pixel by pixel (`test-results/parity/`).
+
+## Deploy
+
+`npm run build`, then serve `dist/` and the site folder's files (with its `site.json`) from the same directory with any
+static server, or serve the site folder anywhere and open the viewer with `?site=<url of its site.json>`. Serve
+`.wasm` as `application/wasm` and `.glb` as `model/gltf-binary`.
+
+## Layout
+
+```
+src/
+  main.ts                 entry
+  site/                   the site manifest: types, validation (schema + rules), defaults, loading, the
+                          validate-site checks (model-check.ts, check-site.ts)
+  core/                   the viewer: stage, sun, model loading, walker and collision, visibility, blueprints,
+                          picking and the inspect panel, HUD, fly-to, input, plugin start-up
+  plugins/
+    home-assistant/       live light state, controls, the call allowlist (policy.ts), mock
+    faults/               device health through walls (health.ts: the rules)
+    pins/                 equipment registry pins
+    switches/             wall plates
+schema/site.schema.json   the manifest's JSON Schema
+tools/                    the Vite site-folder plugin, the validate-site CLI
+tests/unit/               Vitest (tests/fixtures/site: a synthetic site)
+tests/e2e/                Playwright
+docs/                     the model format; HUD design notes
+```
+
+## Keys
+
+Click to walk (Esc releases the mouse) · WASD / arrows move, Shift runs, Space jumps or rises · C crouch / sink · Q E
+turn · Tab overview · X cutaway · U hide upper storey · O doors · the site's own layer keys · B blueprint · G ghost ·
+1–9 viewpoints · V faults through walls (Shift-V all devices) · T / Shift-click switch a light · P pins (Shift-P through
+walls) · L wall plates (Shift-L through walls) · / find equipment · H help.

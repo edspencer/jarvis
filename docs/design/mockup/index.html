@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JARVIS HUD mockup</title>
+<!--
+  Static mockup for docs/design/hud-panels.md. Not app code. Scenes: ?scene=walk | equipment | faults | energy
+  The backgrounds (bg-*.jpg) are screenshots of a private house model: replace before the repo goes public.
+-->
+<style>
+:root {
+  --jv-surface: rgba(18, 21, 27, .86);
+  --jv-surface-raised: rgba(32, 37, 46, .92);
+  --jv-surface-sunken: rgba(255, 255, 255, .045);
+  --jv-border: rgba(255, 255, 255, .08);
+  --jv-shadow: 0 8px 24px rgba(0, 0, 0, .35);
+  --jv-text: #e9edf2; --jv-text-muted: #9aa4b2; --jv-text-faint: #6b7585; --jv-accent: #7cc4ff;
+  --jv-ok: #3fcf6a; --jv-warn: #f0b43c; --jv-bad: #ef5a4f; --jv-info: #6aa8ff; --jv-off: #7a8494;
+  --jv-r: 10px; --jv-r-ctl: 6px;
+  --rail: 44px; --dock: 320px; --insp: 360px; --gap: 10px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--jv-text); }
+body { background: #9fb8cf center / cover no-repeat; }
+body.bg-walk { background-image: url(bg-walk.jpg); }
+body.bg-overview { background-image: url(bg-overview.jpg); }
+.num { font-variant-numeric: tabular-nums; }
+.mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+.surface { background: var(--jv-surface); backdrop-filter: blur(12px) saturate(1.2); -webkit-backdrop-filter: blur(12px) saturate(1.2);
+  border: 1px solid var(--jv-border); box-shadow: var(--jv-shadow); }
+
+/* ---------------------------------------------------------------- rail */
+.rail { position: fixed; left: var(--gap); top: var(--gap); bottom: var(--gap); width: var(--rail); border-radius: var(--jv-r);
+  display: flex; flex-direction: column; align-items: center; padding: 6px 0; gap: 4px; }
+.rail .sp { flex: 1; }
+.rbtn { position: relative; width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; color: var(--jv-text-muted); }
+.rbtn svg { width: 18px; height: 18px; }
+.rbtn.on { background: var(--jv-surface-raised); color: var(--jv-text); box-shadow: inset 2px 0 0 var(--jv-accent); }
+.rbtn .badge { position: absolute; right: -3px; top: -3px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; font-size: 10px; font-weight: 700;
+  line-height: 16px; text-align: center; background: var(--jv-bad); color: #fff; }
+.rbtn .badge.info { background: #2c3c55; color: var(--jv-text); }
+.rail hr { width: 22px; border: 0; border-top: 1px solid var(--jv-border); margin: 4px 0; }
+
+/* ---------------------------------------------------------------- status strip */
+.strip { position: fixed; top: var(--gap); left: calc(var(--gap) * 2 + var(--rail)); right: calc(var(--gap) * 2 + var(--insp)); height: 34px;
+  display: flex; align-items: center; justify-content: center; pointer-events: none; }
+.strip .bar { pointer-events: auto; border-radius: 999px; height: 34px; display: flex; align-items: center; gap: 4px; padding: 0 6px 0 12px; white-space: nowrap; }
+.strip .place b { font-weight: 600; }
+.strip .place span { color: var(--jv-text-muted); }
+.sep { width: 1px; height: 18px; background: var(--jv-border); margin: 0 4px; }
+.seg { display: inline-flex; background: var(--jv-surface-sunken); border-radius: 999px; padding: 2px; }
+.seg span { padding: 2px 10px; border-radius: 999px; color: var(--jv-text-muted); font-size: 12px; }
+.seg span.on { background: var(--jv-surface-raised); color: var(--jv-text); }
+.chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; border-radius: 999px; font-size: 12px;
+  color: var(--jv-text-muted); border: 1px solid var(--jv-border); }
+.chip.on { color: #0e1116; background: var(--jv-accent); border-color: transparent; font-weight: 600; }
+.chip kbd { font: 600 10px ui-monospace, Menlo, monospace; opacity: .7; }
+.conn { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--jv-text-muted); padding: 0 6px; }
+.dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+.dot.ok { background: var(--jv-ok); box-shadow: 0 0 6px var(--jv-ok); } .dot.info { background: var(--jv-info); }
+.dot.bad { background: var(--jv-bad); } .dot.warn { background: var(--jv-warn); } .dot.off { background: var(--jv-off); }
+
+/* ---------------------------------------------------------------- dock + inspector */
+.dock { position: fixed; left: calc(var(--gap) * 2 + var(--rail)); top: calc(var(--gap) * 2 + 34px); width: var(--dock);
+  max-height: calc(100vh - 34px - var(--gap) * 3); display: flex; flex-direction: column; gap: 8px; }
+.insp { position: fixed; right: var(--gap); top: var(--gap); width: var(--insp); max-height: calc(100vh - var(--gap) * 2);
+  border-radius: var(--jv-r); display: flex; flex-direction: column; overflow: hidden; }
+.panel { border-radius: var(--jv-r); overflow: hidden; display: flex; flex-direction: column; min-height: 0; }
+.ph { display: flex; align-items: center; gap: 8px; height: 38px; padding: 0 8px 0 12px; background: var(--jv-surface-raised); flex: none; }
+.ph svg.ic { width: 16px; height: 16px; flex: none; }
+.ph .t { font-size: 15px; font-weight: 600; flex: 1; }
+.ph .b { font-size: 11px; color: var(--jv-text-muted); }
+.ph .tool { color: var(--jv-text-faint); width: 22px; text-align: center; }
+.pb { padding: 10px 12px 12px; overflow: auto; min-height: 0; }
+.pf { display: flex; justify-content: flex-end; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--jv-border); flex: none; }
+
+/* inspector header */
+.ih { padding: 10px 10px 10px 12px; background: var(--jv-surface-raised); display: grid; grid-template-columns: auto 1fr auto; gap: 2px 10px; align-items: center; flex: none; }
+.ih .nav { grid-column: 1 / -1; display: flex; gap: 6px; color: var(--jv-text-faint); font-size: 12px; align-items: center; margin-bottom: 4px; }
+.ih .nav .crumbs { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ih .nav .crumbs a { color: var(--jv-text-muted); text-decoration: none; }
+.ih .big { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; font-weight: 800; color: #111; grid-row: span 2; }
+.ih .big svg { width: 18px; height: 18px; }
+.ih h2 { margin: 0; font-size: 17px; font-weight: 600; line-height: 1.2; }
+.ih .type { color: var(--jv-text-muted); font-size: 12px; grid-column: 2; }
+.ih .x { grid-row: 2; grid-column: 3; align-self: start; color: var(--jv-text-faint); font-size: 15px; }
+.ibody { overflow: auto; min-height: 0; }
+.sec { border-top: 1px solid var(--jv-border); }
+.sh { display: flex; align-items: center; gap: 8px; padding: 9px 12px; }
+.sh svg { width: 14px; height: 14px; flex: none; }
+.sh .t { flex: 1; font-weight: 600; font-size: 13px; }
+.sh .src { font-size: 11px; color: var(--jv-text-faint); }
+.sh .car { color: var(--jv-text-faint); width: 12px; text-align: center; }
+.sb { padding: 0 12px 12px; }
+.sec.collapsed .sb { display: none; }
+
+/* blocks */
+.kv { display: grid; grid-template-columns: 112px 1fr; gap: 5px 10px; }
+.kv .k { color: var(--jv-text-muted); font-size: 12px; padding-top: 1px; }
+.note { color: var(--jv-text-muted); font-size: 12.5px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.more { color: var(--jv-accent); font-size: 12px; margin-top: 2px; display: inline-block; }
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border-radius: var(--jv-r-ctl); font: 600 12.5px system-ui, sans-serif;
+  background: var(--jv-surface-sunken); color: var(--jv-text); border: 1px solid var(--jv-border); }
+.btn.primary { background: var(--jv-accent); color: #0e1116; border-color: transparent; }
+.btn.danger { color: #ffb0a9; border-color: rgba(239, 90, 79, .5); }
+.btn:focus-visible, .focus { outline: 2px solid var(--jv-accent); outline-offset: 2px; }
+.row { display: flex; align-items: center; gap: 8px; }
+.row.sp { justify-content: space-between; }
+.pill { display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 8px; border-radius: 999px; font-size: 11.5px; font-weight: 600; }
+.pill.ok { background: rgba(63, 207, 106, .16); color: #8ff0ad; } .pill.warn { background: rgba(240, 180, 60, .16); color: #ffd58a; }
+.pill.bad { background: rgba(239, 90, 79, .18); color: #ffaaa3; } .pill.info { background: rgba(106, 168, 255, .16); color: #b5d2ff; }
+.pill.off { background: rgba(122, 132, 148, .18); color: #c3cad5; }
+.callout { display: block; padding: 7px 9px; border-radius: 6px; font-size: 12px; margin-top: 8px; }
+.callout.warn { background: rgba(240, 180, 60, .10); color: #ffd58a; border: 1px solid rgba(240, 180, 60, .25); }
+.links { display: flex; flex-wrap: wrap; gap: 5px; }
+.lnk { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px 0 4px; border-radius: 6px; background: var(--jv-surface-sunken);
+  border: 1px solid var(--jv-border); font-size: 12px; color: var(--jv-text); white-space: nowrap; }
+.lnk i { font-style: normal; width: 16px; height: 16px; border-radius: 4px; display: grid; place-items: center; font: 800 10px system-ui; color: #111; }
+.lnk .go { color: var(--jv-text-faint); }
+.lbl { font-size: 11px; color: var(--jv-text-faint); text-transform: uppercase; letter-spacing: .05em; margin: 10px 0 5px; }
+.lbl:first-child { margin-top: 0; }
+.search { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border-radius: var(--jv-r-ctl); background: var(--jv-surface-sunken);
+  border: 1px solid var(--jv-border); color: var(--jv-text-faint); margin-bottom: 8px; }
+.search kbd { margin-left: auto; font: 600 10px ui-monospace, monospace; border: 1px solid var(--jv-border); border-radius: 4px; padding: 0 4px; }
+.fchips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.fchip { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 7px 0 3px; border-radius: 999px; font-size: 11.5px;
+  background: var(--jv-surface-sunken); border: 1px solid var(--jv-border); }
+.fchip.off { opacity: .4; }
+.fchip i { font-style: normal; width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; font: 800 9.5px system-ui; color: #111; }
+.list { display: flex; flex-direction: column; }
+.li { display: grid; grid-template-columns: 18px 1fr auto; gap: 8px; align-items: center; padding: 5px 6px; border-radius: 6px; }
+.li.sel { background: var(--jv-surface-raised); box-shadow: inset 2px 0 0 var(--jv-accent); }
+.li .m { overflow: hidden; }
+.li .p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.li .s { color: var(--jv-text-muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.li .v { font-size: 12px; color: var(--jv-text-muted); text-align: right; }
+.li .ic { width: 16px; height: 16px; border-radius: 50%; display: grid; place-items: center; font: 800 9.5px system-ui; color: #111; }
+.grp { display: flex; align-items: center; gap: 6px; padding: 8px 6px 3px; font-size: 11px; color: var(--jv-text-faint); text-transform: uppercase; letter-spacing: .05em; }
+.grp .n { margin-left: auto; text-transform: none; letter-spacing: 0; }
+.lbar { height: 4px; border-radius: 2px; background: var(--jv-surface-sunken); overflow: hidden; margin-top: 3px; }
+.lbar > span { display: block; height: 100%; border-radius: 2px; background: linear-gradient(90deg, #ffd166, #ff6b3d); }
+.meter { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 8px; }
+.meter .val { font-size: 26px; font-weight: 650; line-height: 1; }
+.meter .val small { font-size: 13px; color: var(--jv-text-muted); font-weight: 500; margin-left: 2px; }
+.meter svg { flex: 1; height: 34px; }
+.tot { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
+.tot div { background: var(--jv-surface-sunken); border-radius: 6px; padding: 6px 7px; }
+.tot b { display: block; font-size: 13px; white-space: nowrap; } .tot span { font-size: 11px; color: var(--jv-text-muted); }
+.seg2 { display: inline-flex; background: var(--jv-surface-sunken); border-radius: 6px; padding: 2px; font-size: 11.5px; }
+.seg2 span { padding: 1px 8px; border-radius: 4px; color: var(--jv-text-muted); } .seg2 span.on { background: var(--jv-surface-raised); color: var(--jv-text); }
+.sw { width: 30px; height: 18px; border-radius: 9px; background: var(--jv-ok); position: relative; flex: none; }
+.sw::after { content: ""; position: absolute; right: 2px; top: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; }
+.slider { flex: 1; height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--jv-accent) 78%, var(--jv-surface-sunken) 78%); position: relative; }
+.slider::after { content: ""; position: absolute; left: 78%; top: -5px; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: #fff; }
+
+/* ---------------------------------------------------------------- scene overlays */
+.cross { position: fixed; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; }
+.cross::before, .cross::after { content: ""; position: absolute; background: rgba(255, 255, 255, .9); box-shadow: 0 0 2px #000; }
+.cross::before { left: 6px; top: 0; width: 2px; height: 14px; } .cross::after { top: 6px; left: 0; height: 2px; width: 14px; }
+.hover { position: fixed; transform: translateX(-50%); background: var(--jv-surface); border: 1px solid var(--jv-border); border-radius: 6px;
+  padding: 3px 8px; font-size: 12px; white-space: nowrap; display: flex; gap: 6px; align-items: center; }
+.hover span { color: var(--jv-text-muted); }
+.lock { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); font-size: 12px; color: var(--jv-text-muted); border-radius: 999px; padding: 4px 12px; }
+.lock kbd { font: 600 11px ui-monospace, monospace; color: var(--jv-text); }
+.mk { position: fixed; width: 18px; height: 18px; margin: -9px 0 0 -9px; border-radius: 50%; display: grid; place-items: center;
+  font: 800 10.5px system-ui; color: #111; box-shadow: 0 0 0 2px #0d0f14; }
+.mk.hollow { background: transparent !important; box-shadow: 0 0 0 2px currentColor, 0 0 0 4px rgba(13,15,20,.7); }
+.mk.sel { width: 26px; height: 26px; margin: -13px 0 0 -13px; box-shadow: 0 0 0 2px #fff, 0 0 0 6px rgba(124, 196, 255, .45); font-size: 13px; }
+.mk.bad { background: var(--jv-bad); color: #fff; } .mk.warn { background: var(--jv-warn); } .mk.info { background: var(--jv-info); color: #fff; }
+.tint { position: fixed; mix-blend-mode: multiply; opacity: .78; border-radius: 3px; }
+.legend { position: fixed; right: calc(var(--gap) * 2 + var(--insp)); bottom: var(--gap); border-radius: var(--jv-r); padding: 8px 10px; font-size: 11.5px; min-width: 200px; }
+.legend .lt { font-weight: 600; font-size: 12px; margin-bottom: 6px; display: flex; justify-content: space-between; }
+.legend .lt span { color: var(--jv-text-faint); font-weight: 400; }
+.ramp { display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; }
+.ramp i { height: 8px; border-radius: 2px; }
+.ramp-l { display: flex; justify-content: space-between; color: var(--jv-text-muted); margin-top: 3px; }
+.legend .row { gap: 10px; flex-wrap: wrap; }
+.toast { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); border-radius: 8px; padding: 8px 12px; display: flex; gap: 10px; align-items: center; font-size: 12.5px; }
+.toast a { color: var(--jv-accent); font-weight: 600; }
+.cap { position: fixed; left: 50%; bottom: 60px; transform: translateX(-50%); background: #ffd166; color: #222; font: 600 12px system-ui; padding: 4px 10px; border-radius: 4px; display: none; }
+.scene { display: none; } body[data-scene="walk"] .s-walk, body[data-scene="equipment"] .s-equipment,
+body[data-scene="faults"] .s-faults, body[data-scene="energy"] .s-energy { display: revert; }
+body[data-scene="walk"] .s-walk.flex, body[data-scene="equipment"] .s-equipment.flex, body[data-scene="faults"] .s-faults.flex, body[data-scene="energy"] .s-energy.flex { display: flex; }
+.nav-scenes { position: fixed; left: 50%; bottom: 60px; transform: translateX(-50%); display: none; }
+</style>
+</head>
+<body class="bg-walk" data-scene="walk">
+
+<!-- ============================================================ icons -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <symbol id="i-nav" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 8.5l-2 5-5 2 2-5z" fill="currentColor"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l4.5 4.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="currentColor"/><g stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2.5v2.5M12 19v2.5M2.5 12H5M19 12h2.5M5.3 5.3l1.8 1.8M16.9 16.9l1.8 1.8M5.3 18.7l1.8-1.8M16.9 7.1l1.8-1.8"/></g></symbol>
+    <symbol id="i-bp" viewBox="0 0 24 24"><path d="M4 4h16v16H4z M4 10h8v10 M12 4v6" fill="none" stroke="currentColor" stroke-width="2"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M12 22s7-7 7-12a7 7 0 10-14 0c0 5 7 12 7 12z" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="10" r="2.5" fill="currentColor"/></symbol>
+    <symbol id="i-flag" viewBox="0 0 24 24"><path d="M12 3l10 17H2z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M12 10v4.5M12 17.2v.3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L4 14h7l-1 8 9-12h-7z" fill="currentColor"/></symbol>
+    <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3v8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M7 6.5a7.5 7.5 0 1010 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M9.5 9.5a2.5 2.5 0 114 2c-1 .7-1.5 1.2-1.5 2.5M12 17v.3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></symbol>
+    <symbol id="i-bulb" viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 00-3.5 10.9c.6.5 1 1.2 1 2.1h5c0-.9.4-1.6 1-2.1A6 6 0 0012 3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></symbol>
+    <symbol id="i-cube" viewBox="0 0 24 24"><path d="M12 2.5l8.5 4.75v9.5L12 21.5l-8.5-4.75v-9.5z M3.5 7.25L12 12l8.5-4.75 M12 12v9.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+    <symbol id="i-ha" viewBox="0 0 24 24"><path d="M12 3l9 8h-2.5v9h-13v-9H3z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="14" r="2" fill="currentColor"/></symbol>
+    <symbol id="i-plate" viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="10" y="8" width="4" height="8" rx="1" fill="currentColor"/></symbol>
+    <symbol id="i-heart" viewBox="0 0 24 24"><path d="M3 12h4l2-5 4 10 2-5h6" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></symbol>
+  </defs>
+</svg>
+
+<!-- ============================================================ rail (all scenes) -->
+<nav class="rail surface" aria-label="Panels">
+  <div class="rbtn" title="Search ( / )"><svg><use href="#i-search"/></svg></div>
+  <hr>
+  <div class="rbtn" title="Navigate (N)"><svg><use href="#i-nav"/></svg></div>
+  <div class="rbtn" title="Sun &amp; time"><svg><use href="#i-sun"/></svg></div>
+  <div class="rbtn" title="Blueprints (B)"><svg><use href="#i-bp"/></svg></div>
+  <div class="rbtn" id="r-eq" title="Equipment (P)"><svg><use href="#i-pin"/></svg></div>
+  <div class="rbtn" id="r-fl" title="Faults (V)"><svg><use href="#i-flag"/></svg><span class="badge">17</span></div>
+  <div class="rbtn" id="r-en" title="Energy"><svg><use href="#i-bolt"/></svg></div>
+  <div class="rbtn" title="Controls"><svg><use href="#i-power"/></svg></div>
+  <div class="sp"></div>
+  <div class="rbtn" title="Settings"><svg><use href="#i-gear"/></svg></div>
+  <div class="rbtn" title="Keys and help (H)"><svg><use href="#i-help"/></svg></div>
+</nav>
+
+<!-- ============================================================ status strip (all scenes, content varies) -->
+<div class="strip">
+  <div class="bar surface">
+    <span class="place"><b id="st-place">Living room</b> <span id="st-storey">· ground floor</span></span>
+    <span class="sep"></span>
+    <span class="seg"><span id="m-walk" class="on">Walk</span><span id="m-ov">Overview</span></span>
+    <span class="sep"></span>
+    <span class="chip" id="c-cut">Cutaway <kbd>X</kbd></span>
+    <span class="chip" id="c-ghost">Ghost <kbd>G</kbd></span>
+    <span class="chip" id="c-pins">Pins <kbd>P</kbd></span>
+    <span class="chip" id="c-faults">Faults <kbd>V</kbd></span>
+    <span class="chip" id="c-load">Load <kbd>E</kbd></span>
+    <span class="chip">⋯</span>
+    <span class="sep"></span>
+    <span class="conn"><span class="dot ok"></span>Home Assistant</span>
+    <span class="conn num"><svg width="12" height="12"><use href="#i-bolt"/></svg>2.4 kW</span>
+  </div>
+</div>
+
+<!-- ============================================================ scene 1: walking, a light fixture inspected -->
+<div class="scene s-walk">
+  <div class="cross"></div>
+  <div class="hover" style="left:50%; top:calc(50% + 16px)"><b>Pendant 2</b><span>· on 78 %</span></div>
+  <div class="lock surface">Walking · <kbd>Esc</kbd> to use the panels · <kbd>H</kbd> keys</div>
+  <aside class="insp surface" aria-label="Inspector">
+    <div class="ih">
+      <div class="nav"><span>←</span><span>→</span><span class="crumbs">Kitchen · lights</span><span>⋯</span></div>
+      <div class="big" style="background:#ffd166"><svg><use href="#i-bulb"/></svg></div>
+      <h2>Pendant 2</h2><span class="x">✕</span>
+      <div class="type">Light fixture · pendant · kitchen island</div>
+    </div>
+    <div class="ibody">
+      <section class="sec">
+        <div class="sh"><svg style="color:#ffd166"><use href="#i-bulb"/></svg><span class="t">Light</span><span class="src">lights</span><span class="car">▾</span></div>
+        <div class="sb">
+          <div class="row sp" style="margin-bottom:8px"><span class="row"><span class="pill ok">● On</span><span class="num" style="color:var(--jv-text-muted)">78 % · 2700 K</span></span><span class="sw"></span></div>
+          <div class="row" style="margin-bottom:10px"><span style="color:var(--jv-text-muted); font-size:12px; width:70px">Brightness</span><div class="slider"></div></div>
+          <div class="kv"><span class="k">Switches with</span><span>3 bulbs (a group) <span style="color:var(--jv-text-muted)">· 2 other fixtures</span></span></div>
+          <div class="links" style="margin-top:8px"><span class="lnk"><i style="background:#ffd166">L</i>Pendant 1</span><span class="lnk"><i style="background:#ffd166">L</i>Pendant 3</span><span class="lnk"><i style="background:#f0b43c">▭</i>Plate KIT-S-B · pos 2</span></div>
+          <div class="callout warn">⚠ Unconfirmed mapping: this may be another bulb of the same set. <a class="more" style="margin:0">Run a blink test…</a></div>
+        </div>
+      </section>
+      <section class="sec">
+        <div class="sh"><svg style="color:#41bdf5"><use href="#i-ha"/></svg><span class="t">Home Assistant</span><span class="src">home-assistant</span><span class="car">▾</span></div>
+        <div class="sb">
+          <div class="kv">
+            <span class="k">Entity</span><span class="mono">light.island_pendant_2</span>
+            <span class="k">Name</span><span>Kitchen Pendant 2</span>
+            <span class="k">State</span><span class="num">on · 78 % · 2700 K</span>
+            <span class="k">Last change</span><span class="num">14:02 (1 h ago)</span>
+            <span class="k">Mapping</span><span><span class="pill warn">low</span> <span style="color:var(--jv-text-muted)">name match</span></span>
+          </div>
+          <div class="links" style="margin-top:8px"><span class="lnk"><i style="background:#41bdf5">↗</i>Open in Home Assistant</span></div>
+        </div>
+      </section>
+      <section class="sec">
+        <div class="sh"><svg style="color:#8fd0a5"><use href="#i-pin"/></svg><span class="t">Equipment</span><span class="src">pins</span><span class="car">▸</span></div>
+      </section>
+      <section class="sec collapsed">
+        <div class="sh"><svg style="color:var(--jv-text-muted)"><use href="#i-cube"/></svg><span class="t">Object</span><span class="src">core</span><span class="car">▸</span></div>
+      </section>
+    </div>
+    <div class="pf"><span class="btn">Fly to</span><span class="btn primary">Turn off <kbd style="opacity:.6;font-size:10px">T</kbd></span></div>
+  </aside>
+</div>
+
+<!-- ============================================================ scene 2: overview, equipment panel + a pin inspected -->
+<div class="scene s-equipment">
+  <div class="dock">
+    <section class="panel surface">
+      <div class="ph"><svg class="ic" style="color:#8fd0a5"><use href="#i-pin"/></svg><span class="t">Equipment</span><span class="b num">140 shown</span><span class="tool">⋯</span><span class="tool">▾</span></div>
+      <div class="pb">
+        <div class="search"><svg width="14" height="14"><use href="#i-search"/></svg>panel<kbd>/</kbd></div>
+        <div class="fchips">
+          <span class="fchip"><i style="background:#ffd166">E</i>Electrical 17</span><span class="fchip"><i style="background:#7cc4ff">H</i>HVAC 10</span>
+          <span class="fchip"><i style="background:#6aa8ff">P</i>Plumbing 27</span><span class="fchip"><i style="background:#4fd1c5">≈</i>Pool 8</span>
+          <span class="fchip off"><i style="background:#ef5a4f">G</i>Gas 2</span><span class="fchip"><i style="background:#f6993f">S</i>Solar 2</span>
+          <span class="fchip off"><i style="background:#68d391">T</i>Site 10</span><span class="fchip"><i style="background:#b794f4">N</i>Network 7</span>
+          <span class="fchip off"><i style="background:#d6a16b">A</i>Appliances 30</span><span class="fchip">+4</span>
+        </div>
+        <div class="list">
+          <div class="grp">Utility room<span class="n">4</span></div>
+          <div class="li sel"><span class="ic" style="background:#ffd166">E</span><div class="m"><div class="p">Breaker panel A</div><div class="s">200 A · backed up · south wall</div></div><span class="v num">3.1 kW</span></div>
+          <div class="li"><span class="ic" style="background:#ffd166">E</span><div class="m"><div class="p">Breaker panel B</div><div class="s">200 A · not backed up</div></div><span class="v num">0.6 kW</span></div>
+          <div class="li"><span class="ic" style="background:#f6993f">S</span><div class="m"><div class="p">PV combiner panel</div><div class="s">4 breakers</div></div><span class="v num">−2.2 kW</span></div>
+          <div class="li"><span class="ic" style="background:#ffd166">E</span><div class="m"><div class="p">Battery gateway</div><div class="s">not placed</div></div><span class="v">—</span></div>
+          <div class="grp">Equipment pad<span class="n">1</span></div>
+          <div class="li"><span class="ic" style="background:#ffd166">E</span><div class="m"><div class="p">Subpanel B</div><div class="s">fed from panel A</div></div><span class="v num">1.2 kW</span></div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <div class="mk" style="left:624px;top:333px;background:#f6993f">S</div>
+  <div class="mk" style="left:651px;top:337px;background:#ef5a4f">G</div>
+  <div class="mk" style="left:545px;top:390px;background:#ffd166">L</div>
+  <div class="mk" style="left:700px;top:357px;background:#7cc4ff">H</div>
+  <div class="mk sel" style="left:712px;top:347px;background:#ffd166">E</div>
+  <div class="mk" style="left:754px;top:293px;background:#b794f4">C</div>
+  <div class="mk" style="left:880px;top:388px;background:#b794f4">C</div>
+  <div class="mk" style="left:928px;top:380px;background:#d6a16b">B</div>
+  <div class="mk" style="left:908px;top:310px;background:#68d391">T</div>
+  <div class="mk" style="left:892px;top:327px;background:#68d391">T</div>
+  <div class="mk" style="left:855px;top:465px;background:#6aa8ff">N</div>
+  <div class="mk" style="left:866px;top:530px;background:#6aa8ff">P</div>
+  <div class="mk hollow" style="left:775px;top:550px;color:#6aa8ff">P</div>
+  <div class="mk" style="left:720px;top:620px;background:#4fd1c5">≈</div>
+  <div class="mk" style="left:735px;top:715px;background:#68d391">T</div>
+  <div class="mk" style="left:712px;top:740px;background:#68d391">T</div>
+  <div class="hover" style="left:712px; top:368px"><b>Breaker panel A</b><span>· Electrical · 3.1 kW</span></div>
+  <aside class="insp surface" aria-label="Inspector">
+    <div class="ih">
+      <div class="nav"><span>←</span><span>→</span><span class="crumbs">Utility room · electrical</span><span>⋯</span></div>
+      <div class="big" style="background:#ffd166">E</div>
+      <h2>Breaker panel A</h2><span class="x">✕</span>
+      <div class="type">Electrical · in service · utility room, south wall</div>
+    </div>
+    <div class="ibody">
+      <section class="sec">
+        <div class="sh"><svg style="color:#8fd0a5"><use href="#i-pin"/></svg><span class="t">Equipment</span><span class="src">pins</span><span class="car">▾</span></div>
+        <div class="sb">
+          <div class="kv">
+            <span class="k">Make / model</span><span>Eaton BR 200 A, 40 spaces</span>
+            <span class="k">Status</span><span><span class="pill ok">in service</span> <span style="color:var(--jv-text-muted)">conf high</span></span>
+            <span class="k">Where</span><span>Utility room · south wall <span class="pill warn">position ±0.6 ft</span></span>
+          </div>
+          <div class="lbl">Location note</div>
+          <div class="note">South wall between panel B (west) and the battery gateway (east). Positions come from two measured chains that are scaled together where they meet; a tape from the south-west corner would settle it.</div>
+          <a class="more">Show all</a>
+          <div class="lbl">Feeds</div>
+          <div class="links"><span class="lnk"><i style="background:#ffd166">E</i>Subpanel B<span class="go">›</span></span><span class="lnk"><i style="background:#7cc4ff">H</i>Air handler, upstairs<span class="go">›</span></span><span class="lnk">+14</span></div>
+          <div class="lbl">Fed from</div>
+          <div class="links"><span class="lnk"><i style="background:#ffd166">E</i>Battery gateway<span class="go">›</span></span></div>
+          <div class="lbl">Documents</div>
+          <div class="links"><span class="lnk"><i style="background:#9aa4b2">▤</i>Panel schedule.pdf</span><span class="lnk"><i style="background:#9aa4b2">▣</i>2 photos</span></div>
+        </div>
+      </section>
+      <section class="sec">
+        <div class="sh"><svg style="color:#ffd166"><use href="#i-bolt"/></svg><span class="t">Energy</span><span class="src">energy</span><span class="car">▾</span></div>
+        <div class="sb">
+          <div class="meter"><div class="val num">3,140<small>W</small></div>
+            <svg viewBox="0 0 120 34" preserveAspectRatio="none"><polyline fill="none" stroke="#ffd166" stroke-width="1.5" points="0,26 8,24 16,25 24,20 32,22 40,12 48,14 56,15 64,9 72,11 80,18 88,17 96,8 104,10 112,7 120,9"/></svg></div>
+          <div class="kv"><span class="k">Today</span><span class="num">21.4 kWh</span><span class="k">Share of house</span><span class="num">84 %</span></div>
+        </div>
+      </section>
+      <section class="sec collapsed"><div class="sh"><svg style="color:var(--jv-text-muted)"><use href="#i-cube"/></svg><span class="t">Object</span><span class="src">core</span><span class="car">▸</span></div></section>
+    </div>
+  </aside>
+</div>
+
+<!-- ============================================================ scene 3: walking, faults through walls -->
+<div class="scene s-faults">
+  <div class="cross"></div>
+  <div class="dock">
+    <section class="panel surface">
+      <div class="ph"><svg class="ic" style="color:var(--jv-bad)"><use href="#i-flag"/></svg><span class="t">Faults</span><span class="b num">27 of 256 devices</span><span class="tool">⋯</span><span class="tool">▾</span></div>
+      <div class="pb">
+        <div class="fchips">
+          <span class="fchip"><i style="background:var(--jv-bad);color:#fff">!</i>17 offline</span>
+          <span class="fchip"><i style="background:var(--jv-warn)">!</i>7 attention</span>
+          <span class="fchip"><i style="background:var(--jv-info);color:#fff">↑</i>3 updates</span>
+          <span class="fchip off"><i style="background:var(--jv-ok)">✓</i>229 ok</span>
+        </div>
+        <div class="list">
+          <div class="grp">Den<span class="n">3</span></div>
+          <div class="li sel"><span class="dot bad"></span><div class="m"><div class="p">Floor lamp, lower bulb</div><div class="s">unavailable since 11:12</div></div><span class="v">›</span></div>
+          <div class="li"><span class="dot bad"></span><div class="m"><div class="p">Floor lamp, upper bulb</div><div class="s">unknown</div></div><span class="v">›</span></div>
+          <div class="li"><span class="dot bad"></span><div class="m"><div class="p">Recessed light 1</div><div class="s">unavailable, while its switch-mates answer</div></div><span class="v">›</span></div>
+          <div class="grp">Kitchen<span class="n">4</span></div>
+          <div class="li"><span class="dot bad"></span><div class="m"><div class="p">Recessed light, centre</div><div class="s">◌ room only · unavailable</div></div><span class="v">›</span></div>
+          <div class="li"><span class="dot warn"></span><div class="m"><div class="p">Tap dial</div><div class="s">◌ room only · battery 9 %</div></div><span class="v">›</span></div>
+          <div class="li"><span class="dot warn"></span><div class="m"><div class="p">Pantry motion sensor</div><div class="s">battery 11 %</div></div><span class="v">›</span></div>
+          <div class="grp">Bedroom 2<span class="n">2</span></div>
+          <div class="li"><span class="dot bad"></span><div class="m"><div class="p">Bedside lamp</div><div class="s">not seen for 2 days</div></div><span class="v">›</span></div>
+          <div class="li"><span class="dot info"></span><div class="m"><div class="p">Thermostat</div><div class="s">update 1.2.0 → 1.3.1</div></div><span class="v">›</span></div>
+          <div class="grp">8 more rooms<span class="n">17</span></div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <div class="mk bad" style="left:770px;top:337px">!</div>
+  <div class="mk sel bad" style="left:445px;top:478px">!</div>
+  <div class="mk bad" style="left:925px;top:448px">!</div>
+  <div class="mk bad" style="left:978px;top:447px">!</div>
+  <div class="mk bad" style="left:904px;top:491px">!</div>
+  <div class="mk warn" style="left:420px;top:456px">!</div>
+  <div class="mk warn" style="left:1180px;top:451px">!</div>
+  <div class="mk hollow" style="left:1020px;top:447px;color:var(--jv-warn)">!</div>
+  <div class="mk info" style="left:592px;top:442px">↑</div>
+  <div class="mk hollow" style="left:384px;top:450px;color:var(--jv-info)">↑</div>
+  <div class="legend surface">
+    <div class="lt">Device health <span>V · Shift-V all</span></div>
+    <div class="row"><span class="row" style="gap:4px"><span class="dot bad"></span>offline</span><span class="row" style="gap:4px"><span class="dot warn"></span>attention</span>
+      <span class="row" style="gap:4px"><span class="dot info"></span>update</span><span class="row" style="gap:4px"><span style="width:8px;height:8px;border-radius:50%;box-shadow:0 0 0 1.5px var(--jv-text-muted)"></span>room only</span></div>
+  </div>
+  <aside class="insp surface" aria-label="Inspector">
+    <div class="ih">
+      <div class="nav"><span>←</span><span>→</span><span class="crumbs"><a>Faults</a> · Den</span><span>⋯</span></div>
+      <div class="big" style="background:var(--jv-bad);color:#fff">!</div>
+      <h2>Floor lamp, lower bulb</h2><span class="x">✕</span>
+      <div class="type">Smart bulb · Zigbee · Den</div>
+    </div>
+    <div class="ibody">
+      <section class="sec">
+        <div class="sh"><svg style="color:var(--jv-bad)"><use href="#i-heart"/></svg><span class="t">Device health</span><span class="src">faults</span><span class="car">▾</span></div>
+        <div class="sb">
+          <div class="row" style="margin-bottom:8px"><span class="pill bad">! Offline</span><span class="num" style="color:var(--jv-text-muted)">since 11:12 (3 h)</span></div>
+          <div class="kv">
+            <span class="k">Why</span><span>Its light entity is unavailable; the other bulb in the same lamp is also silent</span>
+            <span class="k">Placed</span><span>At its light fixture <span class="pill info">exact</span></span>
+          </div>
+          <div class="lbl">Related</div>
+          <div class="links"><span class="lnk"><i style="background:#ffd166">L</i>Floor lamp<span class="go">›</span></span><span class="lnk"><i style="background:#d6a16b">A</i>Floor lamp (registry)<span class="go">›</span></span></div>
+        </div>
+      </section>
+      <section class="sec">
+        <div class="sh"><svg style="color:#41bdf5"><use href="#i-ha"/></svg><span class="t">Home Assistant</span><span class="src">home-assistant</span><span class="car">▾</span></div>
+        <div class="sb">
+          <div class="kv">
+            <span class="k">Device</span><span>Hue white lamp</span>
+            <span class="k">Integration</span><span>hue</span>
+            <span class="k">Area</span><span>Den</span>
+          </div>
+          <div class="lbl">Entities</div>
+          <div class="list">
+            <div class="li"><span class="dot bad"></span><div class="m"><div class="p mono">light.den_floor_lamp</div></div><span class="v">unavailable</span></div>
+            <div class="li"><span class="dot off"></span><div class="m"><div class="p mono">update.den_floor_lamp</div></div><span class="v">off</span></div>
+          </div>
+          <div class="links" style="margin-top:8px"><span class="lnk"><i style="background:#41bdf5">↗</i>Open in Home Assistant</span></div>
+        </div>
+      </section>
+      <section class="sec collapsed"><div class="sh"><svg style="color:var(--jv-text-muted)"><use href="#i-cube"/></svg><span class="t">Object</span><span class="src">core</span><span class="car">▸</span></div></section>
+    </div>
+  </aside>
+</div>
+
+<!-- ============================================================ scene 4: overview, energy (top consumers, load tint) + a wall plate with four sections -->
+<div class="scene s-energy">
+  <!-- load tint: rooms shaded by W (rough rectangles over the screenshot, standing in for the real per-room tint) -->
+  <div class="tint" style="left:668px;top:362px;width:62px;height:52px;background:#ff6b3d;transform:skewX(-28deg)"></div>
+  <div class="tint" style="left:732px;top:392px;width:62px;height:58px;background:#ffd166;transform:skewX(-28deg)"></div>
+  <div class="tint" style="left:600px;top:400px;width:70px;height:58px;background:#c08a4a;transform:skewX(-28deg)"></div>
+  <div class="tint" style="left:808px;top:420px;width:56px;height:58px;background:#ffd166;transform:skewX(-28deg)"></div>
+  <div class="tint" style="left:530px;top:368px;width:62px;height:42px;background:#6b6f8a;transform:skewX(-28deg)"></div>
+  <div class="tint" style="left:874px;top:395px;width:60px;height:40px;background:#c08a4a;transform:skewX(-28deg)"></div>
+  <div class="tint" style="left:760px;top:470px;width:66px;height:50px;background:#6b6f8a;transform:skewX(-28deg)"></div>
+  <div class="dock">
+    <section class="panel surface">
+      <div class="ph"><svg class="ic" style="color:#ffd166"><use href="#i-bolt"/></svg><span class="t">Energy</span><span class="seg2"><span class="on">Now</span><span>Today</span></span><span class="tool">⋯</span><span class="tool">▾</span></div>
+      <div class="pb">
+        <div class="tot num">
+          <div><b>2.4 kW</b><span>load</span></div>
+          <div><b style="color:var(--jv-ok)">3.1 kW</b><span>solar</span></div>
+          <div><b>−0.4 kW</b><span>battery</span></div>
+          <div><b>−0.3 kW</b><span>grid</span></div>
+        </div>
+        <div class="lbl">Top consumers</div>
+        <div class="list num">
+          <div class="li"><span class="ic" style="background:#4fd1c5">≈</span><div class="m"><div class="p">Well pump</div><div class="s">Subpanel B · circuit 1</div><div class="lbar"><span style="width:100%"></span></div></div><span class="v">1,210 W</span></div>
+          <div class="li"><span class="ic" style="background:#7cc4ff">H</span><div class="m"><div class="p">Air handler, upstairs</div><div class="s">Panel A · 21/23</div><div class="lbar"><span style="width:52%"></span></div></div><span class="v">630 W</span></div>
+          <div class="li sel"><span class="ic" style="background:#f0b43c">▭</span><div class="m"><div class="p">Kitchen counter outlets</div><div class="s">Panel A · circuit 12</div><div class="lbar"><span style="width:20%"></span></div></div><span class="v">240 W</span></div>
+          <div class="li"><span class="ic" style="background:#d6a16b">A</span><div class="m"><div class="p">Refrigerator</div><div class="s">Panel A · circuit 14</div><div class="lbar"><span style="width:12%"></span></div></div><span class="v">146 W</span></div>
+          <div class="li"><span class="ic" style="background:#b794f4">N</span><div class="m"><div class="p">Network rack</div><div class="s">plug · Panel B · circuit 7</div><div class="lbar"><span style="width:9%"></span></div></div><span class="v">112 W</span></div>
+          <div class="li"><span class="ic" style="background:#9aa4b2">·</span><div class="m"><div class="p">Other (unmetered)</div><div class="s">main − metered circuits</div><div class="lbar"><span style="width:5%"></span></div></div><span class="v">62 W</span></div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <div class="mk sel" style="left:742px;top:410px;background:#f0b43c">▭</div>
+  <div class="legend surface">
+    <div class="lt">Load by room <span>E</span></div>
+    <div class="ramp"><i style="background:#2b3a55"></i><i style="background:#6b6f8a"></i><i style="background:#c08a4a"></i><i style="background:#ffd166"></i><i style="background:#ff6b3d"></i></div>
+    <div class="ramp-l num"><span>0</span><span>150</span><span>300</span><span>600</span><span>1.2 kW</span></div>
+  </div>
+  <aside class="insp surface" aria-label="Inspector">
+    <div class="ih">
+      <div class="nav"><span>←</span><span>→</span><span class="crumbs"><a>Energy</a> · Kitchen</span><span>⋯</span></div>
+      <div class="big" style="background:#f0b43c"><svg><use href="#i-plate"/></svg></div>
+      <h2>KIT-O-H</h2><span class="x">✕</span>
+      <div class="type">Wall plate · duplex outlet · kitchen, island side</div>
+    </div>
+    <div class="ibody">
+      <section class="sec">
+        <div class="sh"><svg style="color:#f0b43c"><use href="#i-plate"/></svg><span class="t">Wall plate</span><span class="src">plates</span><span class="car">▾</span></div>
+        <div class="sb">
+          <div class="kv"><span class="k">Plate</span><span>1-gang decora · GFCI</span><span class="k">Breaker</span><span><span class="lnk"><i style="background:#ffd166">E</i>Panel A · 12<span class="go">›</span></span></span>
+            <span class="k">Confidence</span><span><span class="pill ok">position high</span> <span class="pill warn">identity med</span></span></div>
+          <div class="lbl">Linked</div>
+          <div class="links"><span class="lnk"><i style="background:#f0b43c">▭</i>KIT-S-B (switch)<span class="go">›</span></span><span class="lnk"><i style="background:#d6a16b">A</i>Coffee machine<span class="go">›</span></span></div>
+        </div>
+      </section>
+      <section class="sec">
+        <div class="sh"><svg style="color:#ffd166"><use href="#i-bolt"/></svg><span class="t">Energy</span><span class="src">energy</span><span class="car">▾</span></div>
+        <div class="sb">
+          <div class="meter"><div class="val num">240<small>W</small></div>
+            <svg viewBox="0 0 120 34" preserveAspectRatio="none"><polyline fill="none" stroke="#ffd166" stroke-width="1.5" points="0,30 10,30 20,29 30,30 40,8 46,6 52,29 60,30 70,30 80,29 90,22 100,21 110,22 120,20"/></svg></div>
+          <div class="kv num">
+            <span class="k">Circuit</span><span>Panel A · 12, kitchen counter outlets</span>
+            <span class="k">Today</span><span>1.9 kWh</span>
+            <span class="k">Share of panel</span><span>8 %</span>
+          </div>
+          <div class="lbl">On this circuit</div>
+          <div class="list num">
+            <div class="li"><span class="ic" style="background:#d6a16b">A</span><div class="m"><div class="p">Coffee machine</div><div class="s">smart plug</div></div><span class="v">178 W</span></div>
+            <div class="li"><span class="ic" style="background:#9aa4b2">·</span><div class="m"><div class="p">Other on circuit 12</div><div class="s">unmetered</div></div><span class="v">62 W</span></div>
+          </div>
+        </div>
+      </section>
+      <section class="sec">
+        <div class="sh"><svg style="color:#41bdf5"><use href="#i-ha"/></svg><span class="t">Home Assistant</span><span class="src">home-assistant</span><span class="car">▾</span></div>
+        <div class="sb">
+          <div class="list">
+            <div class="li"><span class="dot ok"></span><div class="m"><div class="p mono">sensor.panel_a_circuit_12_power</div></div><span class="v num">240 W</span></div>
+            <div class="li"><span class="dot ok"></span><div class="m"><div class="p mono">switch.coffee_plug</div></div><span class="v">on</span></div>
+          </div>
+        </div>
+      </section>
+      <section class="sec collapsed"><div class="sh"><svg style="color:var(--jv-text-muted)"><use href="#i-cube"/></svg><span class="t">Object</span><span class="src">core</span><span class="car">▸</span></div></section>
+    </div>
+  </aside>
+  <div class="toast surface" style="left:calc(50% - 120px)"><span class="dot ok"></span>Flying to <b>KIT-O-H</b><a>Undo</a></div>
+</div>
+
+<script>
+  // pick the scene from ?scene=, and set the per-scene status-strip state (still static; no app logic)
+  const scene = new URLSearchParams(location.search).get('scene') || 'walk';
+  document.body.dataset.scene = scene;
+  const S = {
+    walk: { bg: 'bg-walk', place: 'Living room', storey: '· ground floor', mode: 'walk', chips: ['c-ghost'], rail: null },
+    equipment: { bg: 'bg-overview', place: 'Whole site', storey: '· overview', mode: 'ov', chips: ['c-cut', 'c-pins'], rail: 'r-eq' },
+    faults: { bg: 'bg-walk', place: 'Living room', storey: '· ground floor', mode: 'walk', chips: ['c-ghost', 'c-faults'], rail: 'r-fl' },
+    energy: { bg: 'bg-overview', place: 'Whole site', storey: '· overview', mode: 'ov', chips: ['c-cut', 'c-load'], rail: 'r-en' },
+  }[scene];
+  document.body.className = S.bg;
+  document.getElementById('st-place').textContent = S.place;
+  document.getElementById('st-storey').textContent = S.storey;
+  document.getElementById('m-walk').classList.toggle('on', S.mode === 'walk');
+  document.getElementById('m-ov').classList.toggle('on', S.mode === 'ov');
+  for (const id of S.chips) document.getElementById(id).classList.add('on');
+  if (S.rail) document.getElementById(S.rail).classList.add('on');
+</script>
+</body>
+</html>

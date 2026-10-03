@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+sites/
+*.glb
+.env*
+test-results/
+playwright-report/
+docs/design/img/
+docs/design/mockup/bg-*.jpg

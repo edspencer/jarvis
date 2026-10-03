@@ -1,0 +1,16 @@
+{
+  "jarvis": "jarvis-site/1",
+  "id": "example-cottage",
+  "name": "Example cottage",
+  "description": "A synthetic one-room site for the tests.",
+  "geo": { "lat": 51.5, "lon": -0.12, "timeZone": "Europe/London" },
+  "frame": { "units": "m", "northAzimuth": 10 },
+  "centre": [4, 3],
+  "models": { "main": { "url": "cottage.glb", "parts": "cottage.parts.json" } },
+  "viewpoints": [
+    { "name": "Door", "at": [4, -2, 0], "yaw": 0 },
+    { "name": "Room", "at": [4, 3, 0], "yaw": 180 }
+  ],
+  "layers": [{ "id": "shed", "label": "Shed", "key": "K", "help": "the garden shed" }],
+  "plugins": { "blueprints": { "index": "plans/index.json" } }
+}
