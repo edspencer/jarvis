@@ -1,0 +1,140 @@
+{
+  "$schema": "../../schema/site.schema.json",
+  "jarvis": "jarvis-site/1",
+  "id": "demo-house",
+  "name": "Demo house",
+  "description": "A synthetic two-storey house made by tools/make-demo-site.ts.",
+  "geo": {
+    "lat": 51.4779,
+    "lon": -0.0015,
+    "timeZone": "Europe/London"
+  },
+  "frame": {
+    "units": "m",
+    "northAzimuth": 12
+  },
+  "centre": [6, 5],
+  "overview": {
+    "camera": [24, -16, 18]
+  },
+  "ground": {
+    "z": -0.16999999999999998
+  },
+  "models": {
+    "main": {
+      "url": "demo.glb",
+      "parts": "demo.parts.json"
+    },
+    "extra": [
+      {
+        "id": "furniture",
+        "url": "furniture.glb",
+        "parts": "furniture.parts.json",
+        "layer": "furniture"
+      }
+    ]
+  },
+  "storeys": [
+    {
+      "name": "ground floor",
+      "z": 0
+    },
+    {
+      "name": "first floor",
+      "short": "upstairs",
+      "z": 3.2,
+      "from": 1.8,
+      "objectsFrom": 2.85
+    }
+  ],
+  "viewpoints": [
+    {
+      "name": "Front path",
+      "at": [9.5, -6, -0.15],
+      "yaw": 10
+    },
+    {
+      "name": "Living room",
+      "at": [5.6, 0.8, 0],
+      "yaw": 50
+    },
+    {
+      "name": "Kitchen",
+      "at": [6.2, 5.6, 0],
+      "yaw": 120
+    },
+    {
+      "name": "Foot of the stair",
+      "at": [11.3, 1.2, 0],
+      "yaw": 0
+    },
+    {
+      "name": "Landing",
+      "at": [11.3, 8.3, 3.2],
+      "yaw": 140
+    },
+    {
+      "name": "Bedroom 1",
+      "at": [5.8, 4.2, 3.2],
+      "yaw": 135
+    },
+    {
+      "name": "Back terrace",
+      "at": [6, 12.4, 0],
+      "yaw": 180
+    }
+  ],
+  "startView": 2,
+  "layers": [
+    {
+      "id": "door",
+      "label": "Doors",
+      "key": "O",
+      "hidden": true,
+      "help": "door leaves",
+      "match": {
+        "extra": ["door_leaf"]
+      }
+    },
+    {
+      "id": "pergola",
+      "label": "Pergola",
+      "key": "K",
+      "help": "the pergola",
+      "match": {
+        "namePrefix": ["Pergola_"]
+      }
+    },
+    {
+      "id": "furniture",
+      "label": "Furniture",
+      "key": "F",
+      "help": "the furniture"
+    }
+  ],
+  "walk": {
+    "maxStep": 0.35
+  },
+  "plugins": {
+    "home-assistant": {
+      "url": "https://homeassistant.example.org",
+      "map": "ha_map.json",
+      "controls": "ha_controls.json"
+    },
+    "faults": {
+      "devices": "ha_devices.json",
+      "source": "tools/make-demo-site.ts"
+    },
+    "pins": {
+      "registry": "registry_pins.json",
+      "sourceLink": "https://github.com/edspencer/jarvis/blob/main/{file}"
+    },
+    "switches": {
+      "source": "tools/make-demo-site.ts"
+    },
+    "blueprints": {
+      "index": "blueprints/index.json",
+      "default": "A-1"
+    }
+  }
+}

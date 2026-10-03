@@ -3,8 +3,8 @@ import { defineConfig } from 'vite';
 import { siteFolder } from './tools/vite-plugins.ts';
 
 // The site folder holds one building: its site.json manifest, the model and the data files it names. It is not part of the
-// app: point JARVIS_SITE at it (default sites/default; sites/ is git-ignored).
-const site = process.env.JARVIS_SITE || 'sites/default';
+// app: point JARVIS_SITE at one (sites/ is git-ignored); without it, the demo house in examples/demo-site.
+const site = process.env.JARVIS_SITE || 'examples/demo-site';
 
 export default defineConfig({
   base: './',
