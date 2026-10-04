@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { openPanel, sameSubject, sectionsFor, type SectionRec } from '../../src/ui/model';
 import type { SectionProvider, Subject } from '../../src/core/plugin/types';
 
-const subject: Subject = { kind: 'item', id: 'plates:KIT-S-B' };
+const subject: Subject = { kind: 'item', id: 'plates:KT-S-A' };
 let seq = 0;
 const rec = (id: string, order: number | undefined, answer: boolean | 'throw' = true, owner = id): SectionRec => ({
   owner,

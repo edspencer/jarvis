@@ -1,0 +1,42 @@
+name: Licences
+
+# Two checks on what JARVIS ships:
+#   - every production dependency is under a licence on the allow-list (permissive ones, compatible with MIT);
+#   - THIRD_PARTY_NOTICES.md lists exactly the third-party code the build bundles (tools/third-party-notices.ts reads the
+#     build's source maps). A new bundled package fails this until `npm run build && npm run notices` is committed.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  licences:
+    name: Licences and third-party notices
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - name: Production dependency licences
+        run: >
+          npx --yes license-checker-rseidelsohn@5.0.1 --production --excludePrivatePackages --summary
+          --onlyAllow 'MIT;ISC;BSD-2-Clause;BSD-3-Clause;Apache-2.0;0BSD'
+      - run: npm run build
+      - name: THIRD_PARTY_NOTICES.md matches the build
+        run: npm run notices -- --check
+      - name: dist/ carries LICENSE and the notices
+        run: test -s dist/LICENSE && test -s dist/THIRD_PARTY_NOTICES.md

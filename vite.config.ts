@@ -1,6 +1,6 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
-import { siteFolder } from './tools/vite-plugins.ts';
+import { licenceFiles, siteFolder } from './tools/vite-plugins.ts';
 
 // The site folder holds one building: its site.json manifest, the model and the data files it names. It is not part of the
 // app: point JARVIS_SITE at one (sites/ is git-ignored); without it, the demo house in examples/demo-site.
@@ -8,7 +8,7 @@ const site = process.env.JARVIS_SITE || 'examples/demo-site';
 
 export default defineConfig({
   base: './',
-  plugins: [siteFolder(site)],
+  plugins: [siteFolder(site), licenceFiles()],
   server: { port: 5173, host: true },
   preview: { port: 4173, host: true },
   build: { target: 'es2022', sourcemap: true, chunkSizeWarningLimit: 1500 },

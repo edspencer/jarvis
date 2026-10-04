@@ -16,10 +16,10 @@ describe('plan <-> three.js', () => {
 
   it('round-trips', () => {
     for (const [X, Y, Z] of [
-      [57, 72, 0],
-      [-3.5, 12.25, 12.06],
+      [41, 63, 0],
+      [-3.5, 12.25, 10.5],
       [0, 0, 0],
-      [125, -55, 120],
+      [110, -40, 95],
     ]) {
       const p = toPlan(P(X, Y, Z));
       expect(p.X).toBeCloseTo(X, 10);
@@ -34,7 +34,7 @@ describe('plan <-> three.js', () => {
 });
 
 describe('sunDirection', () => {
-  const north = 340.251;
+  const north = 347.5;
   it('points along plan north (three.js -Z) when the sun is at the plan-north bearing on the horizon', () => {
     const d = sunDirection(north, 0, north);
     expect(d.x).toBeCloseTo(0);
