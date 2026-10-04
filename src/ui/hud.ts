@@ -120,6 +120,9 @@ export class Hud {
   // the rest
   legends: LegendSpec[] = [];
   toasts: ToastRec[] = [];
+  /** the last 20 toasts as shown (and as updated), oldest first, whether or not they're still up: a record for tests
+   * and the console (twin.hud.toastLog), as a toast that times out may be gone before a slow page is looked at */
+  toastLog: { id: number; text: string; tone?: string }[] = [];
   modals: ModalRec[] = [];
   hovers: HoverProvider[] = [];
   searchers: SearchProvider[] = [];
@@ -469,17 +472,22 @@ export class Hud {
       clearTimeout(rec.timer);
       if (!rec.spec.sticky && rec.spec.tone !== 'bad') rec.timer = setTimeout(close, rec.spec.timeout ?? 4000);
     };
+    const log = () => {
+      this.toastLog = [...this.toastLog, { id: rec.id, text: rec.spec.text, tone: rec.spec.tone }].slice(-20);
+    };
     const close = () => {
       clearTimeout(rec.timer);
       this.toasts = this.toasts.filter((x) => x !== rec);
       this.update('toasts');
     };
     this.toasts = [...this.toasts, rec].slice(-3);
+    log();
     arm();
     this.update('toasts');
     return {
       update: (p) => {
         Object.assign(rec.spec, p);
+        log();
         if (!this.toasts.includes(rec)) this.toasts = [...this.toasts, rec].slice(-3);
         arm();
         this.update('toasts');
