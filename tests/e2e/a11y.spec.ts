@@ -1,5 +1,6 @@
 // Accessibility of the HUD (axe-core, WCAG 2.2 A and AA): the walk view as it loads, the rail's panels open in the
-// dock, the inspector on a fixture with sections from several plugins, and the help modal. The 3D canvas itself is
+// dock, the inspector on a fixture with sections from several plugins, energy mode with its panel and the inspector's
+// Energy section, and the help modal. The 3D canvas itself is
 // out of scope (it has its own text alternative: the status strip's place item and the inspector).
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Page } from '@playwright/test';
@@ -71,8 +72,32 @@ test('the inspector on a fixture', async () => {
   test.skip(!fid, 'the site has no fixtures');
   await twin(page, `twin.inspect('fixture:' + ${JSON.stringify(fid)})`);
   await expect(insp()).toBeVisible();
+  // the status strip makes room for the inspector at once (the render loop is stopped here, so no later refresh does
+  // it): the bar ends left of the inspector
+  const [bar, panel] = await Promise.all([page.locator('jv-status .bar').boundingBox(), insp().boundingBox()]);
+  expect(bar!.x + bar!.width, 'status bar clear of the inspector').toBeLessThanOrEqual(panel!.x);
   await scan('inspector');
   await page.locator('jv-inspector #inspector-close').click();
+});
+
+test("energy: energy mode (its chip and legend), the Energy panel, and the inspector's Energy section", async () => {
+  test.skip(!(await twin<boolean>(page, `twin.host.running('energy')`)), 'the site has no energy plugin');
+  await page.keyboard.press('j');
+  await expect.poll(() => twin<boolean>(page, 'twin.energy.on')).toBe(true);
+  await expect(page.locator('jv-legend [data-legend="energy"]')).toBeVisible();
+  await scan('energy mode');
+  const panel = page.locator('jv-dock section[data-panel="energy"]');
+  if (!(await panel.isVisible())) await page.locator('jv-rail button[data-panel="energy"]').click();
+  await expect(panel).toBeVisible();
+  await scan('energy mode, Energy panel');
+  // a consumer's row opens its subject in the inspector, with the Energy section
+  await panel.locator('.li.act').filter({ hasNotText: 'Other ·' }).first().click();
+  await expect(insp().locator('[data-section="energy"]')).toBeVisible();
+  await scan("inspector's Energy section");
+  await page.locator('jv-inspector #inspector-close').click();
+  await panel.locator('button[aria-label^="Close"]').click();
+  await page.keyboard.press('j');
+  await expect.poll(() => twin<boolean>(page, 'twin.energy.on')).toBe(false);
 });
 
 test('the help modal', async () => {
