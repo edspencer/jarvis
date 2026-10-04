@@ -35,6 +35,9 @@ canvas {
   margin: -7px 0 0 -7px;
   pointer-events: none;
 }
+body.touch #cross {
+  display: none; /* touch: a tap picks at the finger */
+}
 #cross::before,
 #cross::after {
   content: '';

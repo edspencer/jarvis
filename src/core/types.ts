@@ -33,6 +33,13 @@ export interface Player {
 
 export type Keys = Record<string, boolean>;
 
+/** an analog move (the touch thumb-stick): x strafes right, y walks forward; each -1 … 1, the length is the speed
+ * (0 … 1 of a walk) */
+export interface Analog {
+  x: number;
+  y: number;
+}
+
 /** top-level nodes sorted by what hides them: one list per site layer (roof, ceiling, door and the site's own), and
  * `upper` (the upper storeys, for U) */
 export type Groups = Record<string, Object3D[]> & { upper: Object3D[] };
