@@ -1,5 +1,34 @@
 # jarvis
 
+## 0.4.0
+
+### Minor Changes
+
+- [#26](https://github.com/edspencer/jarvis/pull/26) [`b7b99a6`](https://github.com/edspencer/jarvis/commit/b7b99a65538a8423a5d5feec65eab3178895c4bc) Thanks [@edspencer](https://github.com/edspencer)! - Plugins without a fork. A `plugins.<id>` section with a `module` loads that ES module (relative to the manifest) as a
+  plugin, with the section's other fields as its `ctx.config`; `npm run build-plugin -- plugin.ts out.js` builds one.
+  Only a manifest on the viewer's own origin (after redirects) loads external plugins, from that origin or one it lists
+  in the new top-level `pluginOrigins`, and never through a redirect: a `?site=` link can't bring code. The container now
+  sends a Content-Security-Policy (`script-src 'self' 'unsafe-eval'` plus `JARVIS_PLUGIN_ORIGINS`) that enforces this
+  in the browser; `'unsafe-eval'` is there for three.js's Basis (KTX2) transcoder, and the demo house gained a KTX2
+  texture to keep that tested. An external plugin whose id is a built-in's is skipped with a warning. A plugin may
+  declare its letter `keys` (a section's `keys` wins, and `validate-site` checks it) and a `validate(config)` that runs
+  before `setup`; `validate-site` checks the module is there, and with `--run-plugin-code` imports it to check what it
+  exports. Only the enabled plugins' code is downloaded now (every built-in chunk was fetched on every site before).
+  Plugins can bind Esc, with a `when` (bindings with a `when` share a key): after a modal, a text field, the mouse lock,
+  a menu and the search, Esc cancels a plugin's active tool before it closes the inspector.
+
+- [#24](https://github.com/edspencer/jarvis/pull/24) [`21a9eca`](https://github.com/edspencer/jarvis/commit/21a9eca9b0135debb19192bad72adfa506fae7d3) Thanks [@edspencer](https://github.com/edspencer)! - Walk on a touch screen: a thumb-stick (analog: push further to go faster), drag on the view to look around (at the same time as the stick), and tap to inspect what is under the finger. Phones still open in the overview; the status strip keeps its Walk / Overview switch on small screens, so walking is one tap away. Help lists the touch controls on a touch device.
+
+### Patch Changes
+
+- [#23](https://github.com/edspencer/jarvis/pull/23) [`6e8dea9`](https://github.com/edspencer/jarvis/commit/6e8dea9337856b04ad2d0da393e2ec6f3489bedf) Thanks [@edspencer](https://github.com/edspencer)! - The rail's red count badge (the Faults panel's devices in fault) has a darker fill, a new `--jv-bad-fill` token, so its
+  white number meets WCAG AA contrast (5.2:1; it was 3.4:1 on `--jv-bad`, which is unchanged). The neutral badge's fill
+  is a token too, `--jv-badge-fill`.
+
+- [#22](https://github.com/edspencer/jarvis/pull/22) [`fc27252`](https://github.com/edspencer/jarvis/commit/fc272526e80aa8ebd7cae095e27a3738c87d4222) Thanks [@edspencer](https://github.com/edspencer)! - Blueprint fade and energy mode no longer leave the house faded: B on, J on, B off (or any other order) now puts back the right materials. Plugins get one core mechanism for temporary materials, `ctx.three.materials.push(meshes, material | fn, { priority })` (an override taken off with `dispose()`, and when the plugin stops) `materials.base(mesh)` and `MATERIAL_PRIORITY`; the blueprints, energy and lights plugins use it.
+
+- [#27](https://github.com/edspencer/jarvis/pull/27) [`5d5318e`](https://github.com/edspencer/jarvis/commit/5d5318e879deb677d0621f18f14c0bd94bdd2466) Thanks [@edspencer](https://github.com/edspencer)! - `MATERIAL_PRIORITY.energy` is 10 (it was 0), so a plugin's material override at the default priority sits under energy mode instead of tying with it. `materials.base(mesh)` is typed as the mesh's material (`Material | Material[]` for a plain `THREE.Mesh`) instead of casting the array case away, and it is the way to read a mesh's own material: picking and the inspector's Material row use it (they no longer show energy mode's ghost), and `mesh.userData.baseMaterial` is internal. On a touch screen, the window losing focus lets go of the thumb-stick, so a stick held through an app switch doesn't keep walking.
+
 ## 0.3.0
 
 ### Minor Changes
