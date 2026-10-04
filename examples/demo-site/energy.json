@@ -10,40 +10,56 @@
       "id": "grid",
       "label": "Grid",
       "kind": "load",
-      "power": "sensor.grid_power",
+      "feeds": [
+        {
+          "registry": "elec.meter"
+        },
+        {
+          "node": "Utility_meter"
+        }
+      ],
       "conf": "high",
-      "src": "tools/make-demo-site.ts",
+      "src": "tools/make-demo-site.ts (panel schedule, monitor clamps)",
       "children": [
         {
           "id": "panel.main",
           "label": "Main panel",
-          "power": ["sensor.main_panel_l1_power", "sensor.main_panel_l2_power"],
-          "legs": ["L1", "L2"],
-          "remainder": "sensor.main_panel_balance_power",
+          "power": ["sensor.vue2_phase_a_power", "sensor.vue2_phase_b_power"],
+          "legs": ["A", "B"],
+          "remainder": "sensor.vue2_balance_power",
           "energy": {
-            "today": "sensor.main_panel_energy_today",
-            "month": "sensor.main_panel_energy_month"
+            "today": "sensor.vue2_total_energy_today",
+            "month": "sensor.vue2_total_energy_month"
           },
           "volts": 240,
           "feeds": [
             {
               "registry": "elec.panel"
+            },
+            {
+              "node": "Panel_main"
+            },
+            {
+              "registry": "elec.energy-monitor"
+            },
+            {
+              "node": "Energy_monitor"
             }
           ],
           "conf": "high",
-          "src": "tools/make-demo-site.ts",
+          "src": "tools/make-demo-site.ts (panel schedule, monitor clamps)",
+          "note": "The monitor's two 200 A mains clamps (phases A and B). Its Balance (the Other) is the mains less the 16 circuit clamps: the circuits without one (the microwave, the washer, the bathroom outlets, the alarms, the irrigation and doorbell, the monitor itself) and anything a clamp misses. The solar back-feeds the panel, so the monitor's settings add the inverter's output back: this is what the house uses, not what it draws from the grid.",
           "children": [
             {
               "id": "circuit.range",
               "label": "Range",
-              "power": ["sensor.range_l1_power", "sensor.range_l2_power"],
-              "legs": ["L1", "L2"],
-              "volts": 240,
+              "power": "sensor.vue2_range_power",
               "energy": {
-                "today": "sensor.range_energy_today"
+                "today": "sensor.vue2_range_energy_today"
               },
               "panel": "Main panel",
-              "breaker": [1, 3],
+              "breaker": "1+3",
+              "volts": 240,
               "feeds": [
                 {
                   "node": "Kitchen_units"
@@ -53,40 +69,50 @@
                 }
               ],
               "conf": "high",
-              "src": "tools/make-demo-site.ts"
+              "src": "tools/make-demo-site.ts (panel schedule, monitor clamps)",
+              "note": "CT 1 on one leg (a 240 V load: the monitor doubles it); 40 A breaker"
             },
             {
               "id": "circuit.heat_pump",
               "label": "Heat pump (outdoor unit)",
-              "power": ["sensor.heat_pump_l1_power", "sensor.heat_pump_l2_power"],
-              "legs": ["L1", "L2"],
-              "volts": 240,
+              "power": "sensor.vue2_heat_pump_power",
               "energy": {
-                "today": "sensor.heat_pump_energy_today"
+                "today": "sensor.vue2_heat_pump_energy_today"
               },
               "panel": "Main panel",
-              "breaker": [2, 4],
+              "breaker": "2+4",
+              "volts": 240,
+              "feeds": [
+                {
+                  "registry": "hvac.condenser"
+                },
+                {
+                  "node": "Heat_pump"
+                }
+              ],
               "conf": "high",
-              "src": "tools/make-demo-site.ts"
+              "src": "tools/make-demo-site.ts (panel schedule, monitor clamps)",
+              "note": "CT 2 on one leg (a 240 V load: the monitor doubles it); 40 A breaker"
             },
             {
               "id": "circuit.living_outlets",
-              "label": "Living room outlets",
-              "power": "sensor.living_outlets_power",
+              "label": "Living room and hall outlets",
+              "power": "sensor.vue2_living_outlets_power",
               "energy": {
-                "today": "sensor.living_outlets_energy_today"
+                "today": "sensor.vue2_living_outlets_energy_today"
               },
               "panel": "Main panel",
-              "breaker": 5,
+              "breaker": "5",
+              "volts": 120,
               "feeds": [
+                {
+                  "node": "Furn_media_unit"
+                },
                 {
                   "plate": "LV-O-A"
                 },
                 {
                   "fixture": "living.floor_lamp"
-                },
-                {
-                  "node": "Furn_media_unit"
                 },
                 {
                   "room": "living_room"
@@ -96,19 +122,19 @@
                 }
               ],
               "conf": "high",
-              "src": "tools/make-demo-site.ts"
+              "src": "tools/make-demo-site.ts (panel schedule, monitor clamps)",
+              "note": "CT 3; 20 A breaker, AFCI"
             },
             {
               "id": "circuit.air_handler",
-              "label": "Air handler",
-              "power": ["sensor.air_handler_l1_power", "sensor.air_handler_l2_power"],
-              "legs": ["L1", "L2"],
-              "volts": 240,
+              "label": "Air handler and heat strips",
+              "power": "sensor.vue2_air_handler_power",
               "energy": {
-                "today": "sensor.air_handler_energy_today"
+                "today": "sensor.vue2_air_handler_energy_today"
               },
               "panel": "Main panel",
-              "breaker": [6, 8],
+              "breaker": "6+8",
+              "volts": 240,
               "feeds": [
                 {
                   "registry": "hvac.air-handler"
@@ -118,29 +144,22 @@
                 }
               ],
               "conf": "high",
-              "src": "tools/make-demo-site.ts"
+              "src": "tools/make-demo-site.ts (panel schedule, monitor clamps)",
+              "note": "CT 4 on one leg (a 240 V load: the monitor doubles it); 60 A breaker"
             },
             {
               "id": "circuit.lights_ground",
               "label": "Lighting, ground floor",
-              "power": "sensor.lights_ground_power",
+              "power": "sensor.vue2_lights_ground_power",
               "energy": {
-                "today": "sensor.lights_ground_energy_today"
+                "today": "sensor.vue2_lights_ground_energy_today"
               },
               "panel": "Main panel",
-              "breaker": 7,
+              "breaker": "7",
+              "volts": 120,
               "feeds": [
                 {
                   "registry": "fixture.kitchen-pendants"
-                },
-                {
-                  "plate": "LV-S-A"
-                },
-                {
-                  "plate": "KT-S-A"
-                },
-                {
-                  "plate": "HL-S-A"
                 },
                 {
                   "fixture": "living.can.1"
@@ -170,6 +189,15 @@
                   "fixture": "study.ceiling"
                 },
                 {
+                  "plate": "LV-S-A"
+                },
+                {
+                  "plate": "KT-S-A"
+                },
+                {
+                  "plate": "HL-S-A"
+                },
+                {
                   "room": "kitchen"
                 },
                 {
@@ -183,56 +211,66 @@
                 }
               ],
               "conf": "high",
-              "src": "tools/make-demo-site.ts"
+              "src": "tools/make-demo-site.ts (panel schedule, monitor clamps)",
+              "note": "CT 5; 15 A breaker, AFCI"
             },
             {
               "id": "circuit.kitchen_counter",
               "label": "Kitchen counter outlets",
-              "power": "sensor.kitchen_counter_power",
+              "power": "sensor.vue2_kitchen_counter_power",
               "energy": {
-                "today": "sensor.kitchen_counter_energy_today"
+                "today": "sensor.vue2_kitchen_counter_energy_today"
               },
               "panel": "Main panel",
-              "breaker": 9,
+              "breaker": "9",
+              "volts": 120,
               "feeds": [
                 {
                   "node": "Kitchen_units"
+                },
+                {
+                  "room": "kitchen"
                 }
               ],
               "conf": "high",
-              "src": "tools/make-demo-site.ts"
+              "src": "tools/make-demo-site.ts (panel schedule, monitor clamps)",
+              "note": "CT 6; 20 A breaker, AFCI/GFCI"
             },
             {
               "id": "circuit.water_heater",
               "label": "Water heater",
-              "power": ["sensor.water_heater_l1_power", "sensor.water_heater_l2_power"],
-              "legs": ["L1", "L2"],
-              "volts": 240,
+              "power": "sensor.vue2_water_heater_power",
               "energy": {
-                "today": "sensor.water_heater_energy_today"
+                "today": "sensor.vue2_water_heater_energy_today"
               },
               "panel": "Main panel",
-              "breaker": [10, 12],
+              "breaker": "10+12",
+              "volts": 240,
               "feeds": [
                 {
                   "registry": "plumb.water-heater"
+                },
+                {
+                  "node": "Water_heater"
                 },
                 {
                   "room": "garage"
                 }
               ],
               "conf": "high",
-              "src": "tools/make-demo-site.ts"
+              "src": "tools/make-demo-site.ts (panel schedule, monitor clamps)",
+              "note": "CT 7 on one leg (a 240 V load: the monitor doubles it); 30 A breaker"
             },
             {
               "id": "circuit.fridge",
               "label": "Fridge",
-              "power": "sensor.fridge_power",
+              "power": "sensor.vue2_fridge_power",
               "energy": {
-                "today": "sensor.fridge_energy_today"
+                "today": "sensor.vue2_fridge_energy_today"
               },
               "panel": "Main panel",
-              "breaker": 11,
+              "breaker": "11",
+              "volts": 120,
               "feeds": [
                 {
                   "registry": "appliance.fridge"
@@ -242,63 +280,66 @@
                 }
               ],
               "conf": "high",
-              "src": "tools/make-demo-site.ts"
+              "src": "tools/make-demo-site.ts (panel schedule, monitor clamps)",
+              "note": "CT 8; 20 A breaker"
             },
             {
               "id": "circuit.dishwasher",
               "label": "Dishwasher and disposal",
-              "power": "sensor.dishwasher_power",
+              "power": "sensor.vue2_dishwasher_power",
               "energy": {
-                "today": "sensor.dishwasher_energy_today"
+                "today": "sensor.vue2_dishwasher_energy_today"
               },
               "panel": "Main panel",
-              "breaker": 13,
+              "breaker": "13",
+              "volts": 120,
               "feeds": [
                 {
                   "room": "kitchen"
                 }
               ],
               "conf": "high",
-              "src": "tools/make-demo-site.ts"
+              "src": "tools/make-demo-site.ts (panel schedule, monitor clamps)",
+              "note": "CT 9; 20 A breaker, AFCI/GFCI"
             },
             {
               "id": "circuit.dryer",
               "label": "Dryer",
-              "power": ["sensor.dryer_l1_power", "sensor.dryer_l2_power"],
-              "legs": ["L1", "L2"],
-              "volts": 240,
-              "panel": "Main panel",
-              "breaker": [14, 16],
-              "conf": "low",
-              "src": "tools/make-demo-site.ts",
-              "question": "The laundry has no dryer in the model yet: where is it, and is 14+16 really its breaker?"
-            },
-            {
-              "id": "circuit.microwave",
-              "label": "Microwave",
-              "power": "sensor.microwave_power",
+              "power": "sensor.vue2_dryer_power",
               "energy": {
-                "today": "sensor.microwave_energy_today"
+                "today": "sensor.vue2_dryer_energy_today"
               },
               "panel": "Main panel",
-              "breaker": 15,
+              "breaker": "14+16",
+              "volts": 240,
               "feeds": [
                 {
-                  "room": "kitchen"
+                  "registry": "appliance.dryer"
+                },
+                {
+                  "node": "Dryer"
+                },
+                {
+                  "plate": "LA-O-B"
+                },
+                {
+                  "room": "laundry"
                 }
               ],
               "conf": "high",
-              "src": "tools/make-demo-site.ts"
+              "src": "tools/make-demo-site.ts (panel schedule, monitor clamps)",
+              "note": "CT 10 on one leg (a 240 V load: the monitor doubles it); 30 A breaker"
             },
             {
               "id": "circuit.study",
-              "label": "Study outlets",
-              "power": "sensor.study_power",
+              "label": "Study outlets (network, desk)",
+              "power": "sensor.vue2_study_power",
               "energy": {
-                "today": "sensor.study_energy_today"
+                "today": "sensor.vue2_study_energy_today"
               },
               "panel": "Main panel",
-              "breaker": 17,
+              "breaker": "17",
+              "volts": 120,
               "feeds": [
                 {
                   "registry": "net.router"
@@ -308,7 +349,8 @@
                 }
               ],
               "conf": "high",
-              "src": "tools/make-demo-site.ts",
+              "src": "tools/make-demo-site.ts (panel schedule, monitor clamps)",
+              "note": "CT 12; 20 A breaker, AFCI",
               "children": [
                 {
                   "id": "plug.desk",
@@ -323,41 +365,51 @@
                     }
                   ],
                   "conf": "high",
-                  "src": "tools/make-demo-site.ts"
+                  "src": "the plug"
                 }
               ]
             },
             {
               "id": "circuit.ev_charger",
               "label": "EV charger",
-              "power": ["sensor.ev_charger_l1_power", "sensor.ev_charger_l2_power"],
-              "legs": ["L1", "L2"],
-              "volts": 240,
+              "power": "sensor.vue2_ev_charger_power",
               "energy": {
-                "today": "sensor.ev_charger_energy_today"
+                "today": "sensor.vue2_ev_charger_energy_today"
               },
               "panel": "Main panel",
-              "breaker": [18, 20],
+              "breaker": "18+20",
+              "volts": 240,
               "feeds": [
+                {
+                  "registry": "elec.ev-charger"
+                },
+                {
+                  "node": "EV_charger"
+                },
+                {
+                  "node": "Furn_car"
+                },
                 {
                   "room": "garage"
                 }
               ],
               "conf": "high",
-              "src": "tools/make-demo-site.ts"
+              "src": "tools/make-demo-site.ts (panel schedule, monitor clamps)",
+              "note": "CT 13 on one leg (a 240 V load: the monitor doubles it); 50 A breaker"
             },
             {
               "id": "circuit.primary_suite",
               "label": "Primary suite lights and outlets",
-              "power": "sensor.primary_suite_power",
+              "power": "sensor.vue2_primary_suite_power",
               "energy": {
-                "today": "sensor.primary_suite_energy_today"
+                "today": "sensor.vue2_primary_suite_energy_today"
               },
               "panel": "Main panel",
-              "breaker": 19,
+              "breaker": "19",
+              "volts": 120,
               "feeds": [
                 {
-                  "plate": "B1-S-A"
+                  "node": "Fan_primary_bath"
                 },
                 {
                   "plate": "B1-O-A"
@@ -373,12 +425,6 @@
                 },
                 {
                   "plate": "B1-O-E"
-                },
-                {
-                  "plate": "WC-S-A"
-                },
-                {
-                  "plate": "PB-S-A"
                 },
                 {
                   "fixture": "bedroom_1.ceiling_fan"
@@ -399,7 +445,13 @@
                   "fixture": "primary_bath.shower"
                 },
                 {
-                  "node": "Fan_primary_bath"
+                  "plate": "B1-S-A"
+                },
+                {
+                  "plate": "WC-S-A"
+                },
+                {
+                  "plate": "PB-S-A"
                 },
                 {
                   "room": "bedroom_1"
@@ -412,23 +464,25 @@
                 }
               ],
               "conf": "high",
-              "src": "tools/make-demo-site.ts"
+              "src": "tools/make-demo-site.ts (panel schedule, monitor clamps)",
+              "note": "CT 14; 20 A breaker, AFCI"
             },
             {
               "id": "circuit.bedrooms",
-              "label": "Bedrooms 2 and 3, hall bath, landing",
-              "power": "sensor.bedrooms_power",
+              "label": "Bedrooms 2 and 3, hall bath, landing: lights and outlets",
+              "power": "sensor.vue2_bedrooms_power",
               "energy": {
-                "today": "sensor.bedrooms_energy_today"
+                "today": "sensor.vue2_bedrooms_energy_today"
               },
               "panel": "Main panel",
-              "breaker": 21,
+              "breaker": "21",
+              "volts": 120,
               "feeds": [
                 {
                   "registry": "net.access-point"
                 },
                 {
-                  "plate": "B2-S-A"
+                  "node": "Fan_hall_bath"
                 },
                 {
                   "plate": "B2-O-A"
@@ -440,9 +494,6 @@
                   "plate": "B2-O-C"
                 },
                 {
-                  "plate": "B3-S-A"
-                },
-                {
                   "plate": "B3-O-A"
                 },
                 {
@@ -450,15 +501,6 @@
                 },
                 {
                   "plate": "B3-O-C"
-                },
-                {
-                  "plate": "HB-S-A"
-                },
-                {
-                  "plate": "LD-S-A"
-                },
-                {
-                  "plate": "LD-S-B"
                 },
                 {
                   "plate": "LD-O-A"
@@ -494,7 +536,19 @@
                   "fixture": "landing.ceiling.3"
                 },
                 {
-                  "node": "Fan_hall_bath"
+                  "plate": "B2-S-A"
+                },
+                {
+                  "plate": "B3-S-A"
+                },
+                {
+                  "plate": "HB-S-A"
+                },
+                {
+                  "plate": "LD-S-A"
+                },
+                {
+                  "plate": "LD-S-B"
                 },
                 {
                   "room": "landing"
@@ -510,86 +564,92 @@
                 }
               ],
               "conf": "high",
-              "src": "tools/make-demo-site.ts"
+              "src": "tools/make-demo-site.ts (panel schedule, monitor clamps)",
+              "note": "CT 15; 20 A breaker, AFCI"
             },
             {
-              "id": "circuit.washer",
-              "label": "Washer",
-              "power": "sensor.washer_power",
+              "id": "circuit.garage",
+              "label": "Garage: outlets, lights, freezer, door opener",
+              "power": "sensor.vue2_garage_power",
               "energy": {
-                "today": "sensor.washer_energy_today"
+                "today": "sensor.vue2_garage_energy_today"
               },
               "panel": "Main panel",
-              "breaker": 22,
+              "breaker": "24",
+              "volts": 120,
               "feeds": [
+                {
+                  "registry": "appliance.garage-door"
+                },
+                {
+                  "node": "Garage_door_opener"
+                },
+                {
+                  "node": "Chest_freezer"
+                },
+                {
+                  "plate": "GA-O-A"
+                },
+                {
+                  "plate": "GA-O-B"
+                },
+                {
+                  "plate": "GA-O-C"
+                },
+                {
+                  "fixture": "garage.shop.1"
+                },
+                {
+                  "fixture": "garage.shop.2"
+                },
+                {
+                  "fixture": "garage.shop.3"
+                },
+                {
+                  "fixture": "laundry.ceiling"
+                },
+                {
+                  "plate": "GA-S-A"
+                },
+                {
+                  "plate": "GA-S-B"
+                },
+                {
+                  "plate": "LA-S-A"
+                },
+                {
+                  "room": "garage"
+                },
                 {
                   "room": "laundry"
                 }
               ],
               "conf": "high",
-              "src": "tools/make-demo-site.ts"
-            },
-            {
-              "id": "circuit.bath_outlets",
-              "label": "Bathroom outlets",
-              "power": "sensor.bath_outlets_power",
-              "energy": {
-                "today": "sensor.bath_outlets_energy_today"
-              },
-              "panel": "Main panel",
-              "breaker": 23,
-              "feeds": [
-                {
-                  "plate": "PB-O-A"
-                },
-                {
-                  "plate": "PB-O-B"
-                },
-                {
-                  "plate": "HB-O-A"
-                },
-                {
-                  "room": "primary_bath"
-                },
-                {
-                  "room": "hall_bath"
-                },
-                {
-                  "room": "powder_room"
-                }
-              ],
-              "conf": "high",
-              "src": "tools/make-demo-site.ts"
-            },
-            {
-              "id": "circuit.garage",
-              "label": "Garage",
-              "power": "sensor.garage_power",
-              "energy": {
-                "today": "sensor.garage_energy_today"
-              },
-              "panel": "Main panel",
-              "breaker": 24,
-              "feeds": [
-                {
-                  "room": "garage"
-                }
-              ],
-              "conf": "high",
-              "src": "tools/make-demo-site.ts"
+              "src": "tools/make-demo-site.ts (panel schedule, monitor clamps)",
+              "note": "CT 11; 20 A breaker, GFCI"
             },
             {
               "id": "circuit.outside",
-              "label": "Outside lights and outlets",
-              "power": "sensor.outside_power",
+              "label": "Outside lights and outlets, pond pump",
+              "power": "sensor.vue2_outside_power",
               "energy": {
-                "today": "sensor.outside_energy_today"
+                "today": "sensor.vue2_outside_energy_today"
               },
               "panel": "Main panel",
-              "breaker": 25,
+              "breaker": "25",
+              "volts": 120,
               "feeds": [
                 {
-                  "plate": "HL-S-A"
+                  "plate": "EX-O-A"
+                },
+                {
+                  "plate": "EX-O-B"
+                },
+                {
+                  "fixture": "garage.coach.1"
+                },
+                {
+                  "fixture": "garage.coach.2"
                 },
                 {
                   "fixture": "porch.lantern"
@@ -601,11 +661,22 @@
                   "fixture": "terrace.wall.2"
                 },
                 {
-                  "node": "Pond"
+                  "fixture": "exterior.flood"
+                },
+                {
+                  "plate": "HL-S-A"
+                },
+                {
+                  "plate": "GA-S-A"
+                },
+                {
+                  "plate": "LA-S-B"
                 }
               ],
-              "conf": "high",
-              "src": "tools/make-demo-site.ts",
+              "conf": "low",
+              "src": "tools/make-demo-site.ts (panel schedule, monitor clamps)",
+              "question": "The coach lights by the garage door switch from the garage: are they on 25 with the other outside lights, or on the garage's 24? A breaker trip test would tell.",
+              "note": "CT 16; 20 A breaker, GFCI",
               "children": [
                 {
                   "id": "switch.pond_pump",
@@ -617,67 +688,9 @@
                     }
                   ],
                   "conf": "high",
-                  "src": "tools/make-demo-site.ts"
+                  "src": "the pump plug"
                 }
               ]
-            },
-            {
-              "id": "circuit.alarms",
-              "label": "Smoke and CO alarms",
-              "power": "sensor.alarms_power",
-              "energy": {
-                "today": "sensor.alarms_energy_today"
-              },
-              "panel": "Main panel",
-              "breaker": 26,
-              "feeds": [
-                {
-                  "registry": "safety.smoke.landing"
-                },
-                {
-                  "registry": "safety.co.landing"
-                },
-                {
-                  "registry": "safety.smoke.bedroom_1"
-                },
-                {
-                  "registry": "safety.smoke.bedroom_2"
-                },
-                {
-                  "registry": "safety.smoke.bedroom_3"
-                },
-                {
-                  "room": "landing"
-                },
-                {
-                  "room": "bedroom_1"
-                },
-                {
-                  "room": "bedroom_2"
-                },
-                {
-                  "room": "bedroom_3"
-                }
-              ],
-              "conf": "high",
-              "src": "tools/make-demo-site.ts"
-            },
-            {
-              "id": "circuit.irrigation",
-              "label": "Irrigation and doorbell",
-              "power": "sensor.irrigation_power",
-              "energy": {
-                "today": "sensor.irrigation_energy_today"
-              },
-              "panel": "Main panel",
-              "breaker": 27,
-              "feeds": [
-                {
-                  "registry": "site.irrigation"
-                }
-              ],
-              "conf": "high",
-              "src": "tools/make-demo-site.ts"
             }
           ]
         }
@@ -692,16 +705,38 @@
         "today": "sensor.solar_energy_today",
         "month": "sensor.solar_energy_month"
       },
+      "panel": "Main panel",
+      "breaker": "28+30",
+      "volts": 240,
+      "feeds": [
+        {
+          "registry": "elec.inverter"
+        },
+        {
+          "node": "PV_inverter"
+        },
+        {
+          "node": "Roof_solar"
+        }
+      ],
       "conf": "high",
-      "src": "tools/make-demo-site.ts"
+      "src": "the inverter's own integration"
     },
     {
       "id": "battery",
       "label": "Battery",
       "kind": "storage",
       "power": "sensor.battery_power",
+      "feeds": [
+        {
+          "registry": "elec.battery"
+        },
+        {
+          "node": "Home_battery"
+        }
+      ],
       "conf": "high",
-      "src": "tools/make-demo-site.ts"
+      "src": "the battery's own integration"
     }
   ]
 }

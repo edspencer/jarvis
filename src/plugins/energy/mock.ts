@@ -19,23 +19,31 @@ interface Profile {
   period: number;
   /** busiest hour of the day */
   peak: number;
+  /** the hours it can run at all, [from, to) (wrapping past midnight when from > to); outside them only the base */
+  hours?: [number, number];
+  /** a second load that comes on now and then while it runs (an air handler's heat strips): its own cycle */
+  extra?: { run: number; duty: number; period: number };
 }
 
+// First match wins, so the more specific words come first (a "Dishwasher" is not a washer, an air handler's fan is
+// not the heat pump's compressor, a pond pump is not a pool pump).
 const PROFILES: [RegExp, Profile][] = [
   [/fridge|refrig|freezer/i, { base: 4, run: 140, duty: 0.4, period: 50, peak: 18 }],
   [
-    /\b(a\/?c|hvac|heat ?pump|air ?handler|ahu|condens|furnace|mini.?split)/i,
-    { base: 8, run: 3200, duty: 0.45, period: 25, peak: 16 },
+    /air ?handler|\bahu\b|furnace|fan ?coil/i,
+    { base: 6, run: 520, duty: 0.5, period: 25, peak: 16, extra: { run: 4800, duty: 0.12, period: 90 } },
   ],
-  [/dryer/i, { base: 1, run: 4800, duty: 0.08, period: 70, peak: 19 }],
+  [/\b(a\/?c|hvac|heat ?pump|condens|mini.?split)/i, { base: 8, run: 3200, duty: 0.45, period: 25, peak: 16 }],
+  [/dryer/i, { base: 1, run: 4800, duty: 0.3, period: 70, peak: 19, hours: [17, 23] }],
+  [/dish/i, { base: 2, run: 1200, duty: 0.07, period: 90, peak: 21 }],
   [/washer|washing/i, { base: 2, run: 450, duty: 0.08, period: 50, peak: 18 }],
   [/oven|range|cooktop|stove/i, { base: 3, run: 3000, duty: 0.06, period: 40, peak: 18 }],
-  [/dish/i, { base: 2, run: 1200, duty: 0.07, period: 90, peak: 21 }],
   [/micro/i, { base: 3, run: 1100, duty: 0.03, period: 6, peak: 12 }],
-  [/water ?heater|hpwh|geyser|boiler/i, { base: 5, run: 2500, duty: 0.15, period: 45, peak: 7 }],
-  [/\bev\b|charger|car/i, { base: 2, run: 7200, duty: 0.12, period: 180, peak: 1 }],
+  [/water ?heater|hpwh|geyser|boiler/i, { base: 5, run: 4500, duty: 0.15, period: 45, peak: 7 }],
+  [/\bev\b|charger|car/i, { base: 2, run: 7200, duty: 0.8, period: 120, peak: 1, hours: [23, 3] }],
+  [/pond|fountain/i, { base: 0, run: 85, duty: 0.97, period: 120, peak: 13 }],
   [/pool|pump/i, { base: 0, run: 1100, duty: 0.35, period: 240, peak: 13 }],
-  [/light|lamp/i, { base: 6, run: 160, duty: 0.6, period: 120, peak: 21 }],
+  [/light|lamp/i, { base: 6, run: 160, duty: 0.9, period: 120, peak: 21, hours: [16, 24] }],
   [/office|desk|computer|tv|media|network|rack/i, { base: 60, run: 180, duty: 0.5, period: 60, peak: 14 }],
 ];
 const DEFAULT: Profile = { base: 15, run: 120, duty: 0.3, period: 45, peak: 19 };
@@ -51,19 +59,26 @@ export function profileOf(label: string): Profile {
   return PROFILES.find(([re]) => re.test(label))?.[1] ?? DEFAULT;
 }
 
+/** is the hour (0-24) in [from, to), wrapping past midnight */
+const within = (hour: number, [from, to]: [number, number]) =>
+  from <= to ? hour >= from && hour < to : hour >= from || hour < to;
+
 /** a leaf's made-up W at time t (ms) */
 export function leafWatts(m: Pick<Meter, 'id' | 'label'>, t: number, seed = 7): number {
   const p = profileOf(m.label);
   const h = hash01(`${m.id}:${seed}`);
   const hour = (((t / 3.6e6 + new Date(t).getTimezoneOffset() / -60) % 24) + 24) % 24;
-  // busier near the peak hour (0.25 - 1)
+  // busier near the peak hour (0.25 - 1), and not at all outside its hours
   const d = Math.min(Math.abs(hour - p.peak), 24 - Math.abs(hour - p.peak));
-  const busy = 0.25 + 0.75 * Math.exp(-(d * d) / 18);
-  const period = p.period * 60e3 * (0.8 + 0.4 * h);
-  const phase = (((t / period + h) % 1) + 1) % 1;
-  const running = phase < p.duty * busy;
+  const busy = p.hours && !within(hour, p.hours) ? 0 : 0.25 + 0.75 * Math.exp(-(d * d) / 18);
+  const cycle = (minutes: number, salt: number) => {
+    const period = minutes * 60e3 * (0.8 + 0.4 * h);
+    return (((t / period + h + salt) % 1) + 1) % 1;
+  };
+  const running = cycle(p.period, 0) < p.duty * busy;
+  const extra = running && p.extra && cycle(p.extra.period, 0.37) < p.extra.duty ? p.extra.run : 0;
   const wobble = 1 + 0.06 * Math.sin(t / 37e3 + h * 50);
-  return Math.round((p.base * (0.8 + 0.4 * h) + (running ? p.run * (0.85 + 0.3 * h) : 0)) * wobble * 10) / 10;
+  return Math.round((p.base * (0.8 + 0.4 * h) + (running ? p.run * (0.85 + 0.3 * h) + extra : 0)) * wobble * 10) / 10;
 }
 
 /** every meter's made-up W at time t (parents: their children's sum plus a little unmetered load) */

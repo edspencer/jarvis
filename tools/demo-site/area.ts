@@ -67,6 +67,11 @@ export interface Pin {
   note?: string;
   /** the breaker it is on, if it has one of its own */
   breaker?: string;
+  /** links to other pins ('monitored by', 'fed from'…); the registry's referenced_by is built from these */
+  connections?: { key: string; text: string; refs: string[] }[];
+  /** documents (default: the model's manual, if it has a model) */
+  documents?: { text: string; url: string | null }[];
+  open_questions?: string[];
 }
 
 /** a device of the faults plugin's map (ha_devices.json; docs/plugins/faults.md) */

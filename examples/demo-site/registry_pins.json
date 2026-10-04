@@ -2,8 +2,8 @@
   "generated_by": "tools/make-demo-site.ts",
   "frame": "pos: viewer metres, three.js (X, Z, -Y) of plan metres (X east, Y north, Z up); plan: plan metres",
   "count": {
-    "items": 16,
-    "pins": 15,
+    "items": 25,
+    "pins": 24,
     "unplaced": 1
   },
   "pins": [
@@ -112,6 +112,10 @@
         {
           "id": "hvac.thermostat",
           "key": "controls"
+        },
+        {
+          "id": "hvac.condenser",
+          "key": "pairs_with"
         }
       ]
     },
@@ -418,22 +422,61 @@
       "status": "in-service",
       "conf": "high",
       "room": "garage",
-      "pos": [18.73, 1.5, -5],
-      "plan": [18.73, 5, 1.5],
+      "pos": [18.63, 1.65, -5.4],
+      "plan": [18.63, 5.4, 1.65],
       "loc_conf": "high",
       "approx": null,
-      "loc_note": null,
+      "loc_note": "On the east wall, back to back with the utility meter outside; drawn with its door open.",
       "room_centre": [15.5, 1.1, -3.3],
       "make": "Example Electric",
       "model": "LP-40",
       "serial": null,
       "aliases": [],
       "specs": [
-        ["main", "200 A"],
-        ["spaces", "40"]
+        ["main", "200 A, 2-pole, at the top"],
+        ["spaces", "40: odd on the left, even on the right; 9 spare"],
+        ["service", "120/240 V split phase, underground, from the meter outside on this wall"],
+        ["breaker 1+3", "Range · 40 A 240 V · CT 1"],
+        ["breaker 2+4", "Heat pump (outdoor unit) · 40 A 240 V · CT 2"],
+        ["breaker 5", "Living room and hall outlets · 20 A 120 V AFCI · CT 3"],
+        ["breaker 6+8", "Air handler and heat strips · 60 A 240 V · CT 4"],
+        ["breaker 7", "Lighting, ground floor · 15 A 120 V AFCI · CT 5"],
+        ["breaker 9", "Kitchen counter outlets · 20 A 120 V AFCI/GFCI · CT 6"],
+        ["breaker 10+12", "Water heater · 30 A 240 V · CT 7"],
+        ["breaker 11", "Fridge · 20 A 120 V · CT 8"],
+        ["breaker 13", "Dishwasher and disposal · 20 A 120 V AFCI/GFCI · CT 9"],
+        ["breaker 14+16", "Dryer · 30 A 240 V · CT 10"],
+        ["breaker 15", "Microwave · 20 A 120 V AFCI/GFCI · no CT (in the Balance)"],
+        ["breaker 17", "Study outlets (network, desk) · 20 A 120 V AFCI · CT 12"],
+        ["breaker 18+20", "EV charger · 50 A 240 V · CT 13"],
+        ["breaker 19", "Primary suite lights and outlets · 20 A 120 V AFCI · CT 14"],
+        ["breaker 21", "Bedrooms 2 and 3, hall bath, landing: lights and outlets · 20 A 120 V AFCI · CT 15"],
+        ["breaker 22", "Washer and laundry outlets · 20 A 120 V GFCI · no CT (in the Balance)"],
+        ["breaker 23", "Bathroom outlets · 20 A 120 V GFCI · no CT (in the Balance)"],
+        ["breaker 24", "Garage: outlets, lights, freezer, door opener · 20 A 120 V GFCI · CT 11"],
+        ["breaker 25", "Outside lights and outlets, pond pump · 20 A 120 V GFCI · CT 16"],
+        ["breaker 26", "Smoke and CO alarms · 15 A 120 V AFCI · no CT (in the Balance)"],
+        ["breaker 27", "Irrigation and doorbell · 15 A 120 V · no CT (in the Balance)"],
+        ["breaker 28+30", "Solar PV (back-fed) · 40 A 240 V · source"],
+        ["breaker 32+34", "Energy monitor · 15 A 240 V · no CT (in the Balance)"]
       ],
-      "connections": [],
+      "connections": [
+        {
+          "key": "fed_from",
+          "text": "the utility meter",
+          "refs": ["elec.meter"]
+        },
+        {
+          "key": "monitored_by",
+          "text": "the energy monitor",
+          "refs": ["elec.energy-monitor"]
+        }
+      ],
       "documents": [
+        {
+          "text": "Panel schedule (docs/demo-house.md)",
+          "url": "https://github.com/edspencer/jarvis/blob/main/docs/demo-house.md#panel-schedule"
+        },
         {
           "text": "LP-40 manual (example)",
           "url": null
@@ -447,7 +490,72 @@
       },
       "health": null,
       "file": "examples/demo-site/registry_pins.json",
-      "referenced_by": []
+      "referenced_by": [
+        {
+          "id": "elec.energy-monitor",
+          "key": "monitors"
+        },
+        {
+          "id": "elec.inverter",
+          "key": "feeds"
+        },
+        {
+          "id": "elec.meter",
+          "key": "feeds"
+        }
+      ]
+    },
+    {
+      "id": "elec.energy-monitor",
+      "name": "Energy monitor",
+      "category": "elec",
+      "status": "in-service",
+      "conf": "high",
+      "room": "garage",
+      "pos": [18.66, 1.44, -5.84],
+      "plan": [18.66, 5.84, 1.44],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": "Stands in for an Emporia Vue 2, in a small box beside the panel, joined to it by a conduit nipple; its clamps are on the conductors inside the panel. A 240 V circuit has one clamp, on one leg, doubled in the settings. Its readings reach Home Assistant through ESPHome (local) or the Emporia Vue integration from HACS (cloud).",
+      "room_centre": [15.5, 1.1, -3.3],
+      "make": "Example Energy",
+      "model": "EM-16 (16-circuit monitor)",
+      "serial": null,
+      "aliases": [],
+      "specs": [
+        ["mains clamps", "2 × 200 A, phase A and phase B"],
+        ["circuit clamps", "16 × 50 A: 16 in use (see the panel's schedule)"],
+        ["supply", "2-pole 15 A breaker, 32+34"],
+        ["network", "Wi-Fi; ESPHome firmware, a reading every 5 s"],
+        ["entities", "sensor.vue2_<circuit>_power, sensor.vue2_<circuit>_energy_today, sensor.vue2_balance_power"]
+      ],
+      "connections": [
+        {
+          "key": "monitors",
+          "text": "the main panel",
+          "refs": ["elec.panel"]
+        }
+      ],
+      "documents": [
+        {
+          "text": "EM-16 (16-circuit monitor) manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": ["binary_sensor.vue2_status", "sensor.vue2_phase_a_power", "sensor.vue2_phase_b_power"]
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": [
+        {
+          "id": "elec.panel",
+          "key": "monitored_by"
+        }
+      ]
     },
     {
       "id": "plumb.water-heater",
@@ -456,17 +564,21 @@
       "status": "in-service",
       "conf": "high",
       "room": "garage",
-      "pos": [12.7, 1, -6],
-      "plan": [12.7, 6, 1],
+      "pos": [12.95, 1.1, -6.17],
+      "plan": [12.95, 6.17, 1.1],
       "loc_conf": "high",
       "approx": null,
-      "loc_note": null,
+      "loc_note": "On a stand in the corner by the laundry door.",
       "room_centre": [15.5, 1.1, -3.3],
       "make": "Example Water",
       "model": "WH-50",
       "serial": null,
       "aliases": [],
-      "specs": [["capacity", "50 gal"]],
+      "specs": [
+        ["capacity", "50 gal"],
+        ["elements", "2 × 4500 W (one at a time), 240 V"],
+        ["expansion tank", "2 gal, on the cold line"]
+      ],
       "connections": [],
       "documents": [
         {
@@ -491,19 +603,262 @@
       "status": "in-service",
       "conf": "high",
       "room": "garage",
-      "pos": [12.3, 0.3, -5.3],
-      "plan": [12.3, 5.3, 0.3],
+      "pos": [12.31, 0.9, -5.5],
+      "plan": [12.31, 5.5, 0.9],
       "loc_conf": "high",
       "approx": null,
-      "loc_note": null,
+      "loc_note": "Where the water main comes up through the slab, by the water heater.",
       "room_centre": [15.5, 1.1, -3.3],
       "make": null,
       "model": null,
       "serial": null,
       "aliases": [],
-      "specs": [],
+      "specs": [["valve", "1 in full-port ball valve"]],
       "connections": [],
       "documents": [],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": []
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "elec.ev-charger",
+      "name": "EV charger",
+      "category": "elec",
+      "status": "in-service",
+      "conf": "high",
+      "room": "garage",
+      "pos": [18.62, 1.15, -2.35],
+      "plan": [18.62, 2.35, 1.15],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [15.5, 1.1, -3.3],
+      "make": "Example Charging",
+      "model": "L2-40",
+      "serial": null,
+      "aliases": [],
+      "specs": [
+        ["level", "2 (240 V)"],
+        ["current", "40 A (9.6 kW), set to 30 A (7.2 kW)"],
+        ["cable", "7.5 m"]
+      ],
+      "connections": [],
+      "documents": [
+        {
+          "text": "L2-40 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": ["switch.ev_charger", "sensor.ev_charger_status"]
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "elec.battery",
+      "name": "Home battery",
+      "category": "elec",
+      "status": "in-service",
+      "conf": "high",
+      "room": "garage",
+      "pos": [18.57, 0.7, -7.175],
+      "plan": [18.57, 7.175, 0.7],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": "AC-coupled, on the PV breaker (28+30) with the inverter.",
+      "room_centre": [15.5, 1.1, -3.3],
+      "make": "Example Storage",
+      "model": "HB-13",
+      "serial": null,
+      "aliases": [],
+      "specs": [
+        ["capacity", "13.5 kWh"],
+        ["power", "5 kW continuous"]
+      ],
+      "connections": [
+        {
+          "key": "charged_by",
+          "text": "the PV inverter",
+          "refs": ["elec.inverter"]
+        }
+      ],
+      "documents": [
+        {
+          "text": "HB-13 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": ["sensor.battery_power", "sensor.battery_level"]
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "elec.inverter",
+      "name": "PV inverter",
+      "category": "elec",
+      "status": "in-service",
+      "conf": "high",
+      "room": "garage",
+      "pos": [18.55, 1.35, -8],
+      "plan": [18.55, 8, 1.35],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": "Back-feeds the main panel through the 2-pole breaker in spaces 28+30.",
+      "room_centre": [15.5, 1.1, -3.3],
+      "make": "Example Solar",
+      "model": "SI-5",
+      "serial": null,
+      "aliases": [],
+      "specs": [
+        ["rating", "5 kW AC"],
+        ["array", "12 × 400 W on the main roof, south slope"]
+      ],
+      "connections": [
+        {
+          "key": "feeds",
+          "text": "the main panel (back-fed)",
+          "refs": ["elec.panel"]
+        }
+      ],
+      "documents": [
+        {
+          "text": "SI-5 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": ["sensor.solar_power", "sensor.solar_energy_today"]
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": [
+        {
+          "id": "elec.battery",
+          "key": "charged_by"
+        }
+      ]
+    },
+    {
+      "id": "appliance.garage-door",
+      "name": "Garage door opener",
+      "category": "appliance",
+      "status": "in-service",
+      "conf": "high",
+      "room": "garage",
+      "pos": [15.5, 2.38, -3.85],
+      "plan": [15.5, 3.85, 2.38],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [15.5, 1.1, -3.3],
+      "make": "Example Doors",
+      "model": "GO-500",
+      "serial": null,
+      "aliases": [],
+      "specs": [
+        ["drive", "belt, 1/2 hp"],
+        ["door", "16 × 7 ft sectional, four panels"]
+      ],
+      "connections": [],
+      "documents": [
+        {
+          "text": "GO-500 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": ["cover.garage_door"]
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "appliance.washer",
+      "name": "Washer",
+      "category": "appliance",
+      "status": "in-service",
+      "conf": "high",
+      "room": "laundry",
+      "pos": [12.69, 0.65, -7.58],
+      "plan": [12.69, 7.58, 0.65],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [13.825, 1.1, -7.8],
+      "make": "Example Home",
+      "model": "FL-45",
+      "serial": null,
+      "aliases": [],
+      "specs": [["type", "front-load, 4.5 cu ft"]],
+      "connections": [],
+      "documents": [
+        {
+          "text": "FL-45 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": []
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "appliance.dryer",
+      "name": "Dryer",
+      "category": "appliance",
+      "status": "in-service",
+      "conf": "high",
+      "room": "laundry",
+      "pos": [13.44, 0.65, -7.58],
+      "plan": [13.44, 7.58, 0.65],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [13.825, 1.1, -7.8],
+      "make": "Example Home",
+      "model": "ED-74",
+      "serial": null,
+      "aliases": [],
+      "specs": [
+        ["type", "electric, 7.4 cu ft"],
+        ["vent", "4 in, up through the roof"]
+      ],
+      "connections": [],
+      "documents": [
+        {
+          "text": "ED-74 manual (example)",
+          "url": null
+        }
+      ],
       "photos": [],
       "open_questions": [],
       "fixtures": [],
@@ -548,6 +903,100 @@
       "health": null,
       "file": "examples/demo-site/registry_pins.json",
       "referenced_by": []
+    },
+    {
+      "id": "hvac.condenser",
+      "name": "Heat pump (outdoor unit)",
+      "category": "hvac",
+      "status": "in-service",
+      "conf": "high",
+      "room": "exterior",
+      "pos": [10.9, 0.6, -10.6],
+      "plan": [10.9, 10.6, 0.6],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": "On a pad behind the house, by the air handler in the closet under the landing.",
+      "room_centre": null,
+      "make": "Example Air",
+      "model": "HP-36",
+      "serial": null,
+      "aliases": [],
+      "specs": [
+        ["capacity", "3 ton, heat pump"],
+        ["refrigerant", "R-454B"],
+        ["disconnect", "60 A non-fused, on the wall beside it"]
+      ],
+      "connections": [
+        {
+          "key": "pairs_with",
+          "text": "the air handler",
+          "refs": ["hvac.air-handler"]
+        }
+      ],
+      "documents": [
+        {
+          "text": "HP-36 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": []
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "elec.meter",
+      "name": "Utility meter",
+      "category": "elec",
+      "status": "in-service",
+      "conf": "high",
+      "room": "exterior",
+      "pos": [19.2, 1.6, -5.4],
+      "plan": [19.2, 5.4, 1.6],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": "On the garage's east wall, back to back with the main panel inside.",
+      "room_centre": null,
+      "make": "Example Utility",
+      "model": "Smart meter, form 2S",
+      "serial": null,
+      "aliases": [],
+      "specs": [
+        ["service", "200 A, 120/240 V split phase, underground"],
+        ["net metering", "yes (the rooftop solar exports through it)"]
+      ],
+      "connections": [
+        {
+          "key": "feeds",
+          "text": "the main panel",
+          "refs": ["elec.panel"]
+        }
+      ],
+      "documents": [
+        {
+          "text": "Smart meter, form 2S manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": []
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": [
+        {
+          "id": "elec.panel",
+          "key": "fed_from"
+        }
+      ]
     }
   ],
   "unplaced": [

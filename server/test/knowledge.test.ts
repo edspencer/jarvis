@@ -60,7 +60,7 @@ describe('loadSite', () => {
   });
 
   it('reads the registry, devices and controls', () => {
-    expect(site.registry).toHaveLength(16);
+    expect(site.registry).toHaveLength(25);
     expect(site.registry.find((r) => r.id === 'plumb.water-heater')).toMatchObject({
       name: 'Water heater',
       room: 'garage',

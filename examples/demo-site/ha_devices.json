@@ -315,6 +315,83 @@
       }
     },
     {
+      "id": "demo-energy-monitor",
+      "name": "Energy monitor",
+      "integration": "esphome",
+      "make": "Example Energy",
+      "model": "EM-16",
+      "area": "Garage",
+      "place": {
+        "src": "registry",
+        "ref": "elec.energy-monitor",
+        "plan": [18.66, 5.84, 1.44],
+        "room": "Garage",
+        "approx": false,
+        "conf": "high",
+        "pos": [18.66, 1.44, -5.84],
+        "centre": [15.5, 1.1, -3.3]
+      },
+      "health": {
+        "avail": ["binary_sensor.vue2_status", "sensor.vue2_phase_a_power"],
+        "signal": [
+          {
+            "entity": "sensor.vue2_wifi_signal",
+            "kind": "rssi"
+          }
+        ],
+        "update": ["update.vue2_firmware"]
+      }
+    },
+    {
+      "id": "demo-garage-door",
+      "name": "Garage door opener",
+      "integration": "mqtt",
+      "make": "Example Doors",
+      "model": "GO-500",
+      "area": "Garage",
+      "place": {
+        "src": "registry",
+        "ref": "appliance.garage-door",
+        "plan": [15.5, 3.85, 2.38],
+        "room": "Garage",
+        "approx": false,
+        "conf": "high",
+        "pos": [15.5, 2.38, -3.85],
+        "centre": [15.5, 1.1, -3.3]
+      },
+      "health": {
+        "avail": ["cover.garage_door"]
+      }
+    },
+    {
+      "id": "demo-laundry-leak",
+      "name": "Leak sensor (laundry)",
+      "integration": "zha",
+      "make": "Example Sensors",
+      "model": "WL-1",
+      "area": "Laundry",
+      "place": {
+        "src": "area",
+        "ref": "laundry",
+        "plan": [13.065, 7.38, -0.08],
+        "room": "Laundry",
+        "approx": false,
+        "conf": "high",
+        "pos": [13.065, -0.08, -7.38],
+        "centre": [13.825, 1.1, -7.8]
+      },
+      "health": {
+        "avail": ["binary_sensor.laundry_leak"],
+        "battery": ["sensor.laundry_leak_battery"],
+        "signal": [
+          {
+            "entity": "sensor.laundry_leak_lqi",
+            "kind": "lqi"
+          }
+        ]
+      }
+    },
+    {
       "id": "demo-pond-plug",
       "name": "Pond pump plug",
       "integration": "zha",
