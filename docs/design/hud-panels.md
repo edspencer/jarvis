@@ -105,7 +105,7 @@ Anatomy of a panel and of a section:
 ```ts
 type Subject =
   | { kind: 'object'; node: Object3D; part?: PartRef; hit?: Vector3 } // anything picked in the model
-  | { kind: 'entity'; id: string }; // something a plugin owns: 'pins:elec.panel.a', 'plates:KIT-S-B', 'devices:zha-1234'
+  | { kind: 'entity'; id: string }; // something a plugin owns: 'pins:elec.panel.a', 'plates:KT-S-A', 'devices:zha-1234'
 ```
 
 The core resolves a subject's **title, icon and type line** from the plugin that owns it (or from the model for a
@@ -153,7 +153,7 @@ meters:
             label: Kitchen counter outlets
             breaker: { registry: elec.panel.a, position: 12 }
             power: sensor.panel_a_circuit_12_power
-            feeds: [{ plate: KIT-O-H }, { room: kitchen }]
+            feeds: [{ plate: KT-O-A }, { room: kitchen }]
             children:
               - id: plug.coffee
                 power: sensor.coffee_plug_power
@@ -509,7 +509,7 @@ _Other_; (7) dark theme only for now (keep the tokens theme-ready). The question
 ## 10. Mockup
 
 `mockup/index.html` (static HTML/CSS; open it over any static server, `?scene=walk|equipment|faults|energy`).
-Screenshots, before → after (the backgrounds are private model renders: replace before release):
+Screenshots, before → after (taken on a private building, so not in the repository: `docs/design/img/` is git-ignored; the mockup in the repository uses demo-house backgrounds):
 
 | Scene | Before | After |
 |---|---|---|

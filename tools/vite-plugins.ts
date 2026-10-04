@@ -1,5 +1,5 @@
 // Vite plugin for the viewer: serve a site folder (the model and its data files) next to the app.
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, readFileSync, statSync } from 'node:fs';
 import { extname, join, normalize, resolve } from 'node:path';
 import type { Connect, Plugin } from 'vite';
 
@@ -40,6 +40,18 @@ export function siteFolder(dir: string): Plugin {
     },
     configurePreviewServer(server) {
       server.middlewares.use(staticFrom(dir));
+    },
+  };
+}
+
+/** Ships LICENSE and THIRD_PARTY_NOTICES.md in dist/, so the tarball, the container image and the live demo carry them. */
+export function licenceFiles(): Plugin {
+  return {
+    name: 'jarvis:licence-files',
+    apply: 'build',
+    generateBundle() {
+      for (const fileName of ['LICENSE', 'THIRD_PARTY_NOTICES.md'])
+        this.emitFile({ type: 'asset', fileName, source: readFileSync(fileName, 'utf8') });
     },
   };
 }

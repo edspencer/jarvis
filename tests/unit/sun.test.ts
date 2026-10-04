@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { daysInYear, hhmm, localToUTC, solarPosition, tzLabel, tzOffsetMin, utcToLocal } from '../../src/core/sun';
 
-// Tampa, Florida (27.95° N, 82.46° W, America/New_York). The reference values below come from an independent
+// New York City (40.71° N, 74.01° W, America/New_York). The reference values below come from an independent
 // implementation (the Python `astral` 3.2 package), not from this code.
-const SITE = { lat: 27.95, lon: -82.46, tz: 'America/New_York' };
+const SITE = { lat: 40.71, lon: -74.01, tz: 'America/New_York' };
 const doyOf = (y: number, m: number, d: number) => (Date.UTC(y, m - 1, d) - Date.UTC(y, 0, 1)) / 86400000 + 1;
 
 /** local clock minutes of solar noon, and the elevation then */
@@ -36,10 +36,10 @@ function crossing(y: number, m: number, d: number, from: number, to: number): nu
 describe('solarPosition: the known values table (2026)', () => {
   it.each([
     // [month, day, solar noon (local clock), zone, noon elevation]
-    [3, 20, '13:37:25', 'EDT', 62.11],
-    [6, 21, '13:31:33', 'EDT', 85.49],
-    [9, 22, '13:22:45', 'EDT', 62.17],
-    [12, 21, '12:27:40', 'EST', 38.63],
+    [3, 20, '13:03:37', 'EDT', 49.34],
+    [6, 21, '12:57:45', 'EDT', 72.73],
+    [9, 22, '12:48:57', 'EDT', 49.42],
+    [12, 21, '11:53:52', 'EST', 25.89],
   ])('%i/%i: solar noon %s %s (±1 min), elevation %f°', (m, d, local, zone, elevation) => {
     const n = noon(2026, m, d);
     const [hh, mm, ss] = local.split(':').map(Number);
@@ -57,8 +57,8 @@ describe('solarPosition: the known values table (2026)', () => {
 
   it.each([
     // [month, day, sunrise, sunset] in local clock time (astral, rounded to the minute)
-    [6, 21, '06:34', '20:29'],
-    [12, 21, '07:17', '17:39'],
+    [6, 21, '05:25', '20:30'],
+    [12, 21, '07:16', '16:31'],
   ])('%i/%i: sunrise %s, sunset %s (±2 min)', (m, d, rise, set) => {
     const toMin = (s: string) => +s.slice(0, 2) * 60 + +s.slice(3);
     expect(Math.abs(crossing(2026, m, d, 4 * 60, 11 * 60) - toMin(rise))).toBeLessThanOrEqual(2);
@@ -67,10 +67,10 @@ describe('solarPosition: the known values table (2026)', () => {
 
   it('azimuth is due south (≈180°) at solar noon in winter and north of east at a summer sunrise', () => {
     const doy = doyOf(2026, 12, 21);
-    const s = solarPosition(localToUTC(2026, doy, 12 * 60 + 27, SITE.tz), SITE.lat, SITE.lon);
+    const s = solarPosition(localToUTC(2026, doy, 11 * 60 + 54, SITE.tz), SITE.lat, SITE.lon);
     expect(s.azimuth).toBeGreaterThan(178);
     expect(s.azimuth).toBeLessThan(182);
-    const r = solarPosition(localToUTC(2026, doyOf(2026, 6, 21), 6 * 60 + 40, SITE.tz), SITE.lat, SITE.lon);
+    const r = solarPosition(localToUTC(2026, doyOf(2026, 6, 21), 5 * 60 + 31, SITE.tz), SITE.lat, SITE.lon);
     expect(r.azimuth).toBeGreaterThan(55);
     expect(r.azimuth).toBeLessThan(70);
   });

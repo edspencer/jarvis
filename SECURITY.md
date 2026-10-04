@@ -5,7 +5,13 @@
 Please report security issues privately, through
 [GitHub's private vulnerability reporting](https://github.com/edspencer/jarvis/security/advisories/new), not in a public
 issue. Say what is affected (the viewer, the site tools, the container image), how to reproduce it, and what an attacker
-could do with it. You should get a reply within a week. Fixes go into the latest release; there are no back-ports.
+could do with it. You should get a reply within a week. Please don't include a real building's site data (models,
+addresses, hostnames, tokens) unless the issue needs it.
+
+## Supported versions
+
+The latest release (the `latest` container image and release tarball) and `main`. Fixes go into the next release;
+there are no back-ports to older versions.
 
 ## What to know before you deploy
 

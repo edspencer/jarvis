@@ -225,8 +225,11 @@ A JSON file listing scanned drawings placed in the plan frame (made by fitting e
 
 **Blender.** Custom properties on objects are exported as extras (glTF exporter: Include → Custom Properties). Apply
 transforms you don't need; keep the scene's top level flat (one object or one empty per thing). Then
-`gltfpack -i in.glb -o out.glb -cc -tc` for meshopt geometry and KTX2 textures (add `-kn` to keep node names and
-`-ke` to keep extras, or gltfpack may merge nodes and drop them).
+`gltfpack -i in.glb -o out.glb -cc -tc -kn -ke -km` for meshopt geometry and KTX2 textures: `-kn` keeps named nodes
+and `-ke` extras (without them gltfpack may merge nodes and drops the extras), `-km` keeps named materials (without it
+gltfpack merges materials with the same values, whatever their names, which breaks the roles of §6). `-tc` needs a
+native gltfpack build: the npm package has no BasisU. With `gltf-transform`, use `meshopt` (and `etc1s` or `uastc`)
+rather than `optimize`, which flattens, joins and renames nodes by default.
 
 **SketchUp, Revit, CAD.** Export glTF (natively or via a plug-in), or go through Blender. Name groups and components as
 in §3 or write `match` rules in the manifest for the names you have.

@@ -1,6 +1,11 @@
 # Contributing
 
 Thanks for helping. Issues and pull requests are welcome: bugs, viewer features, plugins, model conventions, docs.
+Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md). Security issues go through
+[SECURITY.md](SECURITY.md), not a public issue.
+
+The docs ([docs/README.md](docs/README.md)) explain the site manifest, the model format and the plugin API; the
+[plugin guide](docs/guide/writing-a-plugin.md) is the place to start for a plugin.
 
 ## Set up
 
@@ -13,12 +18,13 @@ npx playwright install chromium   # once, for the end-to-end tests
 ```
 
 `npm run dev` serves the demo house in `examples/demo-site` unless `JARVIS_SITE` points at another site folder (keep
-your own under `sites/`, which git ignores). With `?ha=mock` the Home Assistant plugin plays a made-up state stream.
+your own under `sites/`, which git ignores). With `?ha=mock` the Home Assistant plugin plays a made-up state stream, so
+no Home Assistant is needed. `npm run test:watch` keeps the unit tests running as you edit.
 
 ## Before you open a pull request
 
 ```sh
-npm run format         # Prettier
+npm run format         # Prettier (CI runs npm run format:check)
 npm run lint           # ESLint
 npm run typecheck      # tsc, strict
 npm test               # unit tests (Vitest)
@@ -38,8 +44,11 @@ merge. If a test fails only in CI, the workflow run has the Playwright report an
 - **Formats are public.** The manifest (`schema/site.schema.json`), the model format (`docs/model-format.md`) and the
   plugins' data files are what people build sites against. Keep changes backwards compatible within `jarvis-site/1` /
   `jarvis-model/1`, and update the schema, the docs and `validate-site` together.
-- **No real buildings.** Don't commit models, photos, device lists or addresses of a real place, yours included. Test
-  data is synthetic (`examples/demo-site`, `tests/fixtures`).
+- **No real buildings.** Never commit a real building's site data, yours included: models, photos, floor plans,
+  device lists and Home Assistant entity ids, addresses or coordinates, hostnames and IPs. Keep your own site folder
+  under `sites/` (git-ignored) or outside the checkout, and check `git status` before you commit. Test data is
+  synthetic (`examples/demo-site`, `tests/fixtures`); a bug report or test that needs a real case gets a synthetic
+  one that shows the same thing.
 - **Style.** Prettier and ESLint settle formatting. Comments say why, not what. Match the code around you.
 
 ## Commits and pull requests

@@ -13,4 +13,4 @@
 - [ ] docs updated if the manifest (`schema/site.schema.json`), the model format (`docs/model-format.md`) or a plugin's
       data format changed
 - [ ] if `tools/make-demo-site.ts` changed: `npm run demo-site` and the regenerated `examples/demo-site` committed
-- [ ] nothing from a real building (models, photos, device lists, addresses) in the diff
+- [ ] nothing from a real building (models, photos, device lists, entity ids, addresses, hostnames, IPs) in the diff
