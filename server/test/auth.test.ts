@@ -360,12 +360,12 @@ describe('the client address behind a trusted proxy', () => {
     const proxy = ['10.0.0.1'];
     expect(clientAddress('10.0.0.9', '6.6.6.6', proxy)).toBe('10.0.0.9'); // not from the proxy: the header is ignored
     expect(clientAddress('10.0.0.1', undefined, proxy)).toBe('10.0.0.1');
-    expect(clientAddress('10.0.0.1', '192.168.1.20', proxy)).toBe('192.168.1.20');
-    expect(clientAddress('::ffff:10.0.0.1', '192.168.1.20', proxy)).toBe('192.168.1.20');
+    expect(clientAddress('10.0.0.1', '198.51.100.20', proxy)).toBe('198.51.100.20');
+    expect(clientAddress('::ffff:10.0.0.1', '198.51.100.20', proxy)).toBe('198.51.100.20');
     // a client sending its own X-Forwarded-For can't choose its address: the proxy appends the real one
-    expect(clientAddress('10.0.0.1', '1.2.3.4, 192.168.1.20', proxy)).toBe('192.168.1.20');
-    expect(clientAddress('10.0.0.1', ['1.2.3.4', '192.168.1.20, 10.0.0.2'], ['10.0.0.1', '10.0.0.2'])).toBe(
-      '192.168.1.20',
+    expect(clientAddress('10.0.0.1', '1.2.3.4, 198.51.100.20', proxy)).toBe('198.51.100.20');
+    expect(clientAddress('10.0.0.1', ['1.2.3.4', '198.51.100.20, 10.0.0.2'], ['10.0.0.1', '10.0.0.2'])).toBe(
+      '198.51.100.20',
     );
     expect(clientAddress('10.0.0.1', '10.0.0.1', proxy)).toBe('10.0.0.1');
     expect(clientAddress('10.0.0.1', 'garbage', proxy)).toBe('10.0.0.1');
