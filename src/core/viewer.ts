@@ -140,12 +140,14 @@ function startSite(site: Site, loading: Loading): void {
     getCollider: () => model.collider,
     onCrouchChange: () => hud.update('status'),
   });
+  const materials = createMaterialStack();
   const picker = createPicker({
     camera,
     root: model.root,
     parts: model.parts,
     ownerOf: model.ownerOf,
     isGlass: model.isGlass,
+    baseOf: materials.base,
   });
   const flight = createFlight({
     state,
@@ -300,7 +302,6 @@ function startSite(site: Site, loading: Loading): void {
   });
   const hudEl = mountHud(hud);
 
-  const materials = createMaterialStack();
   const three = { THREE, scene, camera, renderer, model, P, toPlan, unit: site.unit, materials };
   // a plugin with a manifest section (resolved: the lights plugin also reads the old home-assistant.map)
   const enabled = (id: string) =>

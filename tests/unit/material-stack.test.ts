@@ -4,6 +4,7 @@
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
 import { createMaterialStack } from '../../src/core/material-stack';
+import { MATERIAL_PRIORITY } from '../../src/plugin-api';
 
 function setup() {
   const own = new THREE.MeshStandardMaterial({ name: 'oak', opacity: 1 });
@@ -32,7 +33,7 @@ describe('material overrides', () => {
     expect(mesh.material).toBe(ghost); // the fade going doesn't take the ghost with it
     b.dispose();
     expect(mesh.material).toBe(own);
-    expect(mesh.userData.baseMaterial).toBeUndefined();
+    expect(stack.base(mesh)).toBe(own);
     expect(stack.size()).toBe(0);
   });
 
@@ -55,6 +56,62 @@ describe('material overrides', () => {
     expect(mesh.material).toBe(ghost);
     b.dispose();
     expect(mesh.material).toBe(own);
+  });
+
+  it("energy mode sits above a plugin's override at the default priority, pushed before or after it", () => {
+    expect(MATERIAL_PRIORITY.energy).toBeGreaterThan(0);
+    expect(MATERIAL_PRIORITY.glow).toBeLessThan(MATERIAL_PRIORITY.fade);
+    expect(MATERIAL_PRIORITY.fade).toBeLessThan(0);
+    for (const energyFirst of [true, false]) {
+      const { own, mesh, stack, ghost } = setup();
+      const theirs = new THREE.MeshBasicMaterial({ name: 'theirs' });
+      const pushEnergy = () => stack.push(mesh, ghost, { priority: MATERIAL_PRIORITY.energy });
+      const pushTheirs = () => stack.push(mesh, theirs); // a third-party plugin, at the default 0
+      let energy;
+      if (energyFirst) {
+        energy = pushEnergy();
+        pushTheirs();
+      } else {
+        pushTheirs();
+        energy = pushEnergy();
+      }
+      expect(mesh.material).toBe(ghost);
+      energy.dispose();
+      expect(mesh.material).toBe(theirs);
+      expect(stack.base(mesh)).toBe(own);
+    }
+  });
+
+  it('base() is typed as the mesh: a plain Mesh may hold an array; an uncovered array comes back as it is', () => {
+    const { own, stack } = setup();
+    const multi = new THREE.Mesh(new THREE.BoxGeometry(), [own, own]);
+    const m = stack.base(multi); // THREE.Material | THREE.Material[]
+    expect(Array.isArray(m) ? m.length : -1).toBe(2);
+    const typed = new THREE.Mesh(new THREE.BoxGeometry(), own);
+    const one: THREE.MeshStandardMaterial = stack.base(typed); // no cast needed for a typed mesh
+    expect(one.name).toBe('oak');
+  });
+
+  it("picking reads the mesh's own material through base(), not the override drawn over it", async () => {
+    const { createPicker } = await import('../../src/core/inspect');
+    const { mesh, stack, ghost } = setup();
+    const root = new THREE.Group();
+    root.add(mesh);
+    root.updateMatrixWorld(true);
+    const camera = new THREE.PerspectiveCamera(50, 1, 0.1, 100);
+    camera.position.set(0, 0, 5);
+    const seen: string[] = [];
+    const picker = createPicker({
+      camera,
+      root,
+      parts: {},
+      ownerOf: (o) => o,
+      isGlass: (m) => (seen.push(m.name), false),
+      baseOf: stack.base,
+    });
+    stack.push(mesh, ghost, { priority: MATERIAL_PRIORITY.energy });
+    expect(picker.model(new THREE.Vector2(0, 0))?.node).toBe(mesh);
+    expect(seen).toEqual(['oak']);
   });
 
   it('equal priorities: the later push is on top', () => {
@@ -82,12 +139,11 @@ describe('material overrides', () => {
     expect(name(mesh)).toBe('faded oak');
   });
 
-  it("keeps the mesh's own in base() and userData.baseMaterial while covered; disposing twice is harmless", () => {
+  it("keeps the mesh's own in base() while covered; disposing twice is harmless", () => {
     const { own, mesh, stack, ghost } = setup();
     expect(stack.base(mesh)).toBe(own);
     const o = stack.push([mesh, mesh], ghost);
     expect(stack.base(mesh)).toBe(own);
-    expect(mesh.userData.baseMaterial).toBe(own);
     o.dispose();
     o.dispose();
     o.set(new THREE.MeshBasicMaterial()); // a disposed override does nothing

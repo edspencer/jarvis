@@ -1824,13 +1824,18 @@ export class JvStick extends RegionElement {
     if (e.pointerId === this.finger) this.release();
   };
   private onResize = () => this.hud.update('stick');
+  // the window lost focus (an app switch, a notification): let go, as input.ts does the held keys, so a stick held
+  // meanwhile doesn't keep walking; the finger's later moves are ignored until it touches the stick again
+  private onBlur = () => this.release();
   override connectedCallback(): void {
     super.connectedCallback();
     addEventListener('resize', this.onResize);
+    addEventListener('blur', this.onBlur);
   }
   override disconnectedCallback(): void {
     super.disconnectedCallback();
     removeEventListener('resize', this.onResize);
+    removeEventListener('blur', this.onBlur);
     this.release();
   }
   protected override updated(): void {
