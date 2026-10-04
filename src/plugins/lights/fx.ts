@@ -5,7 +5,11 @@
 // unchanged from the prototype's Home Assistant layer, so the scene renders exactly as before.
 import * as THREE from 'three';
 import { isMesh, isShown } from '../../core/three-utils';
+import type { MaterialOverride, MaterialsApi } from '../../plugin-api';
 import type { Look } from './look';
+
+/** a fixture's glowing copy sits at the bottom of the mesh's material stack: a fade or energy mode draws over it */
+const GLOW_PRIORITY = -10;
 
 const LINE_MIN = 1.2; // m: an emitter longer than this is treated as a line (cove, strip)
 const LINE_STEP = 0.6; // m between halos along a line
@@ -16,8 +20,8 @@ type Emitter = {
   mesh: THREE.Mesh;
   mat: THREE.MeshStandardMaterial;
   base: { emissive: THREE.Color; intensity: number };
-  /** the shared material it had (put back on dispose) */
-  orig: THREE.Material;
+  /** the glowing copy over the shared material (taken off on dispose) */
+  override: MaterialOverride;
 };
 
 /** a fixture as the lights plugin drives it */
@@ -47,6 +51,8 @@ export interface LightFxDeps {
   scene: THREE.Scene;
   camera: THREE.Camera;
   fixtures: Record<string, THREE.Object3D>;
+  /** the core's material overrides */
+  materials: MaterialsApi;
   emitterHints?: string;
   /** real point lights (?halights) */
   poolSize: number;
@@ -65,6 +71,7 @@ export function createLightFx({
   scene,
   camera,
   fixtures,
+  materials,
   emitterHints,
   poolSize: POOL,
   room,
@@ -91,8 +98,8 @@ export function createLightFx({
     node.traverse((o) => {
       if (isMesh(o)) meshes.push(o);
     });
-    // a plugin that swaps in a temporary material (energy mode's ghost) keeps the mesh's own in userData.baseMaterial
-    const matOf = (o: THREE.Mesh) => (o.userData.baseMaterial ?? o.material) as THREE.MeshStandardMaterial;
+    // the mesh's own, whatever another plugin draws over it for now (energy mode's ghost, the blueprint fade)
+    const matOf = (o: THREE.Mesh) => materials.base(o) as THREE.MeshStandardMaterial;
     const isEm = (m: THREE.MeshStandardMaterial) =>
       m.emissive && (m.emissive.r + m.emissive.g + m.emissive.b) * (m.emissiveIntensity ?? 1) > 0.01;
     let em = meshes.filter((o) => isEm(matOf(o)) || EMIT_NAME.test(matOf(o).name || ''));
@@ -100,8 +107,8 @@ export function createLightFx({
     const parts: Emitter[] = em.map((o) => {
       const base = matOf(o);
       const mat = base.clone();
-      o.material = mat;
-      return { mesh: o, mat, base: { emissive: base.emissive.clone(), intensity: base.emissiveIntensity }, orig: base };
+      const override = materials.push(o, mat, { priority: GLOW_PRIORITY });
+      return { mesh: o, mat, base: { emissive: base.emissive.clone(), intensity: base.emissiveIntensity }, override };
     });
     const box = new THREE.Box3();
     for (const p of parts) box.expandByObject(p.mesh);
@@ -173,20 +180,17 @@ export function createLightFx({
       if (look.kind === 'none') {
         p.mat.emissive.copy(p.base.emissive);
         p.mat.emissiveIntensity = p.base.intensity;
-        continue;
-      }
-      if (look.kind === 'off') {
+      } else if (look.kind === 'off') {
         p.mat.emissive.setRGB(0, 0, 0);
-        continue;
-      }
-      if (look.kind === 'fault') {
+      } else if (look.kind === 'fault') {
         p.mat.emissive.copy(FAULT);
         p.mat.emissiveIntensity = 0.6;
-        continue;
+      } else {
+        p.mat.emissive.copy(look.colour);
+        // the build's own strength (KHR_materials_emissive_strength) is the "full" glow; a dimmed light keeps a little
+        p.mat.emissiveIntensity = Math.max(1.5, p.base.intensity) * (0.15 + 0.85 * look.level);
       }
-      p.mat.emissive.copy(look.colour);
-      // the build's own strength (KHR_materials_emissive_strength) is the "full" glow; a dimmed light keeps a little
-      p.mat.emissiveIntensity = Math.max(1.5, p.base.intensity) * (0.15 + 0.85 * look.level);
+      p.override.refresh(); // a copy drawn over it (the blueprint fade) takes the new glow
     }
   }
 
@@ -338,7 +342,7 @@ export function createLightFx({
     }
     for (const f of Object.values(ha.fx))
       for (const e of f.parts) {
-        e.mesh.material = e.orig;
+        e.override.dispose();
         e.mat.dispose();
       }
     ha.pool = [];

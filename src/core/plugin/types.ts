@@ -752,6 +752,29 @@ export interface ThreeApi {
   toPlan(v: THREE.Vector3): { X: number; Y: number; Z: number };
   /** metres per plan unit */
   unit: number;
+  /** material overrides: the only way to change what a model mesh is drawn with (see MaterialsApi) */
+  materials: MaterialsApi;
+}
+
+/** an override's material: a fixed one, or one made from the material beneath it (the mesh's own, or a lower layer's;
+ * called again whenever the stack changes, so cache what it makes) */
+export type MaterialLayer = THREE.Material | ((below: THREE.Material, mesh: THREE.Mesh) => THREE.Material);
+
+/** one layer on a set of meshes; dispose takes it off (in any order), and it goes when the plugin stops */
+export interface MaterialOverride extends Disposable {
+  /** change this layer's material; it keeps its place in each mesh's stack */
+  set(m: MaterialLayer): void;
+  /** run the layers again (yours changed what a function above it copies, e.g. a light's glow under the fade) */
+  refresh(): void;
+}
+
+/** Each mesh shows the top of a stack of overrides over its own material: higher `priority` on top (default 0; the
+ * lights' glowing copies are at -10, the blueprint fade at -5, energy mode at 0), and the later push on top of an
+ * equal one. Don't assign `mesh.material` on model meshes yourself. */
+export interface MaterialsApi {
+  push(meshes: THREE.Mesh | Iterable<THREE.Mesh>, m: MaterialLayer, opts?: { priority?: number }): MaterialOverride;
+  /** the mesh's own material, whatever is drawn over it (also in userData.baseMaterial while it has overrides) */
+  base(mesh: THREE.Mesh): THREE.Material;
 }
 
 export interface ViewApi {

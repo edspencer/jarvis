@@ -45,6 +45,20 @@ const energyMeshes = () =>
       return n;
     })()`,
   );
+/** meshes drawn fainter than their own material (the blueprint fade): see-through or without depth writes */
+const fadedMeshes = () =>
+  twin<number>(
+    page,
+    `(() => {
+      let n = 0;
+      twin.root.traverse((o) => {
+        if (!o.isMesh || Array.isArray(o.material)) return;
+        const own = twin.materials.base(o);
+        if (o.material !== own && (o.material.opacity < own.opacity - 1e-6 || o.material.depthWrite !== own.depthWrite)) n++;
+      });
+      return n;
+    })()`,
+  );
 const insp = () => page.locator('jv-inspector aside');
 const energyPanel = () => page.locator('jv-dock section[data-panel="energy"]');
 
@@ -74,6 +88,23 @@ test('J toggles energy mode: chip, legend, ghosted materials; off puts the mater
   await expect(page.locator('jv-status [data-chip="energy"]')).toHaveAttribute('aria-pressed', 'false');
   await expect(legend).toHaveCount(0);
   expect(await energyMeshes()).toBe(0);
+});
+
+test('blueprint fade and energy mode share the materials: B on, J on, B off, J off puts everything back', async () => {
+  expect(await fadedMeshes()).toBe(0);
+  await press('b');
+  await expect.poll(() => twin<boolean>(page, 'twin.bp.mesh !== null')).toBe(true);
+  await expect.poll(fadedMeshes).toBeGreaterThan(0);
+  await press('j');
+  await expect.poll(energyOn).toBe(true);
+  await expect.poll(energyMeshes).toBeGreaterThan(0);
+  await press('b');
+  await expect.poll(() => twin<boolean>(page, 'twin.bp.active === null && twin.bp.faded.size === 0')).toBe(true);
+  expect(await energyMeshes()).toBeGreaterThan(0); // energy mode is still on
+  await press('j');
+  await expect.poll(energyOn).toBe(false);
+  expect(await energyMeshes()).toBe(0);
+  expect(await fadedMeshes()).toBe(0); // the house isn't left faded
 });
 
 test('Shift+J opens the Energy panel: top consumers, and the house load in the status strip', async () => {

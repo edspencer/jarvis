@@ -52,7 +52,7 @@ have their own page, [`plugins/energy.md`](plugins/energy.md).
 | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `id`, `site`, `config`      | This plugin's id; the resolved manifest; this plugin's section                                                                                                                                                                                                                                                                    |
 | `load(path)`                | Fetch JSON relative to the manifest (a site mapping file: `ctx.load('irrigation.json')`)                                                                                                                                                                                                                                          |
-| `three`                     | `THREE`, `scene`, `camera`, `renderer`, `model` (root, fixtures, rooms, owners, groups, box, `ownerOf`), `P()` plan → world, `toPlan()` world → plan, `unit`                                                                                                                                                                      |
+| `three`                     | `THREE`, `scene`, `camera`, `renderer`, `model` (root, fixtures, rooms, owners, groups, box, `ownerOf`), `P()` plan → world, `toPlan()` world → plan, `unit`, `materials` (`push(meshes, material \| fn, { priority })` → override, `base(mesh)`; below)                                                                          |
 | `view`                      | `state` (mode, cutaway, …), `setMode`, `fly(target, centre)` (stand off towards `centre`; `null`: away from the building), `flyTo(subject)`, `teleport`, `here()` (the walker's room), `aim()` (crosshair or mouse), `seen(p)`, `addVisibilityRule(fn)`, `applyVisibility`, `toggleLayer`, `layers()`, `requestShadows()`         |
 | `pick`                      | `at(ndc)` → subject; `model(ndc)`; `addScreenPicker` for markers drawn in screen space; `addResolver` to turn a model hit into your subject                                                                                                                                                                                       |
 | `events`                    | `frame`, `select`, `mode`, `visibility`, `model`, `pointerlock`, `click` (set `handled` to stop the inspect), `ready` (every plugin has started), and your own `'<id>:<name>'`                                                                                                                                                    |
@@ -137,11 +137,17 @@ conf, src, meta })`. They come from the site's mapping files (the lights plugin 
   registry item's entities; faults a device's), so any plugin can ask `store.entitiesOf('pins:elec.panel.a')`. The
   Home Assistant section appears on anything that has bindings. A mock connector's bindings (`conf: 'mock'`) give way
   to any real one. Bindings never extend what a connector allows.
-- **Materials are shared.** A plugin that swaps a mesh's material for a while (energy mode's ghost) keeps the mesh's
-  own in `mesh.userData.baseMaterial` until it puts it back; a plugin that prepares materials from a mesh's (the lights
-  clone a fixture's) reads `userData.baseMaterial ?? material`, and picking does the same. A plugin that swaps
-  materials puts back the one it saved only if the mesh still has its temporary one, so a swap made meanwhile by
-  someone else survives.
+- **Materials are shared.** A plugin never assigns `mesh.material` on the model: it pushes an override,
+  `const o = ctx.three.materials.push(meshes, material, { priority })`, and takes it off with `o.dispose()` (or leaves
+  that to the plugin's stop). Each mesh shows the top of its stack of overrides over its own material: the higher
+  `priority` on top (default 0), the later push on top of an equal one; so any order of on and off puts back exactly
+  what is left. The material can be a function of the one beneath it, `(below, mesh) => material` (the blueprint fade
+  makes a faded copy of whatever is there; cache what it makes, it runs again whenever the stack changes);
+  `o.set(m)` changes a layer in place, and `o.refresh()` runs the layers above yours again after you edited your
+  material. The built-in plugins: the lights' glowing copies at -10, the blueprint fade at -5, energy mode at 0.
+  `materials.base(mesh)` is the mesh's own material, whatever covers it (also in `mesh.userData.baseMaterial` while
+  covered): a plugin that prepares materials from a mesh's (the lights clone a fixture's) starts from it, and picking
+  reports it.
 - The allow-list protects against bugs and misclicks, not hostile code: Home Assistant's login tokens are in
   `localStorage`, readable by any code on the page, plugins included. The README says how to limit the damage (a
   dedicated, non-admin Home Assistant user for the viewer).

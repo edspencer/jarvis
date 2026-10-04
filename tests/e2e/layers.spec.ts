@@ -160,10 +160,10 @@ test('B shows a blueprint sheet, fades the model and names the sheet in the lege
   await page.waitForFunction(() => !!(window as unknown as { twin: { bp: { mesh: unknown } } }).twin.bp.mesh, null, {
     timeout: 120_000,
   });
-  expect(await twin<boolean>(page, 'twin.bp.saved.size > 0')).toBe(true);
+  expect(await twin<boolean>(page, 'twin.bp.faded.size > 0')).toBe(true);
   await expect(page.locator('jv-legend [data-legend="blueprints"]')).toBeVisible();
   await press('b');
-  expect(await twin<boolean>(page, 'twin.bp.mesh === null && twin.bp.saved.size === 0')).toBe(true);
+  expect(await twin<boolean>(page, 'twin.bp.mesh === null && twin.bp.faded.size === 0')).toBe(true);
 });
 
 test("an extra model's key loads it (?noextra), then hides and shows it", async () => {

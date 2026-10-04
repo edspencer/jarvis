@@ -1,12 +1,14 @@
 // Blueprint overlays: a scanned sheet as line art (dark ink, transparent paper) in the plan frame (the site's sheet index
 // and one image per sheet; docs/model-format.md). Plans lie at their floor (a ceiling / roof plan at its ceiling, or
-// on its floor with "on floor"); elevations stand where their corners put them (just outside their facade). While one is shown, the model fades
-// (default 20 %, depthWrite off) and the sheet is drawn last with no depth test, so it reads crisply through
-// everything. Images load on demand and are cached.
+// on its floor with "on floor"); elevations stand where their corners put them (just outside their facade). While one
+// is shown, the model fades (default 20 %, depthWrite off: a faded copy of each material, pushed as a material override
+// under energy mode's) and the sheet is drawn last with no depth test, so it reads crisply through everything. Images
+// load on demand and are cached.
 import * as THREE from 'three';
 import type { BlueprintsConfig } from '../../site';
 import { isMesh } from '../../core/three-utils';
 import type { Groups } from '../../core/types';
+import type { MaterialOverride, MaterialsApi } from '../../plugin-api';
 import { P, planUnit } from '../../core/units';
 
 type Corner = [number, number, number];
@@ -43,11 +45,8 @@ const normaliseSheet = (s: SheetEntry): BlueprintSheet => ({
   rms: s.rms ?? s.rms_ft ?? null,
 });
 
-interface SavedMaterial {
-  transparent: boolean;
-  opacity: number;
-  depthWrite: boolean;
-}
+/** the fade's place in each mesh's material stack: over the lights' glowing copies, under energy mode */
+const FADE_PRIORITY = -5;
 
 export interface BlueprintState {
   index: BlueprintSheet[] | null;
@@ -58,7 +57,8 @@ export interface BlueprintState {
   fade: number;
   hideAbove: boolean;
   onFloor: boolean;
-  saved: Map<THREE.Material, SavedMaterial>;
+  /** material -> its faded copy, while a sheet is shown */
+  faded: Map<THREE.Material, THREE.Material>;
   /** what "hide above" hides for the active sheet */
   hidden: THREE.Object3D[];
 }
@@ -87,6 +87,7 @@ export function createBlueprints({
   renderer,
   owners,
   groups,
+  materials,
   applyVisibility,
   onChange,
 }: {
@@ -95,6 +96,7 @@ export function createBlueprints({
   renderer: THREE.WebGLRenderer;
   owners: THREE.Object3D[];
   groups: Groups;
+  materials: MaterialsApi;
   applyVisibility: () => void;
   /** the sheet or an option changed (the panel, the legend) */
   onChange: () => void;
@@ -108,7 +110,7 @@ export function createBlueprints({
     fade: 0.2,
     hideAbove: true,
     onFloor: false,
-    saved: new Map(),
+    faded: new Map(),
     hidden: [],
   };
 
@@ -124,22 +126,34 @@ export function createBlueprints({
     return bp.index;
   }
 
-  // model fade: every material in the model goes transparent at fade x its own opacity, without depth writes
+  // model fade: every mesh in the model is drawn with a copy of its material (or of whatever is beneath the fade in its
+  // stack: a light's glowing copy), transparent at fade x its own opacity, without depth writes
+  let fade: MaterialOverride | null = null;
+  function fadedOf(below: THREE.Material): THREE.Material {
+    let f = bp.faded.get(below);
+    if (!f) {
+      f = below.clone();
+      // a wire screen's shader tweak (core/materials.ts) isn't part of a clone
+      f.onBeforeCompile = below.onBeforeCompile;
+      f.customProgramCacheKey = below.customProgramCacheKey;
+      bp.faded.set(below, f);
+    } else f.copy(below); // again: the fade changed, or what is beneath it did (a light's glow)
+    return Object.assign(f, { transparent: true, opacity: below.opacity * bp.fade, depthWrite: false });
+  }
   function fadeModel(on: boolean): void {
-    const mats = new Set<THREE.Material>();
-    for (const o of owners)
-      o.traverse((m) => {
-        if (isMesh(m)) mats.add(m.material as THREE.Material);
-      });
-    for (const m of mats) {
-      if (!bp.saved.has(m))
-        bp.saved.set(m, { transparent: m.transparent, opacity: m.opacity, depthWrite: m.depthWrite });
-      const s = bp.saved.get(m)!;
-      if (on) Object.assign(m, { transparent: true, opacity: s.opacity * bp.fade, depthWrite: false });
-      else Object.assign(m, s);
-      m.needsUpdate = true;
+    fade?.dispose();
+    fade = null;
+    if (on) {
+      const meshes: THREE.Mesh[] = [];
+      for (const o of owners)
+        o.traverse((m) => {
+          if (isMesh(m)) meshes.push(m);
+        });
+      fade = materials.push(meshes, fadedOf, { priority: FADE_PRIORITY });
+    } else {
+      for (const f of bp.faded.values()) f.dispose();
+      bp.faded.clear();
     }
-    if (!on) bp.saved.clear();
   }
 
   function setBlueprintFade(f: number): void {
