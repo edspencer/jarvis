@@ -141,3 +141,20 @@ describe('energy mode: the material swap', () => {
     es.dispose();
   });
 });
+
+describe('review: edge cases', () => {
+  it("a load meter whose only child is a source: Other is the meter's own power", async () => {
+    const { buildTree, compute } = await import('../../src/plugins/energy/tree');
+    const tree = buildTree({
+      meters: [{ id: 'm', power: 'sensor.m', children: [{ id: 'pv', kind: 'source', power: 'sensor.pv' }] }],
+    });
+    const st = (id: string, v: string) => ({ entity_id: id, state: v, attributes: { unit_of_measurement: 'W' } });
+    const rs = compute(tree, (id) => ({ 'sensor.m': st('sensor.m', '500'), 'sensor.pv': st('sensor.pv', '300') })[id]);
+    expect(rs.get('m.other')?.w).toBe(500);
+  });
+  it('fmtW rounds before choosing W or kW', async () => {
+    const { fmtW } = await import('../../src/plugins/energy/scale');
+    expect(fmtW(999.6)).toBe('1.0 kW');
+    expect(fmtW(999.4)).toBe('999 W');
+  });
+});

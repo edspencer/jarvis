@@ -73,7 +73,7 @@ export function nice(v: number): number {
 export function fmtW(w: number | null | undefined): string {
   if (w === null || w === undefined || !Number.isFinite(w)) return '—';
   const a = Math.abs(w);
-  if (a < 1000) return `${Math.round(w).toLocaleString('en-US')} W`;
+  if (Math.round(a) < 1000) return `${Math.round(w).toLocaleString('en-US')} W`;
   return `${(w / 1000).toFixed(a < 10000 ? 1 : 0)} kW`;
 }
 

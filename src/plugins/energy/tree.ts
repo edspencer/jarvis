@@ -154,7 +154,7 @@ export function compute(tree: Tree, get: (id: string) => EntityState | undefined
       const rep = m.spec.remainder ? watts(get(m.spec.remainder)) : null;
       let w: number | null = rep;
       if (w === null && m.power.length) {
-        const sum = sumAll(loads.map((k) => (k.partial ? null : k.w)));
+        const sum = !loads.length ? 0 : sumAll(loads.map((k) => (k.partial ? null : k.w)));
         w = r.w === null || sum === null ? null : r.w - sum;
       }
       // a remainder a little below zero is the meters' disagreement, not a negative load
