@@ -6,82 +6,10 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏡</text></svg>">
 <title>JARVIS</title>
 </head>
-<!-- the site's own words (its name, viewpoints, layer keys, time zone) are filled in from the site manifest at start-up -->
+<!-- everything else (the HUD, the site's own words) is drawn by the app from the site manifest and the plugins -->
 <body>
 <div id="loading">Loading…</div>
 <div id="cross"></div>
-<div id="hover"></div>
-
-<button id="helpbtn" class="panel" type="button" title="Keys and controls (H)">?</button>
-<div id="help" class="panel hidden">
-  <h1>🏡 <span id="helptitle"></span></h1>
-  <p class="sub" id="helpsub"></p>
-  <table>
-    <tr><td>Click</td><td>Start walking (captures the mouse). <b>Esc</b> releases it.</td></tr>
-    <tr><td>W A S D / arrows</td><td>Move · <b>Shift</b> run · <b>Space</b> jump (walking) or rise (ghost)</td></tr>
-    <tr><td>C (hold)</td><td>Crouch and creep (walking; you stand when there's headroom) · sink (ghost)</td></tr>
-    <tr><td>Mouse</td><td>Look (or <b>Q</b> / <b>E</b> to turn without a mouse)</td></tr>
-    <tr><td>Click (walking)</td><td>Inspect the object under the crosshair</td></tr>
-    <tr><td>Tab</td><td>Walk ↔ overview (orbit: drag to rotate, right-drag to pan, wheel to zoom, click to inspect)</td></tr>
-    <tr><td>X</td><td>Cutaway: hide roofs and ceilings</td></tr>
-    <tr><td>U</td><td>Hide the upper storey (and roofs)</td></tr>
-    <tr id="helplayers"></tr>
-    <tr><td>B</td><td>Blueprint overlay: show / hide the last sheet chosen in the HUD's Blueprint list (plans lie at their floor, elevations stand on their facade; the model fades so the drawing shows through)</td></tr>
-    <tr><td>G</td><td>Ghost (on at start): fly through walls (Space up, C down). G again to walk with collision</td></tr>
-    <tr id="helpviews"></tr>
-    <tr><td>V</td><td>Home Assistant: faults through walls (once connected). Every HA device that needs attention gets a marker drawn over everything: red (pulsing) = offline, a dead Z-Wave node or a Zigbee device gone quiet; amber = battery low or weak signal; blue = firmware update. Hollow = placed by its room only. The list (top left) groups them by room: click one to fly there; click a marker to inspect it</td></tr>
-    <tr><td>Shift-V</td><td>Faults through walls: show the healthy devices too (green; grey = a bulb that is off at its wall switch)</td></tr>
-    <tr><td>T / Shift-click</td><td>Home Assistant: switch the light under the crosshair (walking) or the mouse (overview) on or off. A plain click only inspects; the inspect panel has a Turn on / off button too</td></tr>
-    <tr><td>P</td><td>Equipment pins: the registry's panels, HVAC, plumbing, network, appliances… one coloured letter per category (HUD: filter by category). Hollow = placed by its room only. Click a pin to inspect it; its connections are links that fly to the connected item</td></tr>
-    <tr><td>Shift-P</td><td>Equipment pins through walls (dimmed)</td></tr>
-    <tr><td>L</td><td>Wall plates: highlight the switch and outlet plates (amber marker = a switch box in the wiring sheet, blue = an outlet box, violet = unknown plate; the HUD filters switches / outlets / both). Click a plate to inspect it: its positions, breakers, the fixtures each one switches (links fly to them) and box-to-box links</td></tr>
-    <tr><td>Shift-L</td><td>Wall plates through walls</td></tr>
-    <tr><td>/</td><td>Find equipment by name, make or model (Enter flies to the first hit)</td></tr>
-    <tr><td>H</td><td>This help</td></tr>
-  </table>
-  <div class="go" id="go">Click the view to walk · H or ? brings this back</div>
-</div>
-
-<div id="hud" class="panel">
-  <div id="where">—</div>
-  <div class="row">Go to
-    <select id="rooms"><option value="">room…</option></select>
-  </div>
-  <div class="row" id="sunrow" title="Local clock time">Time <input id="sun" type="range" min="300" max="1260" step="5" value="900"> <span id="sunlabel"></span></div>
-  <div class="row" title="Day of the year: scrub through the seasons">Date <input id="sundate" type="range" min="1" max="365" step="1" value="274"> <span id="datelabel"></span></div>
-  <div class="row"><button id="sunnow" type="button">Now</button> <label title="Run the dates through the year at this time of day"><input id="sunyear" type="checkbox"> animate the year</label></div>
-  <div class="row" id="bprow" title="Lay a blueprint sheet under or within the model (B toggles the last one)">Blueprint
-    <select id="bpsel"><option value="">none</option></select></div>
-  <div class="row hidden" id="bpopts">
-    <span title="Opacity of the model while a blueprint is shown">Model</span> <input id="bpfade" type="range" min="0" max="100" step="5" value="20"> <span id="bpfadelabel">20%</span>
-    <label title="Hide everything above the sheet's floor (higher storeys, ceilings, roofs)"><input id="bpabove" type="checkbox" checked> hide above</label>
-    <label id="bpfloorlabel" title="Put a ceiling / roof plan on its storey's floor instead of at its ceiling"><input id="bpfloor" type="checkbox"> on floor</label>
-  </div>
-  <div class="row hidden" id="harow" title="Live light state from Home Assistant (read-only); logs in with HA's own login page">
-    <span id="hadot" class="hadot"></span> HA <span id="halabel">not connected</span>
-    <button id="habtn" type="button">Connect Home Assistant</button></div>
-  <div class="row hidden" id="hactlrow" title="Run Home Assistant scripts and switch a few things (the site's controls file)">
-    <span id="hactl"></span></div>
-  <div class="row hidden" id="hablink"></div>
-  <div class="row hidden" id="hawallrow"><label title="Home Assistant devices that are offline, low on battery or due an update, drawn over everything; lights with no device of their own in red (V; Shift-V shows the healthy ones too)"><input id="hawall" type="checkbox"> faults through walls</label></div>
-  <div class="row hidden" id="pinrow" title="The equipment registry, drawn as pins (P)">
-    <label><input id="pinson" type="checkbox"> equipment pins</label>
-    <label title="Draw the pins over walls and floors, dimmed (Shift-P)"><input id="pinswall" type="checkbox"> through walls</label>
-    <span id="pincount" class="pinnote"></span></div>
-  <div class="row hidden" id="pincats"></div>
-  <div class="row hidden" id="pinsearchrow"><input id="pinsearch" type="search" placeholder="find equipment… ( / )" autocomplete="off" spellcheck="false"></div>
-  <div id="pinhits" class="hidden"></div>
-  <div class="row hidden" id="platerow" title="Switch and outlet plates (L)">
-    <label><input id="plateson" type="checkbox"> highlight plates</label>
-    <label title="Draw the plate markers over walls and floors (Shift-L)"><input id="plateswall" type="checkbox"> through walls</label>
-    <select id="platekind" title="Which plates to highlight"><option value="both">switches + outlets</option><option value="switch">switches</option><option value="outlet">outlets</option></select>
-    <span id="platecount" class="pinnote"></span></div>
-  <div class="row flags" id="flags"></div>
-</div>
-
-<div id="info" class="panel"></div>
-<div id="faultlist" class="panel hidden"></div>
-
 <script type="module" src="/src/main.ts"></script>
 </body>
 </html>

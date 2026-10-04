@@ -125,7 +125,7 @@ export async function checkSite(manifestUrl: string, read: Reader): Promise<Site
   // the plugins' files
   const p = site.plugins;
   const ha = p['home-assistant'];
-  if (ha?.map) await jsonFile(ha.map, 'home-assistant map', false);
+  if (p.lights?.map) await jsonFile(p.lights.map, 'lights fixture map', false);
   if (ha?.controls) await jsonFile(ha.controls, 'home-assistant controls', false);
   if (p.faults) {
     const d = (await jsonFile(p.faults.devices, 'faults devices')) as { devices?: unknown } | undefined;

@@ -4,10 +4,10 @@
 // (default 20 %, depthWrite off) and the sheet is drawn last with no depth test, so it reads crisply through
 // everything. Images load on demand and are cached.
 import * as THREE from 'three';
-import type { BlueprintsConfig } from '../site';
-import { isMesh } from './three-utils';
-import type { DomLookup, Groups } from './types';
-import { P, planUnit } from './units';
+import type { BlueprintsConfig } from '../../site';
+import { isMesh } from '../../core/three-utils';
+import type { Groups } from '../../core/types';
+import { P, planUnit } from '../../core/units';
 
 type Corner = [number, number, number];
 
@@ -65,7 +65,8 @@ export interface BlueprintState {
 
 export interface Blueprints {
   bp: BlueprintState;
-  loadIndex(): void;
+  /** fetch the sheet index; resolves with it (empty: no sheets) */
+  loadIndex(): Promise<BlueprintSheet[]>;
   showBlueprint(id: string | null): Promise<void>;
   setBlueprintFade(f: number): void;
   fadeModel(on: boolean): void;
@@ -74,28 +75,29 @@ export interface Blueprints {
   toggle(): void;
   /** an extra model arrived: fade it and re-work "hide above" if a sheet is up */
   onModelAdded(): void;
+  setHideAbove(on: boolean): void;
+  setOnFloor(on: boolean): void;
+  /** does the "on floor" option apply to this sheet (a ceiling or roof plan above its floor)? */
+  floorOption(s: BlueprintSheet): boolean;
 }
 
 export function createBlueprints({
   config,
-  units,
   scene,
   renderer,
   owners,
   groups,
-  $,
   applyVisibility,
+  onChange,
 }: {
-  /** null: no blueprints for this site */
-  config: BlueprintsConfig | null;
-  /** the plan units' name, for the list ('ft') */
-  units: string;
+  config: BlueprintsConfig;
   scene: THREE.Scene;
   renderer: THREE.WebGLRenderer;
   owners: THREE.Object3D[];
   groups: Groups;
-  $: DomLookup;
   applyVisibility: () => void;
+  /** the sheet or an option changed (the panel, the legend) */
+  onChange: () => void;
 }): Blueprints {
   const bp: BlueprintState = {
     index: null,
@@ -110,31 +112,16 @@ export function createBlueprints({
     hidden: [],
   };
 
-  function loadIndex(): void {
-    if (!config) {
-      $('bprow').classList.add('hidden');
-      return;
+  async function loadIndex(): Promise<BlueprintSheet[]> {
+    let j: { sheets?: SheetEntry[] } | null = null;
+    try {
+      const r = await fetch(config.index);
+      j = r.ok ? ((await r.json()) as { sheets?: SheetEntry[] }) : null;
+    } catch (err) {
+      console.warn(`blueprints: no sheet index (${(err as Error).message})`); // the walkthrough just has no blueprints
     }
-    fetch(config.index)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j: { sheets?: SheetEntry[] } | null) => {
-        if (!j || !j.sheets?.length) {
-          $('bprow').classList.add('hidden');
-          return;
-        }
-        bp.index = j.sheets.map(normaliseSheet);
-        const sel = $('bpsel');
-        for (const s of bp.index) {
-          const o = document.createElement('option');
-          o.value = s.id;
-          o.textContent = s.title + (s.rms != null ? ` (±${s.rms} ${units})` : '');
-          sel.appendChild(o);
-        }
-        const q = new URLSearchParams(location.search);
-        if (q.get('bpfade')) setBlueprintFade(+q.get('bpfade')! / 100);
-        if (q.get('bp')) showBlueprint(q.get('bp'));
-      })
-      .catch(() => $('bprow').classList.add('hidden'));
+    bp.index = (j?.sheets || []).map(normaliseSheet);
+    return bp.index;
   }
 
   // model fade: every material in the model goes transparent at fade x its own opacity, without depth writes
@@ -157,9 +144,8 @@ export function createBlueprints({
 
   function setBlueprintFade(f: number): void {
     bp.fade = THREE.MathUtils.clamp(f, 0, 1);
-    $<HTMLInputElement>('bpfade').value = String(Math.round(bp.fade * 100));
-    $('bpfadelabel').textContent = `${Math.round(bp.fade * 100)}%`;
     if (bp.active) fadeModel(true);
+    onChange();
   }
 
   // the sheet's quad from its corners (plan frame), wound to face outwards for an elevation (invisible from inside)
@@ -222,8 +208,7 @@ export function createBlueprints({
       bp.mesh = null;
     }
     bp.active = s;
-    $<HTMLSelectElement>('bpsel').value = s ? s.id : '';
-    $('bpopts').classList.toggle('hidden', !s);
+    onChange();
     if (!s) {
       fadeModel(false);
       bp.hidden = [];
@@ -231,13 +216,8 @@ export function createBlueprints({
       return;
     }
     bp.last = s.id;
-    $('bpfloorlabel').classList.toggle(
-      'hidden',
-      !(s.kind === 'plan' && s.z_floor != null && Math.abs(s.z_floor - s.corners.tl[2]) * planUnit() > 0.1524),
-    );
-    $<HTMLInputElement>('bpabove').disabled = s.kind !== 'plan';
     if (!bp.cache[s.id]) {
-      bp.cache[s.id] = new THREE.TextureLoader().loadAsync(new URL(s.file, config!.index).href).then((t) => {
+      bp.cache[s.id] = new THREE.TextureLoader().loadAsync(new URL(s.file, config.index).href).then((t) => {
         t.colorSpace = THREE.SRGBColorSpace;
         t.anisotropy = renderer.capabilities.getMaxAnisotropy();
         return t;
@@ -249,7 +229,8 @@ export function createBlueprints({
     } catch (err) {
       delete bp.cache[s.id];
       console.warn(`blueprint ${s.file} not loaded (${(err as Error).message})`);
-      return showBlueprint(null);
+      await showBlueprint(null);
+      throw new Error(`${s.title}: the sheet's image didn't load`, { cause: err });
     }
     if (bp.active !== s) return; // another sheet was chosen while this one loaded
     bp.mesh = blueprintMesh(s, tex);
@@ -257,11 +238,15 @@ export function createBlueprints({
     fadeModel(true);
     bp.hidden = blueprintHidden(s);
     applyVisibility();
+    onChange();
   }
+
+  const floorOption = (s: BlueprintSheet) =>
+    s.kind === 'plan' && s.z_floor != null && Math.abs(s.z_floor - s.corners.tl[2]) * planUnit() > 0.1524;
 
   function toggle(): void {
     showBlueprint(
-      bp.active ? null : bp.last || (bp.index?.find((x) => x.id === config?.default) || bp.index?.[0])?.id || null,
+      bp.active ? null : bp.last || (bp.index?.find((x) => x.id === config.default) || bp.index?.[0])?.id || null,
     );
   }
 
@@ -272,24 +257,28 @@ export function createBlueprints({
     }
   }
 
-  $('bpsel').addEventListener('change', (e) => {
-    const t = e.target as HTMLSelectElement;
-    showBlueprint(t.value || null);
-    t.blur();
-  });
-  $('bpfade').addEventListener('input', (e) => setBlueprintFade(+(e.target as HTMLInputElement).value / 100));
-  $('bpabove').addEventListener('change', (e) => {
-    const t = e.target as HTMLInputElement;
-    bp.hideAbove = t.checked;
+  function setHideAbove(on: boolean): void {
+    bp.hideAbove = on;
     applyVisibility();
-    t.blur();
-  });
-  $('bpfloor').addEventListener('change', (e) => {
-    const t = e.target as HTMLInputElement;
-    bp.onFloor = t.checked;
-    t.blur();
+    onChange();
+  }
+  function setOnFloor(on: boolean): void {
+    bp.onFloor = on;
+    onChange();
     if (bp.active) showBlueprint(bp.active.id);
-  });
+  }
 
-  return { bp, loadIndex, showBlueprint, setBlueprintFade, fadeModel, blueprintHidden, toggle, onModelAdded };
+  return {
+    bp,
+    loadIndex,
+    showBlueprint,
+    setBlueprintFade,
+    fadeModel,
+    blueprintHidden,
+    toggle,
+    onModelAdded,
+    setHideAbove,
+    setOnFloor,
+    floorOption,
+  };
 }

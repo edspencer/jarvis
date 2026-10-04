@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
+  allowRefusal,
+  buildAllowlist,
   controlCall,
   createSender,
   entitiesOf,
   SEND_OK,
   sendRefusal,
   toggleBlocker,
+  type Allowlist,
 } from '../../src/plugins/home-assistant/policy';
 import type { Control, Entities, Status } from '../../src/plugins/home-assistant/types';
 
@@ -68,10 +71,36 @@ describe('sendRefusal: the domain / service allowlist', () => {
 });
 
 describe('createSender: send(), the only call to Home Assistant', () => {
-  const make = (over: { status?: Status; connected?: boolean; mock?: boolean } = {}) => {
+  // everything these tests call is on the allow-list; the allow-list's own tests are below
+  const everything: Allowlist = new Map(
+    [
+      'light.cove',
+      'switch.pump',
+      'lock.front_door',
+      'cover.gate',
+      'alarm_control_panel.home',
+      'climate.zone_2',
+      'fan.hall',
+      'media_player.tv',
+    ].map((e) => [
+      e,
+      new Set([
+        'toggle',
+        'turn_on',
+        'turn_off',
+        'unlock',
+        'open_cover',
+        'alarm_disarm',
+        'set_temperature',
+        'media_play',
+      ]),
+    ]),
+  );
+  const make = (over: { status?: Status; connected?: boolean; mock?: boolean; allow?: Allowlist } = {}) => {
     const call = vi.fn(async () => 'called');
     const mockService = vi.fn(async () => 'mocked');
     const send = createSender({
+      allow: () => over.allow ?? everything,
       mock: () => (over.mock ? mockService : null),
       status: () => over.status ?? 'live',
       connected: () => over.connected ?? true,
@@ -118,6 +147,99 @@ describe('createSender: send(), the only call to Home Assistant', () => {
     await expect(send('switch', 'turn_off', { entity_id: 'switch.pump' })).resolves.toBe('mocked');
     expect(mockService).toHaveBeenCalledOnce();
     expect(call).not.toHaveBeenCalled();
+  });
+});
+
+describe('the entity allow-list at send()', () => {
+  const controls: Control[] = [
+    { id: 'bed', label: 'Bedtime', entity_id: 'script.bedtime', action: 'run' },
+    { id: 'pump', label: 'Pump', entity_id: 'switch.pool_pump', action: 'toggle' },
+    { id: 'gate', label: 'Gate', entity_id: 'cover.gate', action: 'run' }, // listed by mistake: nothing allowed
+  ];
+  const map = {
+    'den.lamp': { entity_id: 'light.den_lamp' },
+    cove: { entity_id: ['light.cove_1', 'light.cove_2'] },
+    porch: { entity_id: 'switch.porch_light', switch_is_light: true },
+    heater: { entity_id: 'switch.water_heater' }, // a switch the map doesn't mark as a light
+    odd: { entity_id: ['lock.front_door', 'light.ok'] },
+  };
+  const allow = buildAllowlist({ controls, map, toggle: { light: true, switch_marked_as_light: true } });
+
+  it('holds the controls with their services and the mapped lights with toggle / on / off', () => {
+    expect([...allow.get('script.bedtime')!]).toEqual(['turn_on']);
+    expect([...allow.get('switch.pool_pump')!].sort()).toEqual(['turn_off', 'turn_on']);
+    for (const e of ['light.den_lamp', 'light.cove_1', 'light.cove_2', 'switch.porch_light', 'light.ok'])
+      expect([...allow.get(e)!].sort()).toEqual(['toggle', 'turn_off', 'turn_on']);
+  });
+
+  it('leaves out a switch the map does not mark as a light, a lock in the map, and a listed cover', () => {
+    for (const e of ['switch.water_heater', 'lock.front_door', 'cover.gate']) expect(allow.has(e)).toBe(false);
+  });
+
+  it('follows the toggle policy: no lights without it, no marked switches without switch_marked_as_light', () => {
+    const none = buildAllowlist({ controls: [], map, toggle: {} });
+    expect(none.size).toBe(0);
+    const lightsOnly = buildAllowlist({ controls: [], map, toggle: { light: true } });
+    expect(lightsOnly.has('light.den_lamp')).toBe(true);
+    expect(lightsOnly.has('switch.porch_light')).toBe(false);
+  });
+
+  it('adds made-up mock lights only when asked (mock mode), and never anything but lights', () => {
+    const m = buildAllowlist({ controls: [], map: {}, toggle: {}, extra: ['light.mock_den', 'switch.network_plug'] });
+    expect(m.has('light.mock_den')).toBe(true);
+    expect(m.has('switch.network_plug')).toBe(false);
+  });
+
+  it('refuses a stray switch.* (a water heater, a network plug) even though switch.toggle is a permitted service', async () => {
+    expect(sendRefusal('switch', 'toggle', { entity_id: 'switch.water_heater' })).toBeNull(); // stage 1 alone would pass it
+    expect(allowRefusal(allow, 'toggle', { entity_id: 'switch.water_heater' })).toMatch(/not on the allow-list/);
+    const call = vi.fn(async () => 'called');
+    const mockService = vi.fn(async () => 'mocked');
+    for (const mock of [false, true]) {
+      const send = createSender({
+        allow: () => allow,
+        mock: () => (mock ? mockService : null),
+        status: () => 'live',
+        connected: () => true,
+        call,
+      });
+      await expect(send('switch', 'toggle', { entity_id: 'switch.water_heater' })).rejects.toThrow(/allow-list/);
+      await expect(send('switch', 'turn_off', { entity_id: 'switch.unifi_poe_plug' })).rejects.toThrow(/allow-list/);
+      await expect(send('light', 'turn_off', { entity_id: ['light.den_lamp', 'light.not_mapped'] })).rejects.toThrow(
+        /light.not_mapped/,
+      );
+    }
+    expect(call).not.toHaveBeenCalled();
+    expect(mockService).not.toHaveBeenCalled();
+  });
+
+  it('refuses a service the entity is not allowed (toggling a script, turning a control switch with toggle)', () => {
+    expect(allowRefusal(allow, 'toggle', { entity_id: 'script.bedtime' })).not.toBeNull();
+    expect(allowRefusal(allow, 'toggle', { entity_id: 'switch.pool_pump' })).not.toBeNull();
+    expect(allowRefusal(allow, 'turn_off', { entity_id: 'switch.pool_pump' })).toBeNull();
+  });
+
+  it("refuses data beyond a light's brightness and colour", () => {
+    expect(
+      allowRefusal(allow, 'turn_on', { entity_id: 'light.den_lamp', brightness: 255, color_temp_kelvin: 2700 }),
+    ).toBeNull();
+    expect(allowRefusal(allow, 'turn_on', { entity_id: 'light.den_lamp', flash: 'long' })).toMatch(/flash/);
+    expect(
+      allowRefusal(allow, 'turn_on', { entity_id: 'light.den_lamp', entity_id_2: 'lock.front_door' }),
+    ).not.toBeNull();
+  });
+
+  it('passes an allowed call through to Home Assistant', async () => {
+    const call = vi.fn(async () => 'called');
+    const send = createSender({
+      allow: () => allow,
+      mock: () => null,
+      status: () => 'live',
+      connected: () => true,
+      call,
+    });
+    await expect(send('light', 'turn_off', { entity_id: ['light.cove_1', 'light.cove_2'] })).resolves.toBe('called');
+    await expect(send('script', 'turn_on', { entity_id: 'script.bedtime' })).resolves.toBe('called');
   });
 });
 

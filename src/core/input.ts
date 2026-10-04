@@ -1,12 +1,14 @@
-// Keyboard and mouse.
+// Keyboard and mouse. Every key that does something is in the key registry (help is generated from it); this file
+// holds the held movement keys, the pointer lock, the mouse look, clicks (inspect) and the HUD's keyboard rules:
+// F6 cycles the regions, Esc closes the innermost thing (the browser has already released the lock), and while a
+// HUD control has focus, Space, Enter, Tab and the arrows belong to it.
 import * as THREE from 'three';
-import type { Site } from '../site';
-import type { Blueprints } from './blueprints';
-import type { Hud } from './hud';
-import type { Inspect } from './inspect';
-import type { Model } from './model';
-import { JUMP, type Walker } from './player';
-import type { DomLookup, Keys, Mode, Player, PluginSlots, ViewState } from './types';
+import type { Hud } from '../ui/hud';
+import type { JvHud } from '../ui/shell';
+import type { Picker } from './inspect';
+import type { Bus } from './plugin/events';
+import type { KeyRegistry } from './plugin/keys';
+import type { Keys, Player, ViewState } from './types';
 
 export interface OrbitHolder {
   /** created on the first switch to the overview */
@@ -26,153 +28,79 @@ export interface Pointer {
 
 export const CENTRE_NDC = new THREE.Vector2(0, 0);
 
+const CONTROL_KEYS = ['Space', 'Enter', 'NumpadEnter', 'Tab', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+
 export function bindInput({
-  site,
   canvas,
   state,
   keys,
   player,
-  model,
-  walker,
+  keyReg,
   hud,
-  inspect,
-  blueprints,
-  plugins,
+  hudEl,
+  picker,
+  bus,
   orbit,
   pointer,
-  $,
-  setMode,
-  applyVisibility,
 }: {
-  site: Site;
   canvas: HTMLCanvasElement;
   state: ViewState;
   keys: Keys;
   player: Player;
-  model: Model;
-  walker: Walker;
+  keyReg: KeyRegistry;
   hud: Hud;
-  inspect: Inspect;
-  blueprints: Blueprints;
-  plugins: PluginSlots;
+  hudEl: JvHud;
+  picker: Picker;
+  bus: Bus;
   orbit: OrbitHolder;
   pointer: Pointer;
-  $: DomLookup;
-  setMode: (mode: Mode) => void;
-  applyVisibility: () => void;
 }): void {
   const { mouse } = pointer;
-  const layerByCode = new Map(site.layers.filter((l) => l.code).map((l) => [l.code!, l]));
-
-  // a site layer's key: show / hide it; an extra model's layer loads its model first (if it was left with ?noextra,
-  // or is still on its way)
-  function toggleLayer(id: string): void {
-    const l = site.layers.find((x) => x.id === id)!;
-    const x = l.model ? model.extras[l.model] : null;
-    if (x && x.status !== 'loaded') {
-      state.hidden[id] = false;
-      model.loadExtra(x.model.id);
-      return;
-    }
-    state.hidden[id] = !state.hidden[id];
-    applyVisibility();
-  }
-
-  // Home Assistant: switch the light under the crosshair (walking) or the mouse (overview): T, or Shift-click. A plain
-  // click stays "inspect", so looking at a light never switches it. During a blink test it answers "this one blinked".
-  function switchAt(ndc: THREE.Vector2): void {
-    const ha = plugins.ha;
-    const p = inspect.pick(ndc);
-    const fid = p?.node.userData.fixture_id as string | undefined;
-    if (!fid || !ha?.engaged) return;
-    if (ha.blink.active) ha.blinkAnswer(fid);
-    else ha.toggleFixture(fid);
-    inspect.showInfo(p);
-  }
+  // was the HUD control that has focus reached from the keyboard (Tab, F6) or clicked? A clicked one doesn't keep the
+  // game's keys: Tab still switches the mode after clicking a chip. (Chrome's :focus-visible turns on at the first key
+  // press, so it can't tell.)
+  let pointerAt = 0,
+    keyboardFocus = false;
+  addEventListener('pointerdown', () => (pointerAt = performance.now()), true);
+  hudEl.addEventListener('focusin', () => (keyboardFocus = performance.now() - pointerAt > 300));
 
   addEventListener('keydown', (e) => {
-    const tag = (e.target as HTMLElement | null)?.tagName;
-    if (tag === 'SELECT' || tag === 'INPUT') return;
+    const path = e.composedPath();
+    const t = path[0] as HTMLElement | undefined;
+    // Alt-← / Alt-→: the inspector's history, never the browser's (which would leave the app)
+    if (e.altKey && (e.code === 'ArrowLeft' || e.code === 'ArrowRight')) {
+      e.preventDefault();
+      if (hud.modals.length) return;
+      if (e.code === 'ArrowLeft') hud.back();
+      else hud.forward();
+      return;
+    }
+    if (e.code === 'F6') {
+      e.preventDefault();
+      hudEl.cycle(e.shiftKey);
+      return;
+    }
+    // a modal is open: no key reaches the view (the modal handles Esc and Tab itself; this catches focus that left it)
+    if (hud.modals.length) {
+      if (e.key === 'Escape') hud.closeModal(hud.modals.at(-1)!, false);
+      return;
+    }
+    const tag = t?.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || t?.isContentEditable) return;
+    if (e.key === 'Escape') {
+      // the browser releases the pointer lock itself; with the lock gone, Esc closes the innermost thing
+      if (hudEl.closeMenus()) return;
+      if (hud.searchOpen) return hud.closeSearch();
+      if (hud.subject) return hud.closeInspector();
+      return;
+    }
+    // a HUD control focused from the keyboard wants these; one focused by a mouse click doesn't keep the keys
+    const inHud = path.includes(hudEl) && t !== hudEl;
+    if (inHud && CONTROL_KEYS.includes(e.code) && keyboardFocus) return;
     keys[e.code] = true;
     if (['Tab', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
     if (e.repeat) return;
-    const { ha, faults, pins, switches } = plugins;
-    switch (e.code) {
-      case 'Tab':
-        setMode(state.mode === 'walk' ? 'orbit' : 'walk');
-        break;
-      case 'KeyX': // C is crouch (held), as in games
-        state.cutaway = !state.cutaway;
-        applyVisibility();
-        break;
-      case 'KeyU':
-        state.upperHidden = !state.upperHidden;
-        applyVisibility();
-        break;
-      case 'KeyB': // the last sheet shown, or the default the first time
-        blueprints.toggle();
-        break;
-      case 'KeyG':
-        state.ghost = !state.ghost;
-        player.vy = 0;
-        player.crouched = false;
-        hud.flags();
-        break;
-      case 'KeyH':
-        hud.help(hud.helpHidden());
-        break;
-      case 'KeyV': // Home Assistant: faults through walls (every device); Shift-V: healthy devices too
-        if (ha?.engaged) {
-          if (e.shiftKey && faults) {
-            faults.setAll(!faults.all);
-            if (!ha.wallhack) ha.setWallhack(true);
-          } else ha.setWallhack(!ha.wallhack);
-        }
-        break;
-      case 'KeyL': // wall plates
-        if (switches) {
-          if (e.shiftKey) switches.setWall(!switches.wall);
-          else switches.setOn(!switches.on);
-          hud.flags();
-        }
-        break;
-      case 'KeyP': // equipment pins
-        if (pins) {
-          if (e.shiftKey) pins.setWall(!pins.wall);
-          else pins.setOn(!pins.on);
-          hud.flags();
-        }
-        break;
-      case 'Slash':
-        if (pins) {
-          e.preventDefault();
-          if (document.pointerLockElement) document.exitPointerLock();
-          $('pinsearch').focus();
-        }
-        break;
-      case 'KeyT': // Home Assistant: switch a light
-        switchAt(state.mode === 'walk' && document.pointerLockElement ? CENTRE_NDC : mouse);
-        break;
-      case 'Space':
-        if (state.mode === 'walk' && !state.ghost && player.onGround && !player.crouched) {
-          player.vy = JUMP;
-          player.onGround = false;
-        }
-        break;
-      default: {
-        const layer = layerByCode.get(e.code);
-        if (layer) {
-          toggleLayer(layer.id);
-          break;
-        }
-        const k = /^Digit([1-9])$/.exec(e.code);
-        const v = k && site.viewpoints[+k[1] - 1];
-        if (v) {
-          if (state.mode !== 'walk') setMode('walk');
-          walker.teleport(...v.at, v.yaw);
-        }
-      }
-    }
+    if (keyReg.handle(e)) e.preventDefault();
   });
   addEventListener('keyup', (e) => {
     keys[e.code] = false;
@@ -184,39 +112,22 @@ export function bindInput({
   const toNdc = (e: MouseEvent) => mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
 
   canvas.addEventListener('click', (e) => {
-    const { ha, faults, pins } = plugins;
-    if (e.shiftKey && ha?.engaged && (state.mode !== 'walk' || document.pointerLockElement)) {
-      if (state.mode !== 'walk') toNdc(e);
-      if (state.mode === 'walk' || !orbit.dragged) switchAt(state.mode === 'walk' ? CENTRE_NDC : mouse);
+    const locked = document.pointerLockElement === canvas;
+    if (state.mode === 'walk' && !locked) {
+      if (!hud.small) canvas.requestPointerLock?.();
       return;
     }
-    // a device fault marker, then an equipment pin, under the crosshair / mouse wins over the model behind it
-    const inspectAt = (ndc: THREE.Vector2) => {
-      const dev = faults?.at(ndc);
-      if (dev) {
-        faults!.show(dev);
-        return;
-      }
-      const pin = pins?.at(ndc);
-      if (pin) pins!.show(pin.id);
-      else inspect.showInfo(inspect.pick(ndc));
-    };
-    if (state.mode === 'walk') {
-      if (document.pointerLockElement) inspectAt(CENTRE_NDC);
-      else canvas.requestPointerLock?.();
-    } else {
+    if (state.mode !== 'walk') {
       toNdc(e);
-      if (!orbit.dragged) inspectAt(mouse);
+      if (orbit.dragged) return;
     }
-  });
-  $('helpbtn').addEventListener('click', (e) => {
-    (e.target as HTMLElement).blur();
-    hud.help(hud.helpHidden());
-  });
-  $('help').addEventListener('click', () => hud.help(false)); // closes it; a click on the view starts walking
-  document.addEventListener('pointerlockchange', () => {
-    const locked = document.pointerLockElement === canvas;
-    if (locked) hud.help(false);
+    const ndc = state.mode === 'walk' ? CENTRE_NDC : mouse;
+    const subject = picker.at(ndc);
+    const ev = { subject, shiftKey: e.shiftKey, handled: false };
+    bus.emit('click', ev);
+    if (ev.handled) return;
+    if (subject) hud.inspect(subject);
+    else hud.closeInspector();
   });
   document.addEventListener('mousemove', (e) => {
     if (document.pointerLockElement === canvas) {
@@ -225,9 +136,14 @@ export function bindInput({
     } else if (state.mode === 'orbit') {
       toNdc(e);
       if (e.buttons) orbit.dragged = true;
-      pointer.hoverT = -1;
-      pointer.hoverAt = { x: e.clientX, y: e.clientY };
-    }
+      if (e.target === canvas) {
+        pointer.hoverT = -1;
+        pointer.hoverAt = { x: e.clientX, y: e.clientY };
+      } else if (pointer.hoverAt) {
+        pointer.hoverAt = null; // over the HUD: no label
+        hud.setHover(null, null);
+      }
+    } else toNdc(e);
   });
   canvas.addEventListener('pointerdown', () => {
     if (orbit.controls) orbit.dragged = false;

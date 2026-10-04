@@ -1,11 +1,10 @@
 // The sun: the NOAA solar position (sun.ts) for the site's latitude and longitude, at a local clock time in the site's
-// time zone (DST-aware) on a day of the year, turned into the plan frame with the plan's true-north bearing. The HUD's
-// date and time sliders drive `sunAt`.
+// time zone (DST-aware) on a day of the year, turned into the plan frame with the plan's true-north bearing. The sun
+// plugin's panel drives `sunAt`; the lighting itself is the core's, so a site without the plugin still has a sun.
 import * as THREE from 'three';
 import type { Site } from '../site';
 import type { Stage } from './stage';
 import { daysInYear, hhmm, localToUTC, solarPosition, tzLabel, utcToLocal, type SolarPosition } from './sun';
-import type { DomLookup } from './types';
 import { sunDirection } from './units';
 
 export interface SunAt {
@@ -18,6 +17,11 @@ export interface SunAt {
 export interface SunReport extends SolarPosition {
   local: string;
   tz: string;
+  /** '15:00 EDT · 42° up, az 230°' */
+  timeLabel: string;
+  /** '3 Oct 2026 · noon 13:24' */
+  dateLabel: string;
+  daysInYear: number;
 }
 
 export interface Sunlight {
@@ -25,8 +29,13 @@ export interface Sunlight {
   updateSun(): SunReport;
   setSun(hour?: number, doy?: number, year?: number): SunReport;
   sunNow(): SunReport;
-  /** "animate the year": advance the date, about a month a second, while the HUD box is ticked */
+  /** "animate the year": advance the date, about a month a second, while `animate` is on */
   step(dt: number): void;
+  animate: boolean;
+  /** the last report */
+  last: SunReport | null;
+  /** called after every change */
+  onChange: Set<(r: SunReport) => void>;
 }
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -34,17 +43,14 @@ const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', '
 export function createSunlight({
   site,
   stage,
-  $,
   requestShadows,
 }: {
   site: Pick<Site, 'geo' | 'northAzimuth'>;
   stage: Pick<Stage, 'sky' | 'sun' | 'hemi' | 'centre' | 'sunDistance'>;
-  $: DomLookup;
   requestShadows: () => void;
 }): Sunlight {
   const { sky, sun, hemi, centre } = stage;
   const { lat, lon, timeZone: tz } = site.geo;
-  $('sunrow').title = `Local clock time, ${tz}`;
   const sunAt: SunAt = (() => {
     const n = utcToLocal(Date.now(), tz);
     return { year: n.year, doy: n.doy, min: 15 * 60 }; // opens on today's date, at 15:00
@@ -63,15 +69,20 @@ export function createSunlight({
     const zone = tzLabel(ms, tz);
     const date = new Date(Date.UTC(sunAt.year, 0, sunAt.doy));
     const noon = utcToLocal(Date.UTC(sunAt.year, 0, sunAt.doy) + s.solarNoonUTC * 60000, tz).min;
-    $('sunlabel').textContent =
-      `${hhmm(loc.min)} ${zone} · ${s.elevation >= 0 ? `${Math.round(s.elevation)}° up` : 'below horizon'}, az ${Math.round(s.azimuth)}°`;
-    $('datelabel').textContent =
-      `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${sunAt.year} · noon ${hhmm(noon)}`;
-    $<HTMLInputElement>('sun').value = String(sunAt.min);
-    $<HTMLInputElement>('sundate').max = String(daysInYear(sunAt.year));
-    $<HTMLInputElement>('sundate').value = String(sunAt.doy);
+    const timeLabel = `${hhmm(loc.min)} ${zone} · ${s.elevation >= 0 ? `${Math.round(s.elevation)}° up` : 'below horizon'}, az ${Math.round(s.azimuth)}°`;
+    const dateLabel = `${date.getUTCDate()} ${MONTHS[date.getUTCMonth()]} ${sunAt.year} · noon ${hhmm(noon)}`;
     requestShadows();
-    return { ...s, local: hhmm(loc.min), tz: zone };
+    const r: SunReport = {
+      ...s,
+      local: hhmm(loc.min),
+      tz: zone,
+      timeLabel,
+      dateLabel,
+      daysInYear: daysInYear(sunAt.year),
+    };
+    api.last = r;
+    for (const f of api.onChange) f(r);
+    return r;
   }
 
   // scripting: setSun(hour [, doy [, year]]) in local clock hours
@@ -91,7 +102,7 @@ export function createSunlight({
   let yearT = 0;
   function step(dt: number): void {
     // animate the year at the chosen time of day: ~a month a second
-    if (!$<HTMLInputElement>('sunyear').checked) return;
+    if (!api.animate) return;
     yearT += dt * 30;
     if (yearT >= 1) {
       sunAt.doy += Math.floor(yearT);
@@ -101,20 +112,6 @@ export function createSunlight({
     }
   }
 
-  $('sun').addEventListener('input', (e) => {
-    sunAt.min = +(e.target as HTMLInputElement).value;
-    updateSun();
-  });
-  $('sundate').addEventListener('input', (e) => {
-    sunAt.doy = +(e.target as HTMLInputElement).value;
-    updateSun();
-  });
-  $('sunyear').addEventListener('change', (e) => (e.target as HTMLElement).blur()); // give the keys back to walking
-  $('sunnow').addEventListener('click', (e) => {
-    $<HTMLInputElement>('sunyear').checked = false;
-    sunNow();
-    (e.target as HTMLElement).blur();
-  });
-
-  return { sunAt, updateSun, setSun, sunNow, step };
+  const api: Sunlight = { sunAt, updateSun, setSun, sunNow, step, animate: false, last: null, onChange: new Set() };
+  return api;
 }

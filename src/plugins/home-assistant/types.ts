@@ -1,32 +1,8 @@
 // Home Assistant shapes the viewer reads: entity states, the fixture map and the controls
 // (ha_controls.json).
 
-export interface EntityAttributes {
-  friendly_name?: string;
-  brightness?: number | null;
-  color_mode?: string;
-  rgb_color?: number[];
-  xy_color?: number[];
-  color_temp_kelvin?: number;
-  /** mireds (older HA) */
-  color_temp?: number;
-  /** a group / Hue room or zone lists its members */
-  entity_id?: string[];
-  unit_of_measurement?: string;
-  installed_version?: string;
-  latest_version?: string;
-  [key: string]: unknown;
-}
-
-export interface EntityState {
-  entity_id: string;
-  state: string;
-  attributes: EntityAttributes;
-  last_changed?: string;
-  last_updated?: string;
-}
-
-export type Entities = Record<string, EntityState>;
+// the store's entity shape is Home Assistant's state object
+export type { EntityAttributes, EntityState, Entities } from '../../core/plugin/types';
 
 /** service call data: always an entity_id (one or several), plus attributes for turn_on */
 export interface ServiceData {
@@ -68,3 +44,4 @@ export interface TogglePolicy {
 }
 
 export type Status = 'disconnected' | 'connecting' | 'live' | 'error' | 'mock';
+export type ConnectorStatusLabel = Record<Status, string>;

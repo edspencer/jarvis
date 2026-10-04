@@ -316,11 +316,28 @@
               "pattern": "^https?://",
               "description": "Home Assistant's base URL."
             },
-            "map": {
-              "$ref": "#/$defs/path"
-            },
             "controls": {
-              "$ref": "#/$defs/path"
+              "$ref": "#/$defs/path",
+              "description": "The Controls panel's actions and the fixture-toggle policy; with the lights plugin's fixture map, the allow-list for every call."
+            },
+            "map": {
+              "$ref": "#/$defs/path",
+              "description": "Deprecated: plugins.lights.map (read as that when plugins.lights is absent)."
+            },
+            "emitterHints": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Deprecated: plugins.lights.emitterHints."
+            }
+          }
+        },
+        "lights": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "map": {
+              "$ref": "#/$defs/path",
+              "description": "The fixture map: fixture id -> entity or entities."
             },
             "emitterHints": {
               "type": "string",

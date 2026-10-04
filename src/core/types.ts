@@ -1,9 +1,5 @@
 // Types shared by the core and the plugins.
 import type { Intersection, Object3D, Vector3 } from 'three';
-import type { HA } from '../plugins/home-assistant/ha';
-import type { Faults } from '../plugins/faults/faults';
-import type { Pins } from '../plugins/pins/pins';
-import type { Plate, Switches } from '../plugins/switches/switches';
 
 export type Mode = 'walk' | 'orbit';
 
@@ -37,10 +33,6 @@ export interface Player {
 
 export type Keys = Record<string, boolean>;
 
-/** document.getElementById, typed loosely: every id the code asks for is in index.html */
-export type DomLookup = <T extends HTMLElement = HTMLElement>(id: string) => T;
-export type Escape = (s: unknown) => string;
-
 /** top-level nodes sorted by what hides them: one list per site layer (roof, ceiling, door and the site's own), and
  * `upper` (the upper storeys, for U) */
 export type Groups = Record<string, Object3D[]> & { upper: Object3D[] };
@@ -62,13 +54,4 @@ export interface PickResult {
   node: Object3D;
   hit: Intersection;
   part: { name: string; props: Record<string, unknown> } | null;
-  plate?: Plate;
-}
-
-/** the optional layers, loaded on demand; null until (or unless) they load */
-export interface PluginSlots {
-  ha: HA | null;
-  faults: Faults | null;
-  pins: Pins | null;
-  switches: Switches | null;
 }

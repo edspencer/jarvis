@@ -178,10 +178,19 @@ export interface WalkParams {
 export interface HomeAssistantConfig {
   /** Home Assistant's base URL; it must list the viewer's origin in http: cors_allowed_origins */
   url?: string;
-  /** fixture id -> entity map */
-  map?: string;
-  /** HUD controls and the fixture-toggle policy */
+  /** the Controls panel's actions and the fixture-toggle policy. With the lights plugin's fixture map, this is the
+   * allow-list: the viewer calls Home Assistant only for entities named in one of the two. */
   controls?: string;
+  /** deprecated: plugins.lights.map (read as that when there is no lights section) */
+  map?: string;
+  /** deprecated: plugins.lights.emitterHints */
+  emitterHints?: string;
+}
+
+/** The lights plugin also starts, with these defaults, on a site with a home-assistant section and no lights section. */
+export interface LightsConfig {
+  /** the fixture map: fixture id -> entity (or entities); also what Home Assistant may switch from the model */
+  map?: string;
   /** a regular expression (case-insensitive) on material names: which parts of a fixture glow when it has no
    * emissive material (default: glass, bulb, lens, shade, led, light, globe, …) */
   emitterHints?: string;
@@ -230,6 +239,7 @@ export interface BlueprintsConfig {
 
 export interface PluginConfigs {
   'home-assistant'?: HomeAssistantConfig;
+  lights?: LightsConfig;
   faults?: FaultsConfig;
   pins?: PinsConfig;
   switches?: SwitchesConfig;

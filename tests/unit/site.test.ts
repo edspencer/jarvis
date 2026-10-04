@@ -9,6 +9,7 @@ import {
   SiteError,
   storeyAt,
   storeyOfObject,
+  reservedKeys,
   upperFromY,
   validateManifest,
   type SiteManifest,
@@ -53,7 +54,8 @@ const FULL: SiteManifest = {
   rooms: { floorPrefix: 'Floor_' },
   walk: { eyeHeight: 1.6, crouchEyeHeight: 0.9, radius: 0.3, maxStep: 0.4 },
   plugins: {
-    'home-assistant': { url: 'https://ha.example.org', map: 'm.json', controls: 'c.json', emitterHints: 'bulb' },
+    'home-assistant': { url: 'https://ha.example.org', controls: 'c.json' },
+    lights: { map: 'm.json', emitterHints: 'bulb' },
     faults: { devices: 'd.json', source: 'devices.yaml' },
     pins: {
       registry: 'r.json',
@@ -74,6 +76,7 @@ describe('the schema and the types agree', () => {
     const props = s.properties as Record<string, Record<string, unknown>> | undefined;
     if (props)
       for (const [k, v] of Object.entries(props)) {
+        if (String(v.description || '').startsWith('Deprecated')) continue; // an old field still read (tested below)
         out.add(`${path}${k}`);
         schemaPaths(v, `${path}${k}.`, out);
       }
@@ -104,6 +107,22 @@ describe('the schema and the types agree', () => {
     const used = valuePaths(FULL, '', new Set(), ['materials.screens', 'plugins.pins.categories']);
     expect([...declared].filter((p) => !used.has(p))).toEqual([]);
     expect([...used].filter((p) => !declared.has(p))).toEqual([]);
+  });
+
+  it('reads the old home-assistant.map / emitterHints as a lights section, with a warning', () => {
+    const old = {
+      ...FULL,
+      plugins: { 'home-assistant': { url: 'https://ha.example.org', map: 'm.json', emitterHints: 'bulb' } },
+    };
+    const v = validateManifest(old);
+    expect(v.ok).toBe(true);
+    expect(v.warnings.map((w) => w.path)).toEqual([
+      'plugins["home-assistant"].map',
+      'plugins["home-assistant"].emitterHints',
+    ]);
+    const site = resolveSite(old as SiteManifest, 'https://example.org/s/site.json');
+    expect(site.plugins.lights).toEqual({ map: 'https://example.org/s/m.json', emitterHints: 'bulb' });
+    expect(reservedKeys(old).has('T')).toBe(true); // the lights plugin will start, so its key is taken
   });
 
   it('the test site validates', () => {

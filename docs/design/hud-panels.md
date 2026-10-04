@@ -1,7 +1,8 @@
-# HUD panel standard (proposal)
+# HUD panel standard
 
-Status: **proposal for phase 2**, to be refined in the plugin-API phase. Companion docs: `hud-audit.md` (what's wrong
-today), `mockup/index.html` (what this looks like). Nothing here is implemented yet.
+Status: **implemented in phase 2b** (the plugin API: `src/core/plugin/`, documented in `../plugins.md`; the HUD:
+`src/ui/`). What changed on the way is in §11. Companion docs: `hud-audit.md` (what was wrong), `mockup/index.html`
+(the target look).
 
 Goals, from the audit:
 
@@ -516,3 +517,30 @@ Screenshots, before → after (the backgrounds are private model renders: replac
 | Overview, Equipment panel (search, category chips, grouped list) + a breaker panel with *Equipment* + *Energy* sections | `img/before-08-pin-inspect.jpg` | `img/after-equipment.jpg` |
 | Walking, faults through walls: Faults panel, legend, device with *Device health* + *Home Assistant* | `img/before-05-faults-list-and-device.jpg` | `img/after-faults.jpg` |
 | Overview, Energy: totals, top consumers (fly-to), rooms tinted by load + legend; a wall plate with four sections from four plugins (*Wall plate*, *Energy*, *Home Assistant*, *Object*) | (new) | `img/after-energy.jpg` |
+
+## 11. As built (phase 2b): what differs from the proposal
+
+- **Subjects:** the proposal's `{ kind: 'entity', id }` is `{ kind: 'item', id }`, so it doesn't read as a store
+  entity. String references (`'pins:<id>'`, `'fixture:<id>'`, `'room:<id>'`) work wherever a subject does.
+- **The Object section comes last** (collapsed), as in the mockup, not first: "base first" put developer data above
+  the information.
+- **Section actions** (Turn off, Run) gather in the inspector's footer next to the core's *Fly to*, as mocked.
+- **The store's entity shape is Home Assistant's state object** (`entity_id`, `state`, `attributes`), a widely used
+  one, rather than a new one; other connectors map into it. Bindings (`store.bind`) are how site mapping files tie
+  entities to fixtures, registry items, plates and devices, and why the Home Assistant section appears on all of them.
+- **Lights are a feature plugin** (`plugins.lights`, with the fixture map); Home Assistant is only the connector. The
+  old `plugins["home-assistant"].map` is still read (with a warning) until the house manifest moves.
+- **Allow-list at the choke point:** every call names entities from the controls file or the fixture map (a
+  `switch.*` only when marked as a light). No plugin can widen it at run time.
+- **Chips:** rarely used ones (the site's layers, *Hide upper*) live in the strip's ⋯ menu from the start (their keys
+  work); others overflow there when the strip is too narrow, chips that are off first. Variants (through walls; plates:
+  switches / outlets only) are in a chip's ▾ menu.
+- **Keys:** N opens Navigate (new; the site validator reserves it). `?` also opens help. Tab switches the mode only
+  while focus isn't on a HUD control reached from the keyboard; F6 gets into the HUD.
+- **Persisted state:** open, pinned and collapsed panels, dock width, section and group collapse, per site. Chips can
+  ask to be remembered (`persist`); none of the built-in ones do yet (URL parameters cover the shared cases).
+- **Small screens:** a bottom tab bar (search, four panels, more), one bottom sheet at a time (peek / half / full by
+  dragging or tapping its handle), overview only. No walk controls yet, as decided.
+- **Not done:** the overview's larger default dock; loading third-party plugins at run time (the host takes plugin
+  definitions, but only the built-in registry feeds it); the `meter` block's live announcements; a light theme.
+
