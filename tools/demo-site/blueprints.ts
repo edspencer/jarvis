@@ -3,11 +3,12 @@ import { RISERS, STAIR_X, STAIR_Y0, STAIR_Y1, TREAD, UP } from './dims.ts';
 import { ROOMS, WALLS, wallBoxes } from './layout.ts';
 
 // ------------------------------------------------------------------ blueprints: one plan per storey
+/** the sheets' extent, plan metres [x0, y0, x1, y1]: the block and the garage wing, with a margin */
+const SHEET = [-1, -1, 20, 10];
 export function blueprint(storey: 0 | 1): Uint8Array {
   const PX = 40; // pixels per metre
-  const X0 = -1,
-    Y1 = 10;
-  const cv = new Canvas(14 * PX, 11 * PX);
+  const [X0, Y0, X1, Y1] = SHEET;
+  const cv = new Canvas((X1 - X0) * PX, (Y1 - Y0) * PX);
   const ink = [24, 40, 72, 255],
     pale = [24, 40, 72, 70];
   const to = (x: number, y: number) => [(x - X0) * PX, (Y1 - y) * PX];
@@ -19,7 +20,7 @@ export function blueprint(storey: 0 | 1): Uint8Array {
   for (const r of ROOMS.filter((r) => r.storey === storey))
     for (const [x0, y0, x1, y1] of r.rects) rect(x0 + 0.05, y0 + 0.05, x1 - 0.05, y1 - 0.05, [24, 40, 72, 14]);
   for (const w of WALLS.filter((w) => w.storey === storey)) {
-    const z = (storey ? UP : 0) + 1.2; // cut at 1.2 m
+    const z = (storey ? UP : 0) + 1.1; // cut at 1.1 m (the garage wing's slab is 0.1 m down)
     for (const b of wallBoxes(w)) if (b[2] <= z && b[5] >= z) rect(b[0], b[1], b[3], b[4], ink);
     for (const o of w.openings)
       if (o.kind === 'window' || o.kind === 'glazed') {
@@ -38,7 +39,8 @@ export function blueprint(storey: 0 | 1): Uint8Array {
 }
 
 export function blueprintIndex() {
-  const corners = (z: number) => ({ tl: [-1, 10, z], tr: [13, 10, z], bl: [-1, -1, z], br: [13, -1, z] });
+  const [x0, y0, x1, y1] = SHEET;
+  const corners = (z: number) => ({ tl: [x0, y1, z], tr: [x1, y1, z], bl: [x0, y0, z], br: [x1, y0, z] });
   return {
     sheets: [
       {

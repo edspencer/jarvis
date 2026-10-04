@@ -22,6 +22,13 @@ The original 12 × 9 m two-storey block stays; the build-out re-plans its rooms 
 on the east (a two-car garage and a laundry / mudroom). Plan frame: X east, Y north, metres, origin at the block's
 south-west corner at ground-floor level; the first floor is at z = 3.2.
 
+Status: **done** (the rooms, walls, doors and windows below, the garage wing and its roof, floors and ceilings; the
+existing furniture, fittings, fixtures, plates and pins moved into the new rooms). The garage wing's slab is at
+z = −0.1 (one step down from the hall, under `walk.maxStep`), its ceilings at 2.7 and its walls' tops (the roof's
+eaves line) at 3.0; its hip roof (`Roof_garage`, 15°) abuts the block's east wall with its ridge at 4.4 m, below the
+first floor's one east window (on the landing). Doors: hall → garage in the block's east wall (y 1.5-2.4), a 4.9 m
+sectional garage door (`Door_garage`, four panels) in the wing's south wall, laundry ↔ garage, laundry → back yard.
+
 **Ground floor**
 
 | Room id       | Name        | Plan rectangles [x0, y0, x1, y1]                     | Notes                                                                                        |
@@ -58,8 +65,39 @@ Screenshots: every viewpoint and a plan of each storey, taken with `node tools/d
 | Kitchen     | No appliances: no range, sink, dishwasher or hood; the fridge is a plain tall cabinet                                                              | fix    |
 | Bedrooms    | Bedroom 2's bed is pushed against the east wall with its headboard there; no nightstands, dressers or lamps                                        | fix    |
 | Bathroom    | One bath, upstairs; no bathroom for the second and third bedrooms, no half bath downstairs                                                         | fix    |
-| House       | Only two bedrooms; no garage, laundry or utility space; the panel is in the hall                                                                   | fix    |
+| House       | Only two bedrooms; no garage, laundry or utility space; the panel is in the hall                                                                   | done   |
 | Energy      | 14 circuits on a made-up panel, a dryer circuit with no dryer in the model                                                                         | fix    |
+
+## The generator: areas
+
+[`tools/make-demo-site.ts`](../tools/make-demo-site.ts) writes the demo from the modules in
+[`tools/demo-site/`](../tools/demo-site). The building's structure is shared: `dims.ts` (dimensions, `WING` for the
+garage wing), `layout.ts` (rooms, walls, openings), `main-model.ts` (floors, ceilings, walls, glazing, doors, the stair,
+the roofs). What is _in_ the house lives in **areas**, one file each under
+[`tools/demo-site/areas/`](../tools/demo-site/areas), each exporting an `Area` (`area.ts`):
+
+| Area       | File          | Rooms and things                                                                  |
+| ---------- | ------------- | --------------------------------------------------------------------------------- |
+| `living`   | `living.ts`   | `living_room`                                                                     |
+| `kitchen`  | `kitchen.ts`  | `kitchen`                                                                         |
+| `hall`     | `hall.ts`     | `hall` (with the air handler under the landing), `powder_room`, `study`           |
+| `upstairs` | `upstairs.ts` | every first-floor room                                                            |
+| `garage`   | `garage.ts`   | `garage`, `laundry`; the main panel                                               |
+| `outside`  | `outside.ts`  | the site (lawn, paths, driveway, terrace), exterior lights, pond, pergola, plants |
+
+An area has (all optional) `materials` and `fixtureShapes` of its own (a name another area or the shared set already
+has is an error), `fixtures`, `plates`, `pins`, `devices` (`ha_devices.json`), `haMap` (`ha_map.json`, by fixture id;
+every fixture needs an entry), `nodeFeeds` ([node name, breaker]: model nodes a circuit feeds), `buildMain(m)`
+(built-ins and appliances into `demo.glb`) and `buildFurniture(m)` (into `furniture.glb`). `areas/index.ts` lists the
+areas in order, collects them (`FIXTURES`, `PLATES`, `PINS`, …; look things up by id with `fixtureById`, `plateById`,
+`pinById`) and checks them: unique ids, known rooms, fixture shapes, and **every breaker** a fixture, plate position,
+pin or node feed names against the panel schedule (`panel.ts`, `circuitOn`). `onCircuit(id)` returns everything on a
+circuit, which is how `energy.ts` builds a meter per circuit; the generator also checks that every energy-map feed
+names a room, fixture, plate, pin or node that exists. Helpers: `item()` (a furniture node of boxes) and `merged()` (a
+merged node with a parts entry) in `model.ts`, `place()` (a device's place) in `area.ts`.
+
+`node tools/demo-site/shots.ts <dir> [shots.json]` takes screenshots of every viewpoint and plans of each storey for
+checking the result by eye.
 
 ## Conventions (how things are named so the plugins pick them up)
 
@@ -184,7 +222,7 @@ devices. "Breaker" ties each electrical item to the schedule.
 | Front door, porch lantern outside                                   | light     | 25      | exists  |
 | Pendant (three-way with the living room)                            | light     | 7       | exists  |
 | Console table, mirror, coat hooks or bench                          | furniture |         | planned |
-| Door to the garage (self-closing)                                   | door      |         | planned |
+| Door to the garage (self-closing)                                   | door      |         | done    |
 | Thermostat                                                          | hvac      |         | exists  |
 | Air handler in the closet under the landing (filter, return grille) | hvac      | 6+8     | exists  |
 | Switches at the front door (porch, hall), at the garage door        | S         | 7/25    | planned |
@@ -229,7 +267,7 @@ devices. "Breaker" ties each electrical item to the schedule.
 | Workbench, shelving, chest freezer, trash and recycling bins              | furniture | 24       | planned |
 | LED shop lights (two or three)                                            | light     | 24       | planned |
 | Switches at the hall door and the side door; GFCI outlets                 | S / O     | 24       | planned |
-| Door to the hall, door to the laundry                                     | door      |          | planned |
+| Door to the hall, door to the laundry                                     | door      |          | done    |
 
 ### Laundry (`laundry`)
 
@@ -241,7 +279,7 @@ devices. "Breaker" ties each electrical item to the schedule.
 | Ceiling light                                 | light     | 24       | planned |
 | Switch; washer outlet; dryer 240 V receptacle | S / O     | 22/14+16 | planned |
 | Leak sensor by the washer                     | sensor    |          | planned |
-| Door to the back yard                         | door      |          | planned |
+| Door to the back yard                         | door      |          | done    |
 
 ### Primary bedroom (`bedroom_1`), closet (`primary_closet`), bath (`primary_bath`)
 
@@ -306,8 +344,8 @@ devices. "Breaker" ties each electrical item to the schedule.
 | `hvac.air-handler`                                                                                        | Air handler                                 | hall closet  | exists  |
 | `hvac.condenser`                                                                                          | Heat pump outdoor unit                      | outside      | planned |
 | `hvac.thermostat`                                                                                         | Thermostat                                  | hall         | exists  |
-| `plumb.water-heater`                                                                                      | Water heater                                | garage       | fix     |
-| `plumb.stopcock`                                                                                          | Main water shut-off                         | garage       | fix     |
+| `plumb.water-heater`                                                                                      | Water heater                                | garage       | done    |
+| `plumb.stopcock`                                                                                          | Main water shut-off                         | garage       | done    |
 | `net.router`                                                                                              | Router                                      | study        | exists  |
 | `net.access-point`                                                                                        | Wi-Fi access point                          | landing      | exists  |
 | `appliance.fridge`                                                                                        | Refrigerator                                | kitchen      | exists  |

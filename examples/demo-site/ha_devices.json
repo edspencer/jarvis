@@ -12,6 +12,51 @@
   },
   "devices": [
     {
+      "id": "demo-living-dimmer",
+      "name": "Living room dimmer",
+      "integration": "zwave_js",
+      "make": "Example Controls",
+      "model": "ZD-1",
+      "area": "Living room",
+      "place": {
+        "src": "plate",
+        "ref": "LV-S-A",
+        "plan": [6.94, 2.45, 1.2],
+        "room": "Living room",
+        "approx": false,
+        "conf": "high",
+        "pos": [6.94, 1.2, -2.45],
+        "centre": [3.5, 1.2, -2.5]
+      },
+      "health": {
+        "avail": ["light.living_room_cans"],
+        "node_status": ["sensor.living_dimmer_node_status"]
+      }
+    },
+    {
+      "id": "demo-floor-lamp",
+      "name": "Floor lamp bulb",
+      "integration": "hue",
+      "make": "Example Lighting",
+      "model": "E27 bulb",
+      "area": "Living room",
+      "place": {
+        "src": "fixture",
+        "ref": "living.floor_lamp",
+        "plan": [0.55, 4.4, 1.4],
+        "room": "Living room",
+        "approx": false,
+        "conf": "high",
+        "pos": [0.55, 1.4, -4.4],
+        "centre": [3.5, 1.2, -2.5]
+      },
+      "fixtures": ["living.floor_lamp"],
+      "powered_by": "switch.living_outlet",
+      "health": {
+        "avail": ["light.floor_lamp"]
+      }
+    },
+    {
       "id": "demo-kitchen-pendant-1",
       "name": "Kitchen pendant 1",
       "integration": "hue",
@@ -93,25 +138,25 @@
       }
     },
     {
-      "id": "demo-living-dimmer",
-      "name": "Living room dimmer",
-      "integration": "zwave_js",
-      "make": "Example Controls",
-      "model": "ZD-1",
-      "area": "Living room",
+      "id": "demo-leak-sensor",
+      "name": "Leak sensor (kitchen sink)",
+      "integration": "zha",
+      "make": "Example Sensors",
+      "model": "WL-1",
+      "area": "Kitchen",
       "place": {
-        "src": "plate",
-        "ref": "LV-S-A",
-        "plan": [6.94, 2.45, 1.2],
-        "room": "Living room",
+        "src": "area",
+        "ref": "kitchen",
+        "plan": [1.5, 8.7, 0.1],
+        "room": "Kitchen",
         "approx": false,
         "conf": "high",
-        "pos": [6.94, 1.2, -2.45],
-        "centre": [3.5, 1.2, -2.5]
+        "pos": [1.5, 0.1, -8.7],
+        "centre": [3.5, 1.2, -7]
       },
       "health": {
-        "avail": ["light.living_room_cans"],
-        "node_status": ["sensor.living_dimmer_node_status"]
+        "avail": ["binary_sensor.kitchen_leak"],
+        "battery": ["sensor.kitchen_leak_battery"]
       }
     },
     {
@@ -167,28 +212,6 @@
       }
     },
     {
-      "id": "demo-leak-sensor",
-      "name": "Leak sensor (kitchen sink)",
-      "integration": "zha",
-      "make": "Example Sensors",
-      "model": "WL-1",
-      "area": "Kitchen",
-      "place": {
-        "src": "area",
-        "ref": "kitchen",
-        "plan": [1.5, 8.7, 0.1],
-        "room": "Kitchen",
-        "approx": false,
-        "conf": "high",
-        "pos": [1.5, 0.1, -8.7],
-        "centre": [3.5, 1.2, -7]
-      },
-      "health": {
-        "avail": ["binary_sensor.kitchen_leak"],
-        "battery": ["sensor.kitchen_leak_battery"]
-      }
-    },
-    {
       "id": "demo-router",
       "name": "Router",
       "integration": "mqtt",
@@ -203,11 +226,46 @@
         "approx": false,
         "conf": "high",
         "pos": [10.1, 0.85, -8.6],
-        "centre": [8.8, 1.2, -6.5]
+        "centre": [8.8, 1.2, -7.3]
       },
       "health": {
         "avail": ["device_tracker.router"],
         "update": ["update.router_firmware"]
+      }
+    },
+    {
+      "id": "demo-doorbell",
+      "name": "Doorbell",
+      "integration": "mqtt",
+      "make": "Example Security",
+      "model": "DB-1",
+      "area": null,
+      "place": null,
+      "health": {
+        "avail": ["binary_sensor.doorbell"]
+      }
+    },
+    {
+      "id": "demo-smoke-landing",
+      "name": "Smoke alarm (landing)",
+      "integration": "zwave_js",
+      "make": "Example Safety",
+      "model": "SA-3",
+      "area": "Landing",
+      "place": {
+        "src": "registry",
+        "ref": "safety.smoke.landing",
+        "plan": [9.6, 5, 5.57],
+        "room": "Landing",
+        "approx": false,
+        "conf": "high",
+        "pos": [9.6, 5.57, -5],
+        "centre": [4.75, 4.4, -4.6]
+      },
+      "health": {
+        "avail": ["binary_sensor.smoke_landing"],
+        "node_status": ["sensor.smoke_landing_node_status"],
+        "battery": ["sensor.smoke_landing_battery"]
       }
     },
     {
@@ -235,64 +293,6 @@
             "kind": "rssi"
           }
         ]
-      }
-    },
-    {
-      "id": "demo-floor-lamp",
-      "name": "Floor lamp bulb",
-      "integration": "hue",
-      "make": "Example Lighting",
-      "model": "E27 bulb",
-      "area": "Living room",
-      "place": {
-        "src": "fixture",
-        "ref": "living.floor_lamp",
-        "plan": [0.55, 4.4, 1.4],
-        "room": "Living room",
-        "approx": false,
-        "conf": "high",
-        "pos": [0.55, 1.4, -4.4],
-        "centre": [3.5, 1.2, -2.5]
-      },
-      "fixtures": ["living.floor_lamp"],
-      "powered_by": "switch.living_outlet",
-      "health": {
-        "avail": ["light.floor_lamp"]
-      }
-    },
-    {
-      "id": "demo-smoke-landing",
-      "name": "Smoke alarm (landing)",
-      "integration": "zwave_js",
-      "make": "Example Safety",
-      "model": "SA-3",
-      "area": "Landing",
-      "place": {
-        "src": "registry",
-        "ref": "safety.smoke.landing",
-        "plan": [9.6, 5, 5.57],
-        "room": "Landing",
-        "approx": false,
-        "conf": "high",
-        "pos": [9.6, 5.57, -5],
-        "centre": [8.8, 4.4, -6]
-      },
-      "health": {
-        "avail": ["binary_sensor.smoke_landing"],
-        "node_status": ["sensor.smoke_landing_node_status"],
-        "battery": ["sensor.smoke_landing_battery"]
-      }
-    },
-    {
-      "id": "demo-doorbell",
-      "name": "Doorbell",
-      "integration": "mqtt",
-      "make": "Example Security",
-      "model": "DB-1",
-      "area": null,
-      "place": null,
-      "health": {
-        "avail": ["binary_sensor.doorbell"]
       }
     }
   ]

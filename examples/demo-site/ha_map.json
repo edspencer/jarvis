@@ -19,6 +19,11 @@
     "conf": "high",
     "group": "fixture.cans.living"
   },
+  "living.floor_lamp": {
+    "entity_id": "light.floor_lamp",
+    "conf": "high",
+    "group": "fixture.lamp.living"
+  },
   "kitchen.pendant.1": {
     "entity_id": "light.kitchen_pendant_1",
     "conf": "high",
@@ -62,10 +67,10 @@
     "conf": "low",
     "group": "fixture.landing"
   },
-  "bathroom.vanity": {
+  "primary_bath.vanity": {
     "entity_id": "switch.bathroom_vanity",
     "conf": "high",
-    "group": "fixture.bathroom",
+    "group": "fixture.primary_bath",
     "switch_is_light": true
   },
   "porch.lantern": {
@@ -82,10 +87,5 @@
     "entity_id": "light.terrace_wall_lights",
     "conf": "high",
     "group": "fixture.terrace"
-  },
-  "living.floor_lamp": {
-    "entity_id": "light.floor_lamp",
-    "conf": "high",
-    "group": "fixture.lamp.living"
   }
 }

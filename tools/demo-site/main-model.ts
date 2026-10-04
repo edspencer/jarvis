@@ -8,7 +8,6 @@ import {
   D,
   EAVE,
   EXT,
-  G,
   OVERHANG,
   PITCH,
   RISERS,
@@ -19,11 +18,11 @@ import {
   TREAD,
   UP,
   W,
+  WING,
 } from './dims.ts';
 import { Model, merged, type Piece } from './model.ts';
-import { ROOMS, WALLS, wallBoxes } from './layout.ts';
-import { FIXTURES, fixtureShape } from './fixtures.ts';
-import { PLATES } from './plates.ts';
+import { ROOMS, WALLS, floorZ, wallBoxes } from './layout.ts';
+import { AREAS, FIXTURES, PLATES, fixtureShape } from './areas/index.ts';
 
 // ------------------------------------------------------------------ the main model
 /** the house-name plaque's picture, as KTX2 (Basis Universal UASTC, with mipmaps): a slate plate, a border and a
@@ -80,36 +79,14 @@ function housePlaque(m: Model, plaque: Uint8Array): void {
   );
 }
 
-/** the site: lawn, front path, back terrace (one merged node) */
-function site(m: Model): void {
-  merged(m, 'Site', 'site', [
-    { name: 'Lawn', material: 'lawn', boxes: [[-54, -52, G.lawn - 0.1, 66, 62, G.lawn]], extras: { kind: 'ground' } },
-    { name: 'Front path', material: 'path_gravel', boxes: [[8.8, -8, G.lawn, 10.2, -EXT, -0.02]] },
-    { name: 'Front step', material: 'terrace_stone', boxes: [[8.6, -1.2, G.lawn, 10.4, -EXT, 0]] },
-    { name: 'Back terrace', material: 'terrace_stone', boxes: [[2.5, D + EXT, G.lawn, 9.5, 13.2, 0]] },
-  ]);
-
-  // a small pond (water: see-through, walked through)
-  const pond = new Shape();
-  pond.on('water').box(-6.4, -5, G.lawn - 0.05, -2.6, -1.6, G.lawn + 0.02);
-  m.node('Pond', pond, { kind: 'pond' });
-  merged(m, 'Pond_edge', 'pond_edge', [
-    { name: 'Pond edge (south)', material: 'pond_stone', boxes: [[-6.7, -5.3, G.lawn, -2.3, -5, G.lawn + 0.12]] },
-    { name: 'Pond edge (north)', material: 'pond_stone', boxes: [[-6.7, -1.6, G.lawn, -2.3, -1.3, G.lawn + 0.12]] },
-    { name: 'Pond edge (west)', material: 'pond_stone', boxes: [[-6.7, -5, G.lawn, -6.4, -1.6, G.lawn + 0.12]] },
-    { name: 'Pond edge (east)', material: 'pond_stone', boxes: [[-2.6, -5, G.lawn, -2.3, -1.6, G.lawn + 0.12]] },
-  ]);
-}
-
 /** floors (one node per room: the room list and "where am I") and ceilings */
 function floors(m: Model): void {
   for (const r of ROOMS) {
     const s = new Shape();
-    const z1 = r.storey ? UP : 0,
-      z0 = r.storey ? SLAB : -0.1;
+    const z1 = floorZ(r),
+      z0 = r.storey ? SLAB : z1 - 0.1;
     for (const [x0, y0, x1, y1] of r.rects) s.on(r.floor).box(x0, y0, z1 - 0.02, x1, y1, z1);
-    if (r.storey) for (const [x0, y0, x1, y1] of r.rects) s.on('slab_edge').box(x0, y0, z0, x1, y1, z1 - 0.02);
-    else for (const [x0, y0, x1, y1] of r.rects) s.on('slab_edge').box(x0, y0, z0, x1, y1, z1 - 0.02);
+    for (const [x0, y0, x1, y1] of r.rects) s.on('slab_edge').box(x0, y0, z0, x1, y1, z1 - 0.02);
     m.node(`Floor_${r.id}`, s, { room: r.id, storey: r.storey ? 'first' : 'ground' });
     const c = new Shape();
     const cz = r.storey ? CEIL1 : CEIL0;
@@ -153,7 +130,17 @@ function openings(m: Model): void {
         const s = new Shape();
         const b = span(o.a + 0.01, o.b - 0.01, mid - 0.02, mid + 0.02, o.sill + 0.01, o.head - 0.01);
         s.on(o.material || 'door_oak').box(b[0], b[1], b[2], b[3], b[4], b[5]);
-        m.node(`Door_${o.id}`, s, { door_leaf: true, width_m: +(o.b - o.a).toFixed(2) });
+        // a sectional door: grooves between its horizontal panels, on both faces
+        for (let i = 1; i < (o.panels ?? 0); i++) {
+          const z = o.sill + 0.01 + ((o.head - o.sill - 0.02) * i) / o.panels!;
+          const g = span(o.a + 0.01, o.b - 0.01, mid - 0.024, mid + 0.024, z - 0.012, z + 0.012);
+          s.on('garage_door_groove').box(g[0], g[1], g[2], g[3], g[4], g[5]);
+        }
+        m.node(`Door_${o.id}`, s, {
+          door_leaf: true,
+          width_m: +(o.b - o.a).toFixed(2),
+          ...(o.panels ? { kind: 'sectional garage door', panels: o.panels } : {}),
+        });
         continue;
       }
       const glass = new Shape(),
@@ -202,40 +189,6 @@ function stair(m: Model): void {
     extras: { kind: 'handrail' },
   });
   merged(m, 'Stair', 'stair', treads, { room: 'hall' });
-}
-
-/** built-ins: kitchen run, bath, vanity */
-function builtIns(m: Model): void {
-  merged(
-    m,
-    'Kitchen_units',
-    'kitchen_units',
-    [
-      { name: 'Base units (west)', material: 'cabinet', boxes: [[0, 5.6, 0, 0.6, 8.9, 0.86]] },
-      { name: 'Worktop (west)', material: 'worktop', boxes: [[0, 5.6, 0.86, 0.62, 8.9, 0.9]] },
-      { name: 'Base units (north)', material: 'cabinet', boxes: [[0.6, 8.4, 0, 4.2, 9, 0.86]] },
-      { name: 'Worktop (north)', material: 'worktop', boxes: [[0.6, 8.38, 0.86, 4.2, 9, 0.9]] },
-      { name: 'Tall unit (fridge)', material: 'cabinet', boxes: [[6.3, 8.3, 0, 6.94, 9, 2.1]] },
-    ],
-    { room: 'kitchen' },
-  );
-  merged(
-    m,
-    'Bathroom_fittings',
-    'bathroom_fittings',
-    [
-      {
-        name: 'Bath',
-        material: 'sanitary',
-        boxes: [[10.2, 1.25, UP, 12, 2.95, UP + 0.55]],
-        extras: { product: '1700 × 700 bath' },
-      },
-      { name: 'Vanity unit', material: 'cabinet', boxes: [[9.3, 0, UP, 10.3, 0.5, UP + 0.85]] },
-      { name: 'Basin', material: 'sanitary', boxes: [[9.45, 0.05, UP + 0.85, 10.15, 0.45, UP + 0.9]] },
-      { name: 'WC', material: 'sanitary', boxes: [[7.4, 0.1, UP, 7.8, 0.75, UP + 0.42]] },
-    ],
-    { room: 'bathroom' },
-  );
 }
 
 /** the roof: a hip roof on the walls, with soffits (all in the roof layer) */
@@ -291,31 +244,61 @@ function roof(m: Model): void {
   m.node('Roof_soffit', soffit);
 }
 
-/** the pergola over the back terrace: the site's own layer (key K) */
-function pergola(m: Model): void {
-  const posts = new Shape(),
-    beams = new Shape(),
-    rafters = new Shape();
-  const PY = [10.0, 12.8],
-    PX = [3, 6, 9];
-  for (const x of PX)
-    for (const y of PY) posts.on('pergola_timber').box(x - 0.06, y - 0.06, 0, x + 0.06, y + 0.06, 2.45);
-  for (const y of PY) beams.on('pergola_timber').box(2.7, y - 0.04, 2.45, 9.3, y + 0.04, 2.65);
-  for (let x = 3; x <= 9.001; x += 0.5) rafters.on('pergola_timber').box(x - 0.025, 9.7, 2.65, x + 0.025, 13.1, 2.8);
-  m.node('Pergola_posts', posts, { kind: 'pergola' });
-  m.node('Pergola_beams', beams, { kind: 'pergola' });
-  m.node('Pergola_rafters', rafters, { kind: 'pergola' });
+/** the garage wing's roof: a lower hip roof, its west end against the block's east wall (its ridge, 4.4 m up, is
+ * below the first floor's east window), with soffits; in the roof layer (Roof_ prefix) like the main roof */
+function garageRoof(m: Model): void {
+  const roof = new Shape();
+  const t = Math.tan((WING.pitch * Math.PI) / 180);
+  const x0 = WING.x0 + 0.005, // just clear of the wall's face
+    x1 = WING.x1 + EXT + OVERHANG,
+    y0 = -EXT - OVERHANG,
+    y1 = D + EXT + OVERHANG;
+  const half = (y1 - y0) / 2;
+  const E = WING.eave,
+    ridge = E + half * t;
+  const rx1 = x1 - half,
+    ry = (y0 + y1) / 2;
+  const th = 0.12;
+  const slab = (pts: V3[]) =>
+    roof.on('roof_tile').prism(
+      pts.map(([x, y, z]) => [x, y, z - th] as V3),
+      [0, 0, th],
+    );
+  slab([
+    [x0, y0, E],
+    [x1, y0, E],
+    [rx1, ry, ridge],
+    [x0, ry, ridge],
+  ]);
+  slab([
+    [x1, y1, E],
+    [x0, y1, E],
+    [x0, ry, ridge],
+    [rx1, ry, ridge],
+  ]);
+  slab([
+    [x1, y0, E],
+    [x1, y1, E],
+    [rx1, ry, ridge],
+  ]);
+  m.node('Roof_garage', roof, { kind: 'hip roof', pitch_deg: WING.pitch, material: 'clay tile', room: 'garage' });
+  const soffit = new Shape();
+  const sz = E - th - 0.03;
+  soffit.on('soffit').box(x0, y0, sz, x1, -EXT, sz + 0.02);
+  soffit.on('soffit').box(x0, D + EXT, sz, x1, y1, sz + 0.02);
+  soffit.on('soffit').box(WING.x1 + EXT, -EXT, sz, x1, D + EXT, sz + 0.02);
+  m.node('Roof_garage_soffit', soffit);
 }
 
-/** light fixtures: one node each, sharing a mesh per kind */
-function lightFixtures(m: Model): void {
+/** light fixtures: one node each, sharing a mesh per kind (the main model's, or the furniture model's: a lamp) */
+export function lightFixtures(m: Model, model: 'main' | 'furniture'): void {
   const fxMesh = new Map<string, Mesh>();
-  for (const f of FIXTURES) {
+  for (const f of FIXTURES.filter((x) => (x.model ?? 'main') === model)) {
     if (!fxMesh.has(f.kind)) fxMesh.set(f.kind, m.mesh(`fixture_${f.kind}`, fixtureShape(f.kind)));
     m.node(
       `Fixture_${f.id}`,
       fxMesh.get(f.kind)!,
-      { fixture_id: f.id, fixture_kind: f.kind, fixture_group: f.group, room: f.room },
+      { fixture_id: f.id, fixture_kind: f.kind.replace(/_/g, ' '), fixture_group: f.group, room: f.room },
       { at: f.at, yaw: f.yaw },
     );
   }
@@ -373,73 +356,18 @@ function wallPlates(m: Model): void {
   }
 }
 
-/** plants: one group (layer: plants), a node per plant, sharing a mesh per kind */
-function planting(m: Model): void {
-  const tree = new Shape();
-  tree.on('bark').lathe(
-    0,
-    0,
-    [
-      [0, 0.12],
-      [1.6, 0.09],
-    ],
-    6,
-  );
-  tree.on('foliage').lathe(
-    0,
-    0,
-    [
-      [1.3, 0],
-      [1.7, 1.0],
-      [2.6, 1.35],
-      [3.5, 1.0],
-      [4.1, 0],
-    ],
-    9,
-  );
-  const shrub = new Shape();
-  shrub.on('foliage_light').lathe(
-    0,
-    0,
-    [
-      [0, 0.3],
-      [0.35, 0.55],
-      [0.75, 0.45],
-      [0.95, 0],
-    ],
-    7,
-  );
-  const meshes = { tree: m.mesh('plant_tree', tree), shrub: m.mesh('plant_shrub', shrub) };
-  const plants = m.node('Plants', null, { layer: 'plants' });
-  const PLANTS: [string, 'tree' | 'shrub', string, number, number][] = [
-    ['tree.1', 'tree', 'Field maple (Acer campestre)', -5, 6],
-    ['tree.2', 'tree', 'Field maple (Acer campestre)', 17, 3],
-    ['tree.3', 'tree', 'Silver birch (Betula pendula)', 15, 15],
-    ['shrub.1', 'shrub', 'Box (Buxus sempervirens)', 1, -1.6],
-    ['shrub.2', 'shrub', 'Box (Buxus sempervirens)', 3.5, -1.6],
-    ['shrub.3', 'shrub', 'Box (Buxus sempervirens)', 6, -1.6],
-    ['shrub.4', 'shrub', 'Lavender (Lavandula angustifolia)', 11.6, -1.6],
-    ['shrub.5', 'shrub', 'Lavender (Lavandula angustifolia)', 1.5, 12.5],
-    ['shrub.6', 'shrub', 'Lavender (Lavandula angustifolia)', 10.5, 12.5],
-  ];
-  for (const [id, kind, species, x, y] of PLANTS)
-    m.node(`Plant_${id}`, meshes[kind], { plant_id: id, species, kind }, { at: [x, y, G.lawn], parent: plants });
-}
-
 /** the main model: its parts in this order (the order of the nodes in demo.glb) */
 export function buildMain(plaque: Uint8Array): Model {
   const m = new Model('jarvis tools/make-demo-site.ts');
   housePlaque(m, plaque);
-  site(m);
   floors(m);
   walls(m);
   openings(m);
   stair(m);
-  builtIns(m);
   roof(m);
-  pergola(m);
-  lightFixtures(m);
+  garageRoof(m);
+  for (const a of AREAS) a.buildMain?.(m);
+  lightFixtures(m, 'main');
   wallPlates(m);
-  planting(m);
   return m;
 }

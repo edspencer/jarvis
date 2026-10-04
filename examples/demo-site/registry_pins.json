@@ -8,6 +8,71 @@
   },
   "pins": [
     {
+      "id": "appliance.fridge",
+      "name": "Fridge-freezer",
+      "category": "appliance",
+      "status": "in-service",
+      "conf": "high",
+      "room": "kitchen",
+      "pos": [6.6, 1, -8.6],
+      "plan": [6.6, 8.6, 1],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [3.5, 1.2, -7],
+      "make": "Example Appliances",
+      "model": "FF-70",
+      "serial": null,
+      "aliases": [],
+      "specs": [],
+      "connections": [],
+      "documents": [
+        {
+          "text": "FF-70 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": []
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "fixture.kitchen-pendants",
+      "name": "Kitchen pendants",
+      "category": "fixture",
+      "status": "in-service",
+      "conf": "high",
+      "room": "kitchen",
+      "pos": [3.5, 2, -7],
+      "plan": [3.5, 7, 2],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [3.5, 1.2, -7],
+      "make": null,
+      "model": null,
+      "serial": null,
+      "aliases": [],
+      "specs": [],
+      "connections": [],
+      "documents": [],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": ["kitchen.pendant.1", "kitchen.pendant.2", "kitchen.pendant.3"],
+      "ha": {
+        "entities": ["light.kitchen_pendant_1", "light.kitchen_pendant_2", "light.kitchen_pendant_3"]
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
       "id": "hvac.air-handler",
       "name": "Air handler",
       "category": "hvac",
@@ -18,7 +83,7 @@
       "plan": [11.3, 8.4, 1],
       "loc_conf": "high",
       "approx": null,
-      "loc_note": "In the cupboard under the landing.",
+      "loc_note": "In the closet under the landing.",
       "room_centre": [9.5, 1.2, -2],
       "make": "Example Air",
       "model": "AH-36",
@@ -92,44 +157,6 @@
       "referenced_by": []
     },
     {
-      "id": "elec.panel",
-      "name": "Consumer unit",
-      "category": "elec",
-      "status": "in-service",
-      "conf": "high",
-      "room": "hall",
-      "pos": [11.98, 1.6, -1],
-      "plan": [11.98, 1, 1.6],
-      "loc_conf": "high",
-      "approx": null,
-      "loc_note": null,
-      "room_centre": [9.5, 1.2, -2],
-      "make": "Example Electric",
-      "model": "CU-18",
-      "serial": null,
-      "aliases": [],
-      "specs": [
-        ["ways", "18"],
-        ["main", "100 A"]
-      ],
-      "connections": [],
-      "documents": [
-        {
-          "text": "CU-18 manual (example)",
-          "url": null
-        }
-      ],
-      "photos": [],
-      "open_questions": [],
-      "fixtures": [],
-      "ha": {
-        "entities": []
-      },
-      "health": null,
-      "file": "examples/demo-site/registry_pins.json",
-      "referenced_by": []
-    },
-    {
       "id": "net.router",
       "name": "Router",
       "category": "net",
@@ -141,7 +168,7 @@
       "loc_conf": "high",
       "approx": null,
       "loc_note": null,
-      "room_centre": [8.8, 1.2, -6.5],
+      "room_centre": [8.8, 1.2, -7.3],
       "make": "Example Networks",
       "model": "R-6",
       "serial": null,
@@ -171,12 +198,12 @@
       "status": "in-service",
       "conf": "high",
       "room": "landing",
-      "pos": [8.8, 5.4, -6],
-      "plan": [8.8, 6, 5.4],
+      "pos": [10, 5.4, -4.6],
+      "plan": [10, 4.6, 5.4],
       "loc_conf": "low",
       "approx": "room-centroid",
       "loc_note": "On the landing ceiling; exactly where is not recorded.",
-      "room_centre": [8.8, 4.4, -6],
+      "room_centre": [4.75, 4.4, -4.6],
       "make": null,
       "model": null,
       "serial": null,
@@ -184,106 +211,6 @@
       "specs": [],
       "connections": [],
       "documents": [],
-      "photos": [],
-      "open_questions": [],
-      "fixtures": [],
-      "ha": {
-        "entities": []
-      },
-      "health": null,
-      "file": "examples/demo-site/registry_pins.json",
-      "referenced_by": []
-    },
-    {
-      "id": "plumb.water-heater",
-      "name": "Water heater",
-      "category": "plumb",
-      "status": "in-service",
-      "conf": "high",
-      "room": "kitchen",
-      "pos": [0.35, 1.6, -8.65],
-      "plan": [0.35, 8.65, 1.6],
-      "loc_conf": "high",
-      "approx": null,
-      "loc_note": null,
-      "room_centre": [3.5, 1.2, -7],
-      "make": "Example Water",
-      "model": "WH-50",
-      "serial": null,
-      "aliases": [],
-      "specs": [["capacity", "190 l"]],
-      "connections": [],
-      "documents": [
-        {
-          "text": "WH-50 manual (example)",
-          "url": null
-        }
-      ],
-      "photos": [],
-      "open_questions": [],
-      "fixtures": [],
-      "ha": {
-        "entities": []
-      },
-      "health": null,
-      "file": "examples/demo-site/registry_pins.json",
-      "referenced_by": []
-    },
-    {
-      "id": "plumb.stopcock",
-      "name": "Main stopcock",
-      "category": "plumb",
-      "status": "in-service",
-      "conf": "high",
-      "room": "kitchen",
-      "pos": [0.3, 0.25, -5.9],
-      "plan": [0.3, 5.9, 0.25],
-      "loc_conf": "high",
-      "approx": null,
-      "loc_note": null,
-      "room_centre": [3.5, 1.2, -7],
-      "make": null,
-      "model": null,
-      "serial": null,
-      "aliases": [],
-      "specs": [],
-      "connections": [],
-      "documents": [],
-      "photos": [],
-      "open_questions": [],
-      "fixtures": [],
-      "ha": {
-        "entities": []
-      },
-      "health": null,
-      "file": "examples/demo-site/registry_pins.json",
-      "referenced_by": []
-    },
-    {
-      "id": "appliance.fridge",
-      "name": "Fridge-freezer",
-      "category": "appliance",
-      "status": "in-service",
-      "conf": "high",
-      "room": "kitchen",
-      "pos": [6.6, 1, -8.6],
-      "plan": [6.6, 8.6, 1],
-      "loc_conf": "high",
-      "approx": null,
-      "loc_note": null,
-      "room_centre": [3.5, 1.2, -7],
-      "make": "Example Appliances",
-      "model": "FF-70",
-      "serial": null,
-      "aliases": [],
-      "specs": [],
-      "connections": [],
-      "documents": [
-        {
-          "text": "FF-70 manual (example)",
-          "url": null
-        }
-      ],
       "photos": [],
       "open_questions": [],
       "fixtures": [],
@@ -306,7 +233,7 @@
       "loc_conf": "high",
       "approx": null,
       "loc_note": null,
-      "room_centre": [8.8, 4.4, -6],
+      "room_centre": [4.75, 4.4, -4.6],
       "make": null,
       "model": null,
       "serial": null,
@@ -319,6 +246,109 @@
       "fixtures": [],
       "ha": {
         "entities": ["binary_sensor.smoke_landing"]
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "elec.panel",
+      "name": "Main panel",
+      "category": "elec",
+      "status": "in-service",
+      "conf": "high",
+      "room": "garage",
+      "pos": [18.73, 1.5, -5],
+      "plan": [18.73, 5, 1.5],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [15.5, 1.1, -3.3],
+      "make": "Example Electric",
+      "model": "LP-40",
+      "serial": null,
+      "aliases": [],
+      "specs": [
+        ["main", "200 A"],
+        ["spaces", "40"]
+      ],
+      "connections": [],
+      "documents": [
+        {
+          "text": "LP-40 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": []
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "plumb.water-heater",
+      "name": "Water heater",
+      "category": "plumb",
+      "status": "in-service",
+      "conf": "high",
+      "room": "garage",
+      "pos": [12.7, 1, -6],
+      "plan": [12.7, 6, 1],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [15.5, 1.1, -3.3],
+      "make": "Example Water",
+      "model": "WH-50",
+      "serial": null,
+      "aliases": [],
+      "specs": [["capacity", "50 gal"]],
+      "connections": [],
+      "documents": [
+        {
+          "text": "WH-50 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": []
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "plumb.stopcock",
+      "name": "Main shut-off valve",
+      "category": "plumb",
+      "status": "in-service",
+      "conf": "high",
+      "room": "garage",
+      "pos": [12.3, 0.3, -5.3],
+      "plan": [12.3, 5.3, 0.3],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [15.5, 1.1, -3.3],
+      "make": null,
+      "model": null,
+      "serial": null,
+      "aliases": [],
+      "specs": [],
+      "connections": [],
+      "documents": [],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": []
       },
       "health": null,
       "file": "examples/demo-site/registry_pins.json",
@@ -354,36 +384,6 @@
       "fixtures": [],
       "ha": {
         "entities": []
-      },
-      "health": null,
-      "file": "examples/demo-site/registry_pins.json",
-      "referenced_by": []
-    },
-    {
-      "id": "fixture.kitchen-pendants",
-      "name": "Kitchen pendants",
-      "category": "fixture",
-      "status": "in-service",
-      "conf": "high",
-      "room": "kitchen",
-      "pos": [3.5, 2, -7],
-      "plan": [3.5, 7, 2],
-      "loc_conf": "high",
-      "approx": null,
-      "loc_note": null,
-      "room_centre": [3.5, 1.2, -7],
-      "make": null,
-      "model": null,
-      "serial": null,
-      "aliases": [],
-      "specs": [],
-      "connections": [],
-      "documents": [],
-      "photos": [],
-      "open_questions": [],
-      "fixtures": ["kitchen.pendant.1", "kitchen.pendant.2", "kitchen.pendant.3"],
-      "ha": {
-        "entities": ["light.kitchen_pendant_1", "light.kitchen_pendant_2", "light.kitchen_pendant_3"]
       },
       "health": null,
       "file": "examples/demo-site/registry_pins.json",

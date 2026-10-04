@@ -153,7 +153,7 @@ describe('§8: validate-site prints what the guide shows', () => {
 
   it('once the schema passes, the rules', () => {
     const m = demo();
-    m.startView = 8;
+    m.startView = m.viewpoints.length + 1;
     m.layers[1].key = 'X';
     const r = validate(site({ 'site.json': JSON.stringify(m) }), '/tmp/broken-site');
     expect(r.status, r.why).toBe(1);

@@ -108,7 +108,7 @@ try {
       twin.applyVisibility();
       await settle();
       const T = twin.THREE;
-      const box = p.box ?? [-1.5, -1.5, 13.5, 10.5];
+      const box = p.box ?? [-1.5, -1.5, 20.5, 10.5];
       const [x0, y0, x1, y1] = box;
       const w = x1 - x0,
         h = y1 - y0,
@@ -117,7 +117,8 @@ try {
         hh = hw / aspect;
       const cam = new T.OrthographicCamera(-hw, hw, hh, -hh, 0.1, 100);
       const z = (st[p.storey]?.z ?? 0) + (st[p.storey + 1] ? st[p.storey + 1].z - (st[p.storey].z ?? 0) - 0.4 : 2.5);
-      cam.position.copy(twin.P((x0 + x1) / 2, (y0 + y1) / 2, z));
+      // from well above (the ground floor's walls reach above z), hiding what starts above z
+      cam.position.copy(twin.P((x0 + x1) / 2, (y0 + y1) / 2, z + 30));
       cam.up.set(0, 0, -1); // north up
       cam.lookAt(twin.P((x0 + x1) / 2, (y0 + y1) / 2, 0));
       cam.updateProjectionMatrix();

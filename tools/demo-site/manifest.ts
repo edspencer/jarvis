@@ -1,4 +1,4 @@
-import { G, SLAB, UP } from './dims.ts';
+import { G, SLAB, UP, WING } from './dims.ts';
 
 export const REPO = 'https://github.com/edspencer/jarvis';
 
@@ -9,11 +9,11 @@ export function manifest() {
     jarvis: 'jarvis-site/1',
     id: 'demo-house',
     name: 'Demo house',
-    description: 'A synthetic two-storey house made by tools/make-demo-site.ts.',
+    description: 'A synthetic four-bedroom house with a garage, made by tools/make-demo-site.ts.',
     geo: { lat: 51.4779, lon: -0.0015, timeZone: 'Europe/London' },
     frame: { units: 'm', northAzimuth: 12 },
-    centre: [6, 5],
-    overview: { camera: [18, -6, 19] },
+    centre: [9.5, 4.5],
+    overview: { camera: [24, -10, 21] },
     ground: { z: G.lawn - 0.02 },
     models: {
       main: { url: 'demo.glb', parts: 'demo.parts.json' },
@@ -24,13 +24,14 @@ export function manifest() {
       { name: 'first floor', short: 'upstairs', z: UP, from: 1.8, objectsFrom: SLAB - 0.05 },
     ],
     viewpoints: [
-      { name: 'Front path', at: [9.5, -6, G.lawn], yaw: 10 },
-      { name: 'Living room', at: [5.6, 0.8, 0], yaw: 50 },
-      { name: 'Kitchen', at: [6.2, 5.6, 0], yaw: 120 },
+      { name: 'Front of the house', at: [9.4, -14, G.lawn], yaw: 0 },
+      { name: 'Living room', at: [3.6, 4.5, 0], yaw: 180 },
+      { name: 'Kitchen', at: [6.2, 5.6, 0], yaw: 45 },
       { name: 'Foot of the stair', at: [11.3, 1.2, 0], yaw: 0 },
-      { name: 'Landing', at: [11.3, 8.3, UP], yaw: 140 },
-      { name: 'Bedroom 1', at: [5.8, 4.2, UP], yaw: 135 },
-      { name: 'Back terrace', at: [6, 12.4, 0], yaw: 180 },
+      { name: 'Landing', at: [10.2, 4.6, UP], yaw: 90 },
+      { name: 'Primary bedroom', at: [6.2, 3.4, UP], yaw: 120 },
+      { name: 'Back terrace', at: [5, 18, G.lawn], yaw: 200 },
+      { name: 'Garage', at: [17.6, 8.4, WING.z], yaw: 160 },
     ],
     startView: 2,
     layers: [

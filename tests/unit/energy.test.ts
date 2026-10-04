@@ -650,7 +650,7 @@ describe('the site manifest and plugins.energy', () => {
     it('checks the energy map and counts its meters', async () => {
       const r = await checkSite('file:///site/site.json', files(DEMO));
       expect(energyLines(r.errors)).toEqual([]);
-      expect(energyLines(r.notes)).toEqual(['energy map: 20 meters (1 low confidence)']);
+      expect(energyLines(r.notes)).toEqual(['energy map: 27 meters (1 low confidence)']);
     });
 
     it("reports the map's errors and warnings as energy map: …", async () => {

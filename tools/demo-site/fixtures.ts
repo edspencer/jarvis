@@ -1,56 +1,10 @@
-import { Shape, type V3 } from './geometry.ts';
-import { CEIL0, CEIL1, D, EXT, UP } from './dims.ts';
+import { Shape } from './geometry.ts';
 
-// ------------------------------------------------------------------ fixtures
-export interface Fixture {
-  id: string;
-  kind: 'can' | 'pendant' | 'flush' | 'bar' | 'lantern' | 'wall' | 'floor_lamp';
-  group: string;
-  room: string;
-  at: V3;
-  /** wall fixtures: the direction they face (yaw, radians, about plan Z: 0 = facing plan -Y... see fixtureShape) */
-  yaw?: number;
-}
-export const FIXTURES: Fixture[] = [
-  ...[
-    [2, 1.5],
-    [5, 1.5],
-    [2, 3.5],
-    [5, 3.5],
-  ].map(([x, y], i) => ({
-    id: `living.can.${i + 1}`,
-    kind: 'can' as const,
-    group: 'fixture.cans.living',
-    room: 'living_room',
-    at: [x, y, CEIL0] as V3,
-  })),
-  ...[2, 3.5, 5].map((x, i) => ({
-    id: `kitchen.pendant.${i + 1}`,
-    kind: 'pendant' as const,
-    group: 'fixture.pendants.kitchen',
-    room: 'kitchen',
-    at: [x, 7, CEIL0] as V3,
-  })),
-  { id: 'hall.pendant', kind: 'pendant', group: 'fixture.hall', room: 'hall', at: [9, 1.6, CEIL0] },
-  { id: 'study.ceiling', kind: 'flush', group: 'fixture.study', room: 'study', at: [8.8, 6.5, CEIL0] },
-  { id: 'bedroom_1.ceiling', kind: 'flush', group: 'fixture.bedroom_1', room: 'bedroom_1', at: [3.5, 2.5, CEIL1] },
-  { id: 'bedroom_2.ceiling', kind: 'flush', group: 'fixture.bedroom_2', room: 'bedroom_2', at: [3.5, 7, CEIL1] },
-  { id: 'landing.ceiling', kind: 'flush', group: 'fixture.landing', room: 'landing', at: [8.8, 6, CEIL1] },
-  // a 1.3 m vanity bar: the viewer lights anything longer than 1.2 m as a line of lights
-  { id: 'bathroom.vanity', kind: 'bar', group: 'fixture.bathroom', room: 'bathroom', at: [9.8, 0.05, UP + 2.0] },
-  { id: 'porch.lantern', kind: 'lantern', group: 'fixture.porch', room: 'exterior', at: [8.6, -EXT, 2.0] },
-  ...[3.6, 7.2].map((x, i) => ({
-    id: `terrace.wall.${i + 1}`,
-    kind: 'wall' as const,
-    group: 'fixture.terrace',
-    room: 'exterior',
-    at: [x, D + EXT, 2.2] as V3,
-    yaw: Math.PI,
-  })),
-];
-
-/** a fixture's shape, about its mounting point (plan frame, before the node's yaw) */
-export function fixtureShape(kind: Fixture['kind']): Shape {
+// ------------------------------------------------------------------ fixture shapes
+// The built-in kinds of light fixture (areas may add their own: Area.fixtureShapes). Each is drawn about its mounting
+// point, in the plan frame, before the node's yaw. The fixtures themselves are in the areas (tools/demo-site/areas).
+/** a built-in fixture's shape, about its mounting point (plan frame, before the node's yaw) */
+function builtinShape(kind: (typeof BUILTIN_KINDS)[number]): Shape {
   const s = new Shape();
   switch (kind) {
     case 'can':
@@ -146,3 +100,8 @@ export function fixtureShape(kind: Fixture['kind']): Shape {
   }
   return s;
 }
+
+const BUILTIN_KINDS = ['can', 'pendant', 'flush', 'bar', 'lantern', 'wall', 'floor_lamp'] as const;
+export const FIXTURE_SHAPES: Record<string, () => Shape> = Object.fromEntries(
+  BUILTIN_KINDS.map((k) => [k, () => builtinShape(k)]),
+);

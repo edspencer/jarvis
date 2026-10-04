@@ -329,12 +329,12 @@ describe('ha_act', () => {
 describe('site tools', () => {
   it('site_search returns hits with subjects and room names', async () => {
     const out = await run(rig(), 'site_search', { query: 'water heater' });
-    expect(out[0]).toMatchObject({ id: 'plumb.water-heater', subject: 'pins:plumb.water-heater', room: 'Kitchen' });
+    expect(out[0]).toMatchObject({ id: 'plumb.water-heater', subject: 'pins:plumb.water-heater', room: 'Garage' });
   });
 
   it('site_rooms lists the rooms with storeys and items', async () => {
     const out = await run(rig(), 'site_rooms', {});
-    expect(out).toHaveLength(8);
+    expect(out).toHaveLength(14);
     expect(out.find((r: { id: string }) => r.id === 'kitchen')).toMatchObject({
       storey: 'ground floor',
       subject: 'room:kitchen',

@@ -1,37 +1,99 @@
-import { FIXTURES } from './fixtures.ts';
+import { SCHEDULE, PANEL } from './panel.ts';
+import { onCircuit } from './areas/index.ts';
 
 // ------------------------------------------------------------------ the energy plugin's map (docs/plugins/energy.md)
-// The grid feed, the main panel and its circuits (breakers as on the wall plates), a smart plug and the pond pump's
-// switch below their circuits (so there is an Other), PV and a battery. The sensors are invented: ?ha=mock makes up
-// their values. Every feed names a real object: registry pins, wall plate boxes, fixture ids, rooms, model nodes.
-export function energyMap() {
-  const SRC = 'tools/make-demo-site.ts';
-  type Feed = { registry?: string; plate?: string; fixture?: string; node?: string; room?: string };
-  const circuit = (
-    id: string,
-    label: string,
-    breaker: number | number[],
-    feeds: Feed[],
-    extra: Record<string, unknown> = {},
-  ) => {
-    const two = Array.isArray(breaker);
-    const sensor = id.replace(/^circuit\./, '').replace(/\W/g, '_');
-    return {
-      id,
-      label,
-      ...(two
-        ? { power: [`sensor.${sensor}_l1_power`, `sensor.${sensor}_l2_power`], legs: ['L1', 'L2'], volts: 240 }
-        : { power: `sensor.${sensor}_power` }),
-      energy: { today: `sensor.${sensor}_energy_today` },
-      panel: 'Main panel',
-      breaker,
-      ...(feeds.length ? { feeds } : {}),
+// The grid feed, the main panel and a meter per circuit of the panel schedule (panel.ts; 240 V ones on two legs), a
+// smart plug and the pond pump's switch below their circuits (so there is an Other), PV and a battery. Each circuit
+// feeds what the areas put on its breaker (onCircuit: registry pins, wall plates, fixtures, model nodes) and the rooms
+// those are in. The sensors are invented: ?ha=mock makes up their values.
+const SRC = 'tools/make-demo-site.ts';
+
+/** rooms a circuit feeds though nothing on it is in the model yet */
+const MORE_ROOMS: Record<string, string[]> = {
+  'circuit.living_outlets': ['living_room', 'hall'],
+  'circuit.range': ['kitchen'],
+  'circuit.dishwasher': ['kitchen'],
+  'circuit.microwave': ['kitchen'],
+  'circuit.study': ['study'],
+  'circuit.ev_charger': ['garage'],
+  'circuit.garage': ['garage'],
+  'circuit.washer': ['laundry'],
+  'circuit.bath_outlets': ['primary_bath', 'hall_bath', 'powder_room'],
+  'circuit.bedrooms': ['bedroom_2', 'bedroom_3', 'hall_bath'],
+  'circuit.primary_suite': ['bedroom_1', 'primary_closet', 'primary_bath'],
+};
+
+/** meters below a circuit */
+const CHILDREN: Record<string, Record<string, unknown>[]> = {
+  'circuit.study': [
+    {
+      id: 'plug.desk',
+      label: 'Desk (smart plug)',
+      power: 'sensor.desk_plug_power',
+      energy: { today: 'sensor.desk_plug_energy_today' },
+      feeds: [{ node: 'Furn_desk' }],
       conf: 'high',
       src: SRC,
-      ...extra,
-    };
+    },
+  ],
+  'circuit.outside': [
+    {
+      id: 'switch.pond_pump',
+      label: 'Pond pump',
+      power: 'sensor.pond_pump_power',
+      feeds: [{ node: 'Pond' }],
+      conf: 'high',
+      src: SRC,
+    },
+  ],
+};
+
+/** what the map isn't sure of yet */
+const QUESTIONS: Record<string, string> = {
+  'circuit.dryer': 'The laundry has no dryer in the model yet: where is it, and is 14+16 really its breaker?',
+};
+
+type Feed = { registry?: string; plate?: string; fixture?: string; node?: string; room?: string };
+
+function circuitMeter(c: (typeof SCHEDULE)[number]) {
+  const on = onCircuit(c.id);
+  const rooms = [
+    ...new Set(
+      // (not switch plates: a switch on this circuit may be in another room than what it switches)
+      [...on.pins, ...on.plates.filter((p) => p.kind === 'outlet'), ...on.fixtures]
+        .map((x) => x.room)
+        .concat(MORE_ROOMS[c.id] ?? [])
+        .filter((r) => r !== 'exterior'),
+    ),
+  ];
+  const feeds: Feed[] = [
+    ...on.pins.map((p) => ({ registry: p.id })),
+    ...on.plates.map((p) => ({ plate: p.id })),
+    ...on.fixtures.map((f) => ({ fixture: f.id })),
+    ...on.nodes.map((n) => ({ node: n })),
+    ...rooms.map((r) => ({ room: r })),
+  ];
+  const two = Array.isArray(c.breaker);
+  const sensor = c.id.replace(/^circuit\./, '').replace(/\W/g, '_');
+  const question = QUESTIONS[c.id];
+  return {
+    id: c.id,
+    label: c.label,
+    ...(two
+      ? { power: [`sensor.${sensor}_l1_power`, `sensor.${sensor}_l2_power`], legs: ['L1', 'L2'], volts: 240 }
+      : { power: `sensor.${sensor}_power` }),
+    ...(question ? {} : { energy: { today: `sensor.${sensor}_energy_today` } }),
+    panel: PANEL.name,
+    breaker: c.breaker,
+    ...(feeds.length ? { feeds } : {}),
+    conf: question ? 'low' : 'high',
+    src: SRC,
+    ...(question ? { question } : {}),
+    ...(CHILDREN[c.id] ? { children: CHILDREN[c.id] } : {}),
   };
-  const fixtures = (group: string) => FIXTURES.filter((f) => f.group === group).map((f) => ({ fixture: f.id }));
+}
+
+export function energyMap() {
   return {
     $schema: '../../schema/energy.schema.json',
     jarvis: 'jarvis-energy/1',
@@ -47,7 +109,7 @@ export function energyMap() {
         children: [
           {
             id: 'panel.main',
-            label: 'Main panel',
+            label: PANEL.name,
             power: ['sensor.main_panel_l1_power', 'sensor.main_panel_l2_power'],
             legs: ['L1', 'L2'],
             remainder: 'sensor.main_panel_balance_power',
@@ -56,80 +118,7 @@ export function energyMap() {
             feeds: [{ registry: 'elec.panel' }],
             conf: 'high',
             src: SRC,
-            children: [
-              circuit('circuit.kitchen_counter', 'Kitchen counter outlets', 1, [
-                { node: 'Kitchen_units' },
-                { room: 'kitchen' },
-              ]),
-              circuit('circuit.fridge', 'Fridge-freezer', 3, [{ registry: 'appliance.fridge' }]),
-              circuit('circuit.range', 'Range', [2, 4], [{ node: 'Kitchen_units' }]),
-              circuit('circuit.living_outlets', 'Living room outlets', 5, [
-                { plate: 'LV-O-A' },
-                { fixture: 'living.floor_lamp' },
-                { room: 'living_room' },
-              ]),
-              circuit('circuit.lights_ground', 'Lighting, ground floor', 7, [
-                { plate: 'LV-S-A' },
-                ...fixtures('fixture.cans.living'),
-                { fixture: 'hall.pendant' },
-                { plate: 'HL-S-A' },
-                { room: 'living_room' },
-                { room: 'hall' },
-              ]),
-              circuit('circuit.lights_outside', 'Outside lights', 9, [
-                { fixture: 'porch.lantern' },
-                ...fixtures('fixture.terrace'),
-              ]),
-              circuit('circuit.lights_kitchen', 'Kitchen lights', 11, [
-                { plate: 'KT-S-A' },
-                ...fixtures('fixture.pendants.kitchen'),
-                { registry: 'fixture.kitchen-pendants' },
-              ]),
-              circuit('circuit.study', 'Study outlets', 13, [{ room: 'study' }, { registry: 'net.router' }], {
-                children: [
-                  {
-                    id: 'plug.desk',
-                    label: 'Desk (smart plug)',
-                    power: 'sensor.desk_plug_power',
-                    energy: { today: 'sensor.desk_plug_energy_today' },
-                    feeds: [{ node: 'Furn_desk' }],
-                    conf: 'high',
-                    src: SRC,
-                  },
-                ],
-              }),
-              circuit('circuit.lights_upstairs', 'Lighting, upstairs', 14, [
-                { plate: 'BA-S-A' },
-                { fixture: 'bathroom.vanity' },
-                { fixture: 'bedroom_1.ceiling' },
-                { fixture: 'bedroom_2.ceiling' },
-                { fixture: 'landing.ceiling' },
-                { room: 'bedroom_1' },
-                { room: 'bedroom_2' },
-                { room: 'bathroom' },
-                { room: 'landing' },
-              ]),
-              circuit('circuit.bedroom_outlets', 'Bedroom outlets', 15, [{ room: 'bedroom_1' }, { room: 'bedroom_2' }]),
-              circuit('circuit.garden', 'Garden and pond', 17, [{ node: 'Pond' }, { registry: 'site.irrigation' }], {
-                children: [
-                  {
-                    id: 'switch.pond_pump',
-                    label: 'Pond pump',
-                    power: 'sensor.pond_pump_power',
-                    feeds: [{ node: 'Pond' }],
-                    conf: 'high',
-                    src: SRC,
-                  },
-                ],
-              }),
-              circuit('circuit.heat_pump', 'Heat pump and air handler', [6, 8], [{ registry: 'hvac.air-handler' }]),
-              circuit('circuit.water_heater', 'Water heater', [10, 12], [{ registry: 'plumb.water-heater' }]),
-              circuit('circuit.dryer', 'Dryer', [16, 18], [], {
-                energy: undefined,
-                conf: 'low',
-                question: 'The model has no laundry: where is the dryer, and is 16+18 really its breaker?',
-              }),
-            ],
+            children: SCHEDULE.filter((c) => !c.source).map(circuitMeter),
           },
         ],
       },
@@ -152,4 +141,12 @@ export function energyMap() {
       },
     ],
   };
+}
+
+/** every feed of the map, for the generator's check that each names something that exists */
+export function energyFeeds(meters: { feeds?: Feed[]; children?: unknown[] }[] = energyMap().meters): Feed[] {
+  return meters.flatMap((m) => [
+    ...(m.feeds ?? []),
+    ...energyFeeds((m.children ?? []) as { feeds?: Feed[]; children?: unknown[] }[]),
+  ]);
 }

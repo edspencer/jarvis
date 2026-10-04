@@ -57,7 +57,7 @@ const ROOMS: Readonly<Record<string, string>> = {
   bedroom_1: 'Bedroom 1',
   bedroom_2: 'Bedroom 2',
   landing: 'Landing',
-  bathroom: 'Bathroom',
+  primary_bath: 'Primary bath',
   porch: 'Porch',
   terrace: 'Terrace',
 };
