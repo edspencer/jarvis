@@ -64,7 +64,7 @@ Screenshots: every viewpoint and a plan of each storey, taken with `node tools/d
 | Living room | The TV is a thin black slab with no stand or screen, hard to read as a TV                                                                          | done   |
 | Kitchen     | No appliances: no range, sink, dishwasher or hood; the fridge is a plain tall cabinet                                                              | done   |
 | Bedrooms    | Bedroom 2's bed is pushed against the east wall with its headboard there; no nightstands, dressers or lamps                                        | done   |
-| Bathroom    | One bath, upstairs; no bathroom for the second and third bedrooms, no half bath downstairs                                                         | fix    |
+| Bathroom    | One bath, upstairs; no bathroom for the second and third bedrooms, no half bath downstairs                                                         | done   |
 | House       | Only two bedrooms; no garage, laundry or utility space; the panel is in the hall                                                                   | done   |
 | Energy      | 14 circuits on a made-up panel, a dryer circuit with no dryer in the model                                                                         | done   |
 
@@ -365,21 +365,21 @@ wall cabinet right of the window. Nodes: `Kitchen_units` (merged: cabinets, work
 
 ## Equipment pins (registry)
 
-| Pin id                                                         | What                                        | Where        | Status  |
-| -------------------------------------------------------------- | ------------------------------------------- | ------------ | ------- |
-| `elec.panel`                                                   | Main panel, with the full schedule in specs | garage       | done    |
-| `elec.energy-monitor`                                          | Emporia Vue 2-style monitor (16 CTs)        | garage       | done    |
-| `elec.meter`                                                   | Utility meter                               | outside      | done    |
-| `elec.ev-charger`                                              | EV charger                                  | garage       | done    |
-| `elec.battery`, `elec.inverter`                                | Home battery, PV inverter                   | garage       | done    |
-| `hvac.air-handler`                                             | Air handler                                 | hall closet  | exists  |
-| `hvac.condenser`                                               | Heat pump outdoor unit                      | outside      | done    |
-| `hvac.thermostat`                                              | Thermostat                                  | hall         | exists  |
-| `plumb.water-heater`                                           | Water heater                                | garage       | done    |
-| `plumb.stopcock`                                               | Main water shut-off                         | garage       | done    |
-| `net.router`                                                   | Router                                      | study        | exists  |
-| `net.access-point`                                             | Wi-Fi access point                          | landing      | exists  |
-| `appliance.fridge`                                             | Refrigerator                                | kitchen      | exists  |
-| `appliance.range`, `appliance.dishwasher`                      | major appliances                            | kitchen      | planned |
-| `appliance.washer`, `appliance.dryer`, `appliance.garage-door` | major appliances                            | garage wing  | done    |
-| `safety.smoke.*`, `safety.co.*`                                | smoke and CO alarms                         | every storey | planned |
+| Pin id                                                         | What                                        | Where        | Status |
+| -------------------------------------------------------------- | ------------------------------------------- | ------------ | ------ |
+| `elec.panel`                                                   | Main panel, with the full schedule in specs | garage       | done   |
+| `elec.energy-monitor`                                          | Emporia Vue 2-style monitor (16 CTs)        | garage       | done   |
+| `elec.meter`                                                   | Utility meter                               | outside      | done   |
+| `elec.ev-charger`                                              | EV charger                                  | garage       | done   |
+| `elec.battery`, `elec.inverter`                                | Home battery, PV inverter                   | garage       | done   |
+| `hvac.air-handler`                                             | Air handler                                 | hall closet  | exists |
+| `hvac.condenser`                                               | Heat pump outdoor unit                      | outside      | done   |
+| `hvac.thermostat`                                              | Thermostat                                  | hall         | exists |
+| `plumb.water-heater`                                           | Water heater                                | garage       | done   |
+| `plumb.stopcock`                                               | Main water shut-off                         | garage       | done   |
+| `net.router`                                                   | Router                                      | study        | exists |
+| `net.access-point`                                             | Wi-Fi access point                          | landing      | exists |
+| `appliance.fridge`                                             | Refrigerator                                | kitchen      | exists |
+| `appliance.range`, `appliance.dishwasher`                      | major appliances                            | kitchen      | done   |
+| `appliance.washer`, `appliance.dryer`, `appliance.garage-door` | major appliances                            | garage wing  | done   |
+| `safety.smoke.*`, `safety.co.*`                                | smoke and CO alarms                         | every storey | done   |
