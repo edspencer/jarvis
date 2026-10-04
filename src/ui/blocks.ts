@@ -140,11 +140,14 @@ function listRow(r: ListRow, env: BlockEnv): TemplateResult {
       }</span
     >
     <span class="v num">${r.value ?? (act ? '›' : '')}</span>`;
+  // (in a role=list: a row is a listitem, holding its button)
   return act
-    ? html`<button type="button" class="li act ${r.selected ? 'sel' : ''}" title=${r.title ?? nothing} @click=${go}>
-        ${body}
-      </button>`
-    : html`<div class="li ${r.selected ? 'sel' : ''}" title=${r.title ?? nothing}>${body}</div>`;
+    ? html`<div role="listitem">
+        <button type="button" class="li act ${r.selected ? 'sel' : ''}" title=${r.title ?? nothing} @click=${go}>
+          ${body}
+        </button>
+      </div>`
+    : html`<div role="listitem" class="li ${r.selected ? 'sel' : ''}" title=${r.title ?? nothing}>${body}</div>`;
 }
 
 function spark(values: number[]): TemplateResult {

@@ -55,7 +55,14 @@ function startSite(site: Site, loading: Loading): void {
   setPlanUnit(site.unit);
   document.title = `${site.name} — JARVIS`;
   loading.stage('manifest', 'done');
-  const stage = createStage(document.body, site);
+  // the view is the page's main landmark, named by a heading for screen readers (the HUD's regions sit around it)
+  const main = document.createElement('main');
+  main.setAttribute('aria-labelledby', 'site-name');
+  main.append(
+    Object.assign(document.createElement('h1'), { id: 'site-name', className: 'sr-only', textContent: site.name }),
+  );
+  document.body.append(main);
+  const stage = createStage(main, site);
   const { renderer, scene, camera, lamp, sun, centre } = stage;
   renderer.domElement.tabIndex = -1; // F6 can give the view the keys back
 

@@ -10,6 +10,9 @@ const GPU = process.env.E2E_GPU ? process.env.E2E_GPU !== '0' : existsSync('/dev
 const GL_ARGS = GPU
   ? ['--use-angle=gl-egl', '--use-gl=angle', '--ignore-gpu-blocklist', '--enable-gpu']
   : ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'];
+// SwiftShader's cost is mostly fill rate: under it, the viewer renders at half resolution (openViewer reports a
+// devicePixelRatio of 0.5; the page's layout is the same 1280 × 720). About 3x faster on 4 cores. E2E_PIXEL_RATIO overrides.
+process.env.E2E_PIXEL_RATIO ??= GPU ? '' : '0.5';
 
 export default defineConfig({
   testDir: 'tests/e2e',
@@ -17,8 +20,9 @@ export default defineConfig({
   expect: { timeout: 180_000 },
   workers: 1,
   fullyParallel: false,
-  // CI: an HTML report and the traces of failed tests (uploaded by the workflow), and annotations on the PR
-  reporter: CI ? [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }], ['github']] : [['list']],
+  // CI: a blob report per shard (the workflow merges them into one HTML report, with the traces of failed tests), and
+  // annotations on the PR
+  reporter: CI ? [['list'], ['blob'], ['github']] : [['list']],
   outputDir: 'test-results',
   use: {
     baseURL: `http://localhost:${PORT}/`,

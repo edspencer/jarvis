@@ -1,0 +1,6 @@
+{
+  "$comment": "gzip budgets in bytes for npm run bundle-size (tools/bundle-size.ts). At 2026-10-04: initial JS 310.8 kB, CSS 0.9 kB (the HUD's styles are in its JS), all JS 366.8 kB. Raise one on purpose, in the PR that needs it.",
+  "initialJsGzip": 350000,
+  "cssGzip": 2000,
+  "allJsGzip": 425000
+}

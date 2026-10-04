@@ -51,8 +51,9 @@ async function open(browser: Browser, url: string): Promise<Page> {
     null,
     { timeout: 10 * 60_000, polling: 1000 },
   );
-  // the HUD off: everything on the page but the canvas (this app's <jv-hud>, the prototype's #hud, #info, #cross, …)
-  await page.addStyleTag({ content: 'body > :not(canvas) { display: none !important; }' });
+  // the HUD off: everything on the page but the canvas (this app's <jv-hud>, the prototype's #hud, #info, #cross, …;
+  // the canvas is in <main> now, straight in <body> in older builds)
+  await page.addStyleTag({ content: 'body > :not(canvas, main), main > :not(canvas) { display: none !important; }' });
   return page;
 }
 
