@@ -76,6 +76,13 @@ describe('searchSite', () => {
     expect(tokens("Show me the kitchen's pendants")).toEqual(['kitchen', 'pendant']);
   });
 
+  it('tokens: one spelling for British and American words', () => {
+    expect(tokens('Theatre lights')).toEqual(tokens('Theater lights'));
+    expect(tokens('centre colour')).toEqual(['center', 'color']);
+    // short words keep their shape
+    expect(tokens('hour four fire')).toEqual(['hour', 'four', 'fire']);
+  });
+
   it('finds registry items, rooms and fixtures with subjects', () => {
     expect(searchSite(site, 'water heater')[0]).toMatchObject({ kind: 'registry', subject: 'pins:plumb.water-heater' });
     expect(searchSite(site, 'where is the router')[0]).toMatchObject({ id: 'net.router', room: 'study' });

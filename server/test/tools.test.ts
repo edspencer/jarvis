@@ -131,6 +131,19 @@ describe('ha_find', () => {
     expect(k.matches.every((m: { entity_id: string }) => m.entity_id.startsWith('light.kitchen'))).toBe(true);
   });
 
+  it('finds "Theater …" entities when asked for the theatre (British spelling)', async () => {
+    const r = rig();
+    for (const n of ['back', 'table', 'left'])
+      r.ha.entities.set(`light.theater_${n}`, {
+        entity_id: `light.theater_${n}`,
+        state: 'on',
+        attributes: { friendly_name: `Theater ${n}` },
+      });
+    const out = await run(r, 'ha_find', { query: 'theatre lights' });
+    const ids = out.matches.map((m: { entity_id: string }) => m.entity_id);
+    expect(ids).toEqual(expect.arrayContaining(['light.theater_back', 'light.theater_table', 'light.theater_left']));
+  });
+
   it('says when nothing matches, and checks its input', async () => {
     const r = rig();
     expect((await run(r, 'ha_find', { query: 'zebra' })).matches).toEqual([]);

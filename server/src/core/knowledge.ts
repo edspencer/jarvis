@@ -299,7 +299,16 @@ export function tokens(text: string, keepStop = false): string[] {
     .replace(/[’']s\b/g, '')
     .split(/[^a-z0-9]+/)
     .filter((t) => t && (keepStop || !STOP.has(t)))
-    .map((t) => (t.length > 3 && t.endsWith('s') && !t.endsWith('ss') ? t.slice(0, -1) : t));
+    .map((t) => (t.length > 3 && t.endsWith('s') && !t.endsWith('ss') ? t.slice(0, -1) : t))
+    .map(spelling);
+}
+
+/** one spelling for British and American words (both sides of a match go through it): "theatre" finds "Theater",
+ * "colour" finds "color"; found when "turn off the theatre lights" missed the bulbs Home Assistant calls "Theater …" */
+function spelling(t: string): string {
+  if (t.length >= 5 && /[^aeiou]re$/.test(t)) return `${t.slice(0, -2)}er`; // theatre, centre, metre, fibre
+  if (t.length >= 6 && t.endsWith('our')) return `${t.slice(0, -3)}or`; // colour, harbour (not hour, four)
+  return t;
 }
 
 /** score `query` against weighted fields: exact token = weight, prefix (3+ letters) = half */
