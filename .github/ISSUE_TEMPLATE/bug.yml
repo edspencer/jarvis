@@ -1,0 +1,32 @@
+name: Bug
+description: Something in the viewer, the site tools or the container doesn't work as it should
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, what you got. Console errors help.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: How to reproduce
+      description: Ideally on the demo site (`npm run dev`), with the URL query (e.g. `?ha=mock`) and the keys pressed.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The release or commit, and how you run it (npm run dev, the container, the tarball)
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and GPU
+      description: e.g. Chrome 142 on macOS, Apple M2
+  - type: textarea
+    id: validate
+    attributes:
+      label: validate-site output
+      description: If it's about your own site, the output of `npm run validate-site -- <folder>`. Don't attach a private model.
+      render: text
