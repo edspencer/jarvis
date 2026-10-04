@@ -446,17 +446,92 @@
       ["Tall unit (fridge)", [6.3, 0, -9, 6.94, 2.1, -8.3], ["cabinet"], {}]
     ],
     "primary_bath_fittings": [
+      ["WC", [7.42, 3.2, -0.64, 7.82, 4.03, 0], ["black_steel", "sanitary"], {}],
       [
-        "Bath",
-        [10.2, 3.2, -2.95, 12, 3.75, -1.25],
-        ["sanitary"],
+        "Double vanity",
+        [8.19, 3.2, -0.56, 10.01, 4.32, 0],
+        ["bath_tile", "black_steel", "cabinet", "sanitary", "vanity_quartz"],
         {
-          "product": "1700 × 700 bath"
+          "product": "72 in double vanity, quartz top"
         }
       ],
-      ["Vanity unit", [9.3, 3.2, -0.5, 10.3, 4.05, 0], ["cabinet"], {}],
-      ["Basin", [9.45, 4.05, -0.45, 10.15, 4.1, -0.05], ["sanitary"], {}],
-      ["WC", [7.4, 3.2, -0.75, 7.8, 3.62, -0.1], ["sanitary"], {}]
+      ["Mirror", [8.45, 4.2, -0.012, 9.75, 5.05, 0], ["up_bath_mirror"], {}],
+      [
+        "Bath",
+        [10.3, 3.2, -0.8, 12, 3.75, 0],
+        ["bath_tile", "sanitary"],
+        {
+          "product": "1700 × 800 soaking tub"
+        }
+      ],
+      ["Bath filler", [11.12, 3.75, -0.17, 11.18, 3.84, -0.02], ["black_steel"], {}],
+      ["Shower tray", [10.8, 3.2, -2.94, 12, 3.25, -1.74], ["sanitary"], {}],
+      ["Shower tile", [10.8, 3.25, -2.94, 12, 5.3, -1.74], ["bath_tile"], {}],
+      [
+        "Shower glass",
+        [10.8, 3.25, -2.93, 12, 5.2, -1.69],
+        ["black_steel", "shower_glass"],
+        {
+          "product": "frameless glass, 10 mm"
+        }
+      ],
+      ["Shower valve and head", [11.3, 4.25, -2.99, 11.5, 5.22, -2.54], ["black_steel"], {}],
+      ["Towel bar", [11.925, 3.95, -1.6, 12, 4.44, -0.94], ["black_steel", "cabinet"], {}]
+    ],
+    "hall_bath_fittings": [
+      [
+        "Alcove wall",
+        [7.06, 3.2, -7.48, 7.82, 5.6, -7.36],
+        ["plaster_bath"],
+        {
+          "kind": "interior wall"
+        }
+      ],
+      [
+        "Bath",
+        [7.06, 3.2, -9, 7.82, 3.75, -7.48],
+        ["bath_tile", "sanitary"],
+        {
+          "product": "60 × 30 in alcove tub"
+        }
+      ],
+      ["Tub surround", [7.06, 3.75, -9, 7.82, 5.15, -7.48], ["bath_tile"], {}],
+      ["Shower valve and head", [7.38, 3.82, -9.045, 7.5, 5.03, -8.74], ["black_steel"], {}],
+      [
+        "Shower curtain and rod",
+        [7.804, 3.65, -9, 7.841, 5.225, -7.48],
+        ["black_steel", "shower_curtain"],
+        {
+          "product": "fabric curtain on a straight rod"
+        }
+      ],
+      ["WC", [8.35, 3.2, -9, 8.75, 4.03, -8.36], ["black_steel", "sanitary"], {}],
+      [
+        "Vanity",
+        [8.78, 3.2, -7.31, 9.34, 4.32, -6.19],
+        ["bath_tile", "black_steel", "sanitary", "vanity_navy", "vanity_quartz"],
+        {
+          "product": "42 in vanity"
+        }
+      ],
+      ["Mirror", [9.328, 4.2, -7.1, 9.34, 5, -6.4], ["up_bath_mirror"], {}],
+      ["Towel hook and towel", [7.24, 3.95, -7.36, 7.64, 4.54, -7.31], ["black_steel", "vanity_navy"], {}]
+    ],
+    "primary_closet_fittings": [
+      ["Rail and shelf", [0.02, 4.8, -5.14, 2.42, 5.03, -4.78], ["cabinet"], {}],
+      ["Clothes", [0.12, 3.8, -5.1, 2.34, 5.17, -4.59], ["clothes_navy", "clothes_oat", "clothes_rust"], {}],
+      [
+        "Shelves (west)",
+        [0, 3.2, -4.56, 0.38, 5.2, -4.06],
+        ["cabinet", "clothes_navy", "clothes_oat", "clothes_rust"],
+        {}
+      ],
+      [
+        "Shelves (east)",
+        [2.06, 3.2, -4.56, 2.44, 5.2, -4.06],
+        ["cabinet", "clothes_navy", "clothes_oat", "clothes_rust"],
+        {}
+      ]
     ],
     "site": [
       [

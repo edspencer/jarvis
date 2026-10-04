@@ -269,6 +269,52 @@
       }
     },
     {
+      "id": "demo-co-landing",
+      "name": "CO alarm (landing)",
+      "integration": "zwave_js",
+      "make": "Example Safety",
+      "model": "CO-2",
+      "area": "Landing",
+      "place": {
+        "src": "registry",
+        "ref": "safety.co.landing",
+        "plan": [3.4, 4.6, 5.57],
+        "room": "Landing",
+        "approx": false,
+        "conf": "high",
+        "pos": [3.4, 5.57, -4.6],
+        "centre": [4.75, 4.4, -4.6]
+      },
+      "health": {
+        "avail": ["binary_sensor.co_landing"],
+        "node_status": ["sensor.co_landing_node_status"],
+        "battery": ["sensor.co_landing_battery"]
+      }
+    },
+    {
+      "id": "demo-bedroom-fan-control",
+      "name": "Primary bedroom fan and light control",
+      "integration": "zwave_js",
+      "make": "Example Controls",
+      "model": "FC-2",
+      "area": "Primary bedroom",
+      "place": {
+        "src": "plate",
+        "ref": "B1-S-A",
+        "plan": [5.65, 3.94, 4.4],
+        "room": "Primary bedroom",
+        "approx": false,
+        "conf": "high",
+        "pos": [5.65, 4.4, -3.94],
+        "centre": [3.5, 4.4, -2]
+      },
+      "fixtures": ["bedroom_1.ceiling_fan"],
+      "health": {
+        "avail": ["light.bedroom_1", "fan.bedroom_fan"],
+        "node_status": ["sensor.bedroom_fan_node_status"]
+      }
+    },
+    {
       "id": "demo-pond-plug",
       "name": "Pond pump plug",
       "integration": "zha",

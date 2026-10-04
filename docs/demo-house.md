@@ -63,7 +63,7 @@ Screenshots: every viewpoint and a plan of each storey, taken with `node tools/d
 | Living room | So the sofa (facing east, at the media unit) looks as if it faces the wrong way; it is also not centred on the TV (sofa y 1.0-3.6, TV y 0.75-1.95) | fix    |
 | Living room | The TV is a thin black slab with no stand or screen, hard to read as a TV                                                                          | fix    |
 | Kitchen     | No appliances: no range, sink, dishwasher or hood; the fridge is a plain tall cabinet                                                              | fix    |
-| Bedrooms    | Bedroom 2's bed is pushed against the east wall with its headboard there; no nightstands, dressers or lamps                                        | fix    |
+| Bedrooms    | Bedroom 2's bed is pushed against the east wall with its headboard there; no nightstands, dressers or lamps                                        | done   |
 | Bathroom    | One bath, upstairs; no bathroom for the second and third bedrooms, no half bath downstairs                                                         | fix    |
 | House       | Only two bedrooms; no garage, laundry or utility space; the panel is in the hall                                                                   | done   |
 | Energy      | 14 circuits on a made-up panel, a dryer circuit with no dryer in the model                                                                         | fix    |
@@ -283,41 +283,41 @@ devices. "Breaker" ties each electrical item to the schedule.
 
 ### Primary bedroom (`bedroom_1`), closet (`primary_closet`), bath (`primary_bath`)
 
-| Item                                                                           | Kind      | Breaker | Status  |
-| ------------------------------------------------------------------------------ | --------- | ------- | ------- |
-| King bed, headboard on a wall (not under a window), two nightstands with lamps | furniture | 19      | fix     |
-| Dresser, a TV or a bench, an armchair                                          | furniture |         | planned |
-| Ceiling fan with light kit                                                     | light     | 19      | planned |
-| Switches by the doors; outlets each side of the bed and every ~3.6 m           | S / O     | 19      | planned |
-| Smoke alarm                                                                    | safety    | 26      | planned |
-| Closet: hanging rails and shelves, a light                                     | built-in  | 19      | planned |
-| Bath: double vanity, shower, tub, WC, mirror(s)                                | built-in  |         | planned |
-| Bath: vanity light bar (switched, on a smart switch), shower can, exhaust fan  | light     | 19      | exists  |
-| Bath: GFCI outlets at the vanity                                               | O         | 23      | planned |
+| Item                                                                           | Kind      | Breaker | Status |
+| ------------------------------------------------------------------------------ | --------- | ------- | ------ |
+| King bed, headboard on a wall (not under a window), two nightstands with lamps | furniture | 19      | done   |
+| Dresser, a TV or a bench, an armchair                                          | furniture |         | done   |
+| Ceiling fan with light kit                                                     | light     | 19      | done   |
+| Switches by the doors; outlets each side of the bed and every ~3.6 m           | S / O     | 19      | done   |
+| Smoke alarm                                                                    | safety    | 26      | done   |
+| Closet: hanging rails and shelves, a light                                     | built-in  | 19      | done   |
+| Bath: double vanity, shower, tub, WC, mirror(s)                                | built-in  |         | done   |
+| Bath: vanity light bar (switched, on a smart switch), shower can, exhaust fan  | light     | 19      | done   |
+| Bath: GFCI outlets at the vanity                                               | O         | 23      | done   |
 
 ### Bedrooms 2 and 3 (`bedroom_2`, `bedroom_3`)
 
-| Item                                                            | Kind      | Breaker | Status  |
-| --------------------------------------------------------------- | --------- | ------- | ------- |
-| Bed (queen in one, twin or full in the other), nightstand, lamp | furniture | 21      | fix     |
-| Dresser, desk and chair in one                                  | furniture |         | planned |
-| Reach-in closet                                                 | built-in  |         | planned |
-| Ceiling light (one a fan with light)                            | light     | 21      | exists  |
-| Switch by the door, outlets                                     | S / O     | 21      | planned |
-| Smoke alarm in each                                             | safety    | 26      | planned |
+| Item                                                            | Kind      | Breaker | Status |
+| --------------------------------------------------------------- | --------- | ------- | ------ |
+| Bed (queen in one, twin or full in the other), nightstand, lamp | furniture | 21      | done   |
+| Dresser, desk and chair in one                                  | furniture |         | done   |
+| Reach-in closet                                                 | built-in  |         | done   |
+| Ceiling light (one a fan with light)                            | light     | 21      | done   |
+| Switch by the door, outlets                                     | S / O     | 21      | done   |
+| Smoke alarm in each                                             | safety    | 26      | done   |
 
 ### Hall bath (`hall_bath`) and landing (`landing`)
 
-| Item                                          | Kind     | Breaker | Status  |
-| --------------------------------------------- | -------- | ------- | ------- |
-| Tub-shower, vanity, WC, mirror                | built-in |         | planned |
-| Vanity light, exhaust fan                     | light    | 21      | planned |
-| GFCI outlet                                   | O        | 23      | planned |
-| Landing ceiling lights, switches at both ends | light    | 21      | exists  |
-| Linen closet (optional)                       | built-in |         | planned |
-| Smoke alarm outside the bedrooms, CO alarm    | safety   | 26      | exists  |
-| Wi-Fi access point on the ceiling             | network  | 21      | exists  |
-| Attic hatch                                   | built-in |         | planned |
+| Item                                          | Kind     | Breaker | Status |
+| --------------------------------------------- | -------- | ------- | ------ |
+| Tub-shower, vanity, WC, mirror                | built-in |         | done   |
+| Vanity light, exhaust fan                     | light    | 21      | done   |
+| GFCI outlet                                   | O        | 23      | done   |
+| Landing ceiling lights, switches at both ends | light    | 21      | done   |
+| Linen closet (optional)                       | built-in |         | done   |
+| Smoke alarm outside the bedrooms, CO alarm    | safety   | 26      | done   |
+| Wi-Fi access point on the ceiling             | network  | 21      | done   |
+| Attic hatch                                   | built-in |         | done   |
 
 ### Outside
 

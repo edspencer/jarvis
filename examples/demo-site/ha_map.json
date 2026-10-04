@@ -52,26 +52,86 @@
     "conf": "med",
     "group": "fixture.study"
   },
-  "bedroom_1.ceiling": {
+  "bedroom_1.ceiling_fan": {
     "entity_id": "light.bedroom_1",
     "conf": "high",
     "group": "fixture.bedroom_1"
   },
-  "bedroom_2.ceiling": {
-    "entity_id": null,
-    "conf": "low",
-    "group": "fixture.bedroom_2"
+  "bedroom_1.lamp.1": {
+    "entity_id": "light.bedroom_1_lamp_left",
+    "conf": "high",
+    "group": "fixture.lamps.bedroom_1"
   },
-  "landing.ceiling": {
-    "entity_id": null,
-    "conf": "low",
-    "group": "fixture.landing"
+  "bedroom_1.lamp.2": {
+    "entity_id": "light.bedroom_1_lamp_right",
+    "conf": "high",
+    "group": "fixture.lamps.bedroom_1"
+  },
+  "primary_closet.ceiling": {
+    "entity_id": "light.walk_in_closet",
+    "conf": "high",
+    "group": "fixture.primary_closet"
   },
   "primary_bath.vanity": {
     "entity_id": "switch.bathroom_vanity",
     "conf": "high",
     "group": "fixture.primary_bath",
     "switch_is_light": true
+  },
+  "primary_bath.shower": {
+    "entity_id": "light.primary_shower",
+    "conf": "high",
+    "group": "fixture.primary_bath.shower"
+  },
+  "bedroom_2.ceiling": {
+    "entity_id": null,
+    "conf": "low",
+    "group": "fixture.bedroom_2"
+  },
+  "bedroom_2.lamp.1": {
+    "entity_id": "light.bedroom_2_lamps",
+    "conf": "high",
+    "group": "fixture.lamps.bedroom_2"
+  },
+  "bedroom_2.lamp.2": {
+    "entity_id": "light.bedroom_2_lamps",
+    "conf": "high",
+    "group": "fixture.lamps.bedroom_2"
+  },
+  "bedroom_3.ceiling_fan": {
+    "entity_id": "light.bedroom_3",
+    "conf": "high",
+    "group": "fixture.bedroom_3"
+  },
+  "bedroom_3.lamp": {
+    "entity_id": "light.bedroom_3_lamp",
+    "conf": "high",
+    "group": "fixture.lamp.bedroom_3"
+  },
+  "hall_bath.vanity": {
+    "entity_id": "light.hall_bath_vanity",
+    "conf": "high",
+    "group": "fixture.hall_bath.vanity"
+  },
+  "hall_bath.ceiling": {
+    "entity_id": "light.hall_bath",
+    "conf": "high",
+    "group": "fixture.hall_bath"
+  },
+  "landing.ceiling": {
+    "entity_id": null,
+    "conf": "low",
+    "group": "fixture.landing"
+  },
+  "landing.ceiling.2": {
+    "entity_id": null,
+    "conf": "low",
+    "group": "fixture.landing"
+  },
+  "landing.ceiling.3": {
+    "entity_id": null,
+    "conf": "low",
+    "group": "fixture.landing"
   },
   "porch.lantern": {
     "entity_id": "light.porch",

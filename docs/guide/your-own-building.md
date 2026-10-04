@@ -486,8 +486,8 @@ It exits 1 on errors; warnings alone pass. The demo:
 
 ```
 /…/examples/demo-site/site.json: Demo house (demo-house)
-  · main model: demo.glb: 126 top-level nodes, 16 fixtures, 14 rooms, 7 merged keys, 120.0 × 114.0 m
-  · model furniture: furniture.glb: 13 top-level nodes, 1 fixtures, 0 rooms, 1 merged keys, 10.0 × 8.6 m
+  · main model: demo.glb: 147 top-level nodes, 23 fixtures, 14 rooms, 9 merged keys, 120.0 × 114.0 m
+  · model furniture: furniture.glb: 40 top-level nodes, 6 fixtures, 0 rooms, 1 merged keys, 10.4 × 9.0 m
   · blueprints: 2 sheets
   · energy map: 27 meters (1 low confidence)
 ok

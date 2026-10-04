@@ -357,22 +357,58 @@
               "breaker": 19,
               "feeds": [
                 {
+                  "plate": "B1-S-A"
+                },
+                {
+                  "plate": "B1-O-A"
+                },
+                {
+                  "plate": "B1-O-B"
+                },
+                {
+                  "plate": "B1-O-C"
+                },
+                {
+                  "plate": "B1-O-D"
+                },
+                {
+                  "plate": "B1-O-E"
+                },
+                {
+                  "plate": "WC-S-A"
+                },
+                {
                   "plate": "PB-S-A"
                 },
                 {
-                  "fixture": "bedroom_1.ceiling"
+                  "fixture": "bedroom_1.ceiling_fan"
+                },
+                {
+                  "fixture": "bedroom_1.lamp.1"
+                },
+                {
+                  "fixture": "bedroom_1.lamp.2"
+                },
+                {
+                  "fixture": "primary_closet.ceiling"
                 },
                 {
                   "fixture": "primary_bath.vanity"
                 },
                 {
+                  "fixture": "primary_bath.shower"
+                },
+                {
+                  "node": "Fan_primary_bath"
+                },
+                {
                   "room": "bedroom_1"
                 },
                 {
-                  "room": "primary_bath"
+                  "room": "primary_closet"
                 },
                 {
-                  "room": "primary_closet"
+                  "room": "primary_bath"
                 }
               ],
               "conf": "high",
@@ -392,10 +428,73 @@
                   "registry": "net.access-point"
                 },
                 {
+                  "plate": "B2-S-A"
+                },
+                {
+                  "plate": "B2-O-A"
+                },
+                {
+                  "plate": "B2-O-B"
+                },
+                {
+                  "plate": "B2-O-C"
+                },
+                {
+                  "plate": "B3-S-A"
+                },
+                {
+                  "plate": "B3-O-A"
+                },
+                {
+                  "plate": "B3-O-B"
+                },
+                {
+                  "plate": "B3-O-C"
+                },
+                {
+                  "plate": "HB-S-A"
+                },
+                {
+                  "plate": "LD-S-A"
+                },
+                {
+                  "plate": "LD-S-B"
+                },
+                {
+                  "plate": "LD-O-A"
+                },
+                {
                   "fixture": "bedroom_2.ceiling"
                 },
                 {
+                  "fixture": "bedroom_2.lamp.1"
+                },
+                {
+                  "fixture": "bedroom_2.lamp.2"
+                },
+                {
+                  "fixture": "bedroom_3.ceiling_fan"
+                },
+                {
+                  "fixture": "bedroom_3.lamp"
+                },
+                {
+                  "fixture": "hall_bath.vanity"
+                },
+                {
+                  "fixture": "hall_bath.ceiling"
+                },
+                {
                   "fixture": "landing.ceiling"
+                },
+                {
+                  "fixture": "landing.ceiling.2"
+                },
+                {
+                  "fixture": "landing.ceiling.3"
+                },
+                {
+                  "node": "Fan_hall_bath"
                 },
                 {
                   "room": "landing"
@@ -440,6 +539,15 @@
               "panel": "Main panel",
               "breaker": 23,
               "feeds": [
+                {
+                  "plate": "PB-O-A"
+                },
+                {
+                  "plate": "PB-O-B"
+                },
+                {
+                  "plate": "HB-O-A"
+                },
                 {
                   "room": "primary_bath"
                 },
@@ -527,7 +635,28 @@
                   "registry": "safety.smoke.landing"
                 },
                 {
+                  "registry": "safety.co.landing"
+                },
+                {
+                  "registry": "safety.smoke.bedroom_1"
+                },
+                {
+                  "registry": "safety.smoke.bedroom_2"
+                },
+                {
+                  "registry": "safety.smoke.bedroom_3"
+                },
+                {
                   "room": "landing"
+                },
+                {
+                  "room": "bedroom_1"
+                },
+                {
+                  "room": "bedroom_2"
+                },
+                {
+                  "room": "bedroom_3"
                 }
               ],
               "conf": "high",

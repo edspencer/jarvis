@@ -2,8 +2,8 @@
   "generated_by": "tools/make-demo-site.ts",
   "frame": "pos: viewer metres, three.js (X, Z, -Y) of plan metres (X east, Y north, Z up); plan: plan metres",
   "count": {
-    "items": 12,
-    "pins": 11,
+    "items": 16,
+    "pins": 15,
     "unplaced": 1
   },
   "pins": [
@@ -234,18 +234,178 @@
       "approx": null,
       "loc_note": null,
       "room_centre": [4.75, 4.4, -4.6],
-      "make": null,
-      "model": null,
+      "make": "Example Safety",
+      "model": "SA-3",
       "serial": null,
       "aliases": [],
-      "specs": [],
+      "specs": [
+        ["power", "120 V, battery backup"],
+        ["interconnect", "wired to every alarm in the house"]
+      ],
       "connections": [],
-      "documents": [],
+      "documents": [
+        {
+          "text": "SA-3 manual (example)",
+          "url": null
+        }
+      ],
       "photos": [],
       "open_questions": [],
       "fixtures": [],
       "ha": {
         "entities": ["binary_sensor.smoke_landing"]
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "safety.co.landing",
+      "name": "CO alarm (landing)",
+      "category": "safety",
+      "status": "in-service",
+      "conf": "high",
+      "room": "landing",
+      "pos": [3.4, 5.57, -4.6],
+      "plan": [3.4, 4.6, 5.57],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [4.75, 4.4, -4.6],
+      "make": "Example Safety",
+      "model": "CO-2",
+      "serial": null,
+      "aliases": [],
+      "specs": [
+        ["power", "120 V, battery backup"],
+        ["interconnect", "wired to every alarm in the house"]
+      ],
+      "connections": [],
+      "documents": [
+        {
+          "text": "CO-2 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": ["binary_sensor.co_landing"]
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "safety.smoke.bedroom_1",
+      "name": "Smoke alarm (primary bedroom)",
+      "category": "safety",
+      "status": "in-service",
+      "conf": "high",
+      "room": "bedroom_1",
+      "pos": [5.4, 5.57, -3],
+      "plan": [5.4, 3, 5.57],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [3.5, 4.4, -2],
+      "make": "Example Safety",
+      "model": "SA-3",
+      "serial": null,
+      "aliases": [],
+      "specs": [
+        ["power", "120 V, battery backup"],
+        ["interconnect", "wired to every alarm in the house"]
+      ],
+      "connections": [],
+      "documents": [
+        {
+          "text": "SA-3 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": ["binary_sensor.smoke_bedroom_1"]
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "safety.smoke.bedroom_2",
+      "name": "Smoke alarm (bedroom 2)",
+      "category": "safety",
+      "status": "in-service",
+      "conf": "high",
+      "room": "bedroom_2",
+      "pos": [1.1, 5.57, -6.3],
+      "plan": [1.1, 6.3, 5.57],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [1.75, 4.4, -7.1],
+      "make": "Example Safety",
+      "model": "SA-3",
+      "serial": null,
+      "aliases": [],
+      "specs": [
+        ["power", "120 V, battery backup"],
+        ["interconnect", "wired to every alarm in the house"]
+      ],
+      "connections": [],
+      "documents": [
+        {
+          "text": "SA-3 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": ["binary_sensor.smoke_bedroom_2"]
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "safety.smoke.bedroom_3",
+      "name": "Smoke alarm (bedroom 3)",
+      "category": "safety",
+      "status": "in-service",
+      "conf": "high",
+      "room": "bedroom_3",
+      "pos": [4.3, 5.57, -5.85],
+      "plan": [4.3, 5.85, 5.57],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [5.25, 4.4, -7.1],
+      "make": "Example Safety",
+      "model": "SA-3",
+      "serial": null,
+      "aliases": [],
+      "specs": [
+        ["power", "120 V, battery backup"],
+        ["interconnect", "wired to every alarm in the house"]
+      ],
+      "connections": [],
+      "documents": [
+        {
+          "text": "SA-3 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": ["binary_sensor.smoke_bedroom_3"]
       },
       "health": null,
       "file": "examples/demo-site/registry_pins.json",
