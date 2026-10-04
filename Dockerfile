@@ -10,7 +10,7 @@ RUN npm ci --include=dev --no-audit --no-fund
 COPY . .
 RUN npm run build
 
-FROM nginx:1.29-alpine
+FROM nginx:1.31-alpine
 LABEL org.opencontainers.image.source="https://github.com/edspencer/jarvis" \
       org.opencontainers.image.description="JARVIS: a browser walkthrough for a building's digital twin" \
       org.opencontainers.image.licenses="MIT"
