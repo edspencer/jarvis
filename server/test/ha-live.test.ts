@@ -264,14 +264,60 @@ describe("currentUser: a person's own token, on a socket of its own", () => {
     const { ha, sockets, auth } = setup('assistant-token');
     auth();
     await ha.ready();
+    await vi.advanceTimersByTimeAsync(0);
+    // once connected, it asks who it is itself (on its own connection, with its own token)
+    const own = sockets[0].last();
+    expect(sockets[0].sent).toEqual([
+      { type: 'auth', access_token: 'assistant-token' },
+      { id: own.id, type: 'auth/current_user' },
+    ]);
+    sockets[0].recv({ id: own.id, type: 'result', success: true, result: { id: 'jarvis-uid', name: 'JARVIS' } });
     const p = ha.currentUser('person-token');
     expect(sockets).toHaveLength(2);
-    expect(sockets[0].sent).toEqual([{ type: 'auth', access_token: 'assistant-token' }]);
     sockets[1].recv({ type: 'auth_required' });
     expect(sockets[1].sent[0]).toEqual({ type: 'auth', access_token: 'person-token' });
     answer(sockets[1], { id: 'u1', name: 'Ana' });
     expect(await p).toMatchObject({ id: 'u1', name: 'Ana' });
     expect(await ha.currentUser('assistant-token')).toBeNull();
+    expect(await ha.currentUser(' assistant-token\n')).toBeNull(); // (trimmed)
+    expect(sockets).toHaveLength(2);
+    ha.close!();
+  });
+
+  it("any token of the assistant's own HA user is refused, not only its own token string", async () => {
+    const { ha, sockets, auth } = setup('assistant-token');
+    auth();
+    await vi.advanceTimersByTimeAsync(0);
+    const own = sockets[0].last();
+    expect(own).toMatchObject({ type: 'auth/current_user' });
+    // a person's login made while the assistant's id isn't known yet: resolved once it is
+    const early = ha.currentUser('another-token-of-the-assistant-user');
+    await vi.advanceTimersByTimeAsync(0);
+    answer(sockets[1], { id: 'jarvis-uid', name: 'JARVIS' });
+    await vi.advanceTimersByTimeAsync(0);
+    sockets[0].recv({ id: own.id, type: 'result', success: true, result: { id: 'jarvis-uid', name: 'JARVIS' } });
+    expect(await early).toBeNull();
+    // and from the cache too: a token HA vouched for, but of the assistant's own user
+    const again = ha.currentUser('a-third-token');
+    answer(sockets[2], { id: 'jarvis-uid', name: 'JARVIS' });
+    expect(await again).toBeNull();
+    const person = ha.currentUser('person-token');
+    answer(sockets[3], { id: 'u1', name: 'Ana' });
+    expect(await person).toMatchObject({ id: 'u1' });
+    ha.close!();
+  });
+
+  it("the assistant's own id unknown (HA not answering it): the person's login can't be checked (throws: retried)", async () => {
+    const { ha, sockets, auth } = setup('assistant-token');
+    auth();
+    await vi.advanceTimersByTimeAsync(0);
+    const own = sockets[0].last();
+    const p = ha.currentUser('person-token');
+    const caught = p.catch((e: Error) => e.message);
+    await vi.advanceTimersByTimeAsync(0);
+    answer(sockets[1], { id: 'u1', name: 'Ana' });
+    sockets[0].recv({ id: own.id, type: 'result', success: false, error: { code: 'x', message: 'nope' } });
+    expect(await caught).toMatch(/Home Assistant: nope/);
     ha.close!();
   });
 });

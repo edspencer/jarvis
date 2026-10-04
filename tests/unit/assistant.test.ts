@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClientMsg, ServerMsg } from '../../server/src/core/protocol.ts';
 import {
   backoff,
+  awaitsLogin,
+  CLOSE_RETRY,
   CLOSE_UNAUTHORISED,
   createSocketTransport,
   endpoints,
@@ -27,12 +29,22 @@ describe('endpoints', () => {
       ws: 'ws://localhost:5173/assistant/ws',
       transcribe: 'http://localhost:5173/assistant/transcribe',
     });
-    expect(endpoints('https://box.lan:8787/assistant', 'https://twin.example.org/').ws).toBe(
-      'wss://box.lan:8787/assistant/ws',
-    );
     expect(endpoints('./assistant', 'https://twin.example.org/viewer/index.html').ws).toBe(
       'wss://twin.example.org/viewer/assistant/ws',
     );
+    expect(endpoints('https://twin.example.org/assistant', 'https://twin.example.org/').ws).toBe(
+      'wss://twin.example.org/assistant/ws',
+    );
+  });
+
+  it('refuses a server on another origin (it would be sent the Home Assistant login)', () => {
+    for (const server of [
+      'https://box.lan:8787/assistant',
+      'http://twin.example.org/assistant', // another scheme is another origin
+      'https://twin.example.org:8443/assistant',
+      '//evil.example/assistant',
+    ])
+      expect(() => endpoints(server, 'https://twin.example.org/viewer/')).toThrow(/must be on this page's origin/);
   });
 
   it('backs off from a second to a minute, with jitter', () => {
@@ -469,6 +481,10 @@ describe('the socket transport: login', () => {
       this.readyState = 3;
       this.onclose?.({ code });
     }
+    /** the server's welcome */
+    welcome() {
+      this.onmessage?.({ data: JSON.stringify({ type: 'welcome', transcript: [], status: 'idle' }) });
+    }
   }
   beforeEach(() => {
     vi.useFakeTimers();
@@ -502,8 +518,8 @@ describe('the socket transport: login', () => {
     let secret = 'alice:wrong';
     const t = make(async () => hello(secret));
     await vi.advanceTimersByTimeAsync(10);
-    expect(t.state).toBe('connected');
     expect(FakeWs.all[0].sent).toEqual([hello('alice:wrong')]);
+    expect(t.state).toBe('connecting'); // (until the welcome)
     FakeWs.all[0].close(CLOSE_UNAUTHORISED);
     expect(t.state).toBe('unauthorised');
     await vi.advanceTimersByTimeAsync(120_000);
@@ -513,6 +529,7 @@ describe('the socket transport: login', () => {
     await vi.advanceTimersByTimeAsync(10);
     expect(FakeWs.all).toHaveLength(2);
     expect(FakeWs.all[1].sent).toEqual([hello('alice:right')]);
+    FakeWs.all[1].welcome();
     expect(t.state).toBe('connected');
     // any other close is "offline", with a retry scheduled
     FakeWs.all[1].close(1006);
@@ -532,8 +549,45 @@ describe('the socket transport: login', () => {
     await vi.advanceTimersByTimeAsync(10);
     expect(FakeWs.all[0].readyState).toBe(3);
     expect(FakeWs.all[1].sent).toEqual([hello('bob:two')]);
+    FakeWs.all[1].welcome();
     expect(t.state).toBe('connected');
     t.close();
+  });
+
+  it('nothing but the hello is sent before the welcome (the server would cut the connection off)', async () => {
+    const t = make(async () => hello('alice:right'));
+    await vi.advanceTimersByTimeAsync(10);
+    expect(t.send({ type: 'say', text: 'hi', source: 'typed' })).toBe(false);
+    FakeWs.all[0].welcome();
+    expect(t.send({ type: 'say', text: 'hi', source: 'typed' })).toBe(true);
+    expect(FakeWs.all[0].sent.map((m) => (m as { type: string }).type)).toEqual(['hello', 'say']);
+    t.close();
+  });
+
+  it("4503 (the login couldn't be checked: Home Assistant down) is retried with a growing backoff, not final", async () => {
+    vi.spyOn(Math, 'random').mockReturnValue(0.5);
+    const t = make(async () => hello('alice:right'));
+    await vi.advanceTimersByTimeAsync(10);
+    FakeWs.all[0].close(CLOSE_RETRY);
+    expect(t.state).toBe('offline');
+    expect(t.retryIn()).toBe(1000);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(FakeWs.all).toHaveLength(2);
+    FakeWs.all[1].close(CLOSE_RETRY);
+    expect(t.retryIn()).toBe(2000); // (only a welcome resets it)
+    await vi.advanceTimersByTimeAsync(2000);
+    FakeWs.all[2].welcome();
+    expect(t.state).toBe('connected');
+    FakeWs.all[2].close(1012); // the login's surface changed: log in again
+    expect(t.retryIn()).toBe(1000);
+    t.close();
+    vi.restoreAllMocks();
+  });
+
+  it('awaitsLogin: unauthorised with nothing sent (the Home Assistant login may still turn up)', () => {
+    expect(awaitsLogin('unauthorised', null)).toBe(true);
+    expect(awaitsLogin('unauthorised', 'ha')).toBe(false); // refused: wait for the person
+    expect(awaitsLogin('offline', null)).toBe(false);
   });
 });
 

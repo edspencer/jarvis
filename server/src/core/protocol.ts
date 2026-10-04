@@ -64,7 +64,14 @@ export interface ResetMsg {
   type: 'reset';
 }
 
-export type ClientMsg = HelloMsg | SayMsg | InterruptMsg | ConfirmReplyMsg | ViewResultMsg | ResetMsg;
+/** a fresh copy of the login's credential, after the hello (a Home Assistant access token lasts 30 minutes; the
+ * server checks the login again with the latest one, and closes the connection (4401) if it is no longer good) */
+export interface AuthMsg {
+  type: 'auth';
+  auth: HelloAuth;
+}
+
+export type ClientMsg = HelloMsg | SayMsg | InterruptMsg | ConfirmReplyMsg | ViewResultMsg | ResetMsg | AuthMsg;
 
 // ------------------------------------------------------------------------------------------------ server → client
 
@@ -206,9 +213,11 @@ export type ServerMsg =
   | TurnEndMsg
   | ErrorMsg;
 
-/** WebSocket close codes the server uses: 4401 the credential was refused (don't retry with it), 4429 too many failed
- * logins from this address (retry later) */
-export type CloseCode = 4401 | 4429;
+/** WebSocket close codes the server uses: 4401 the credential was refused or is no longer good (don't retry with it),
+ * 4429 too many failed logins from this address (retry later), 4503 the login couldn't be checked right now (Home
+ * Assistant down or busy: retry with backoff), 1008 a misbehaving connection, 1012 the login's surface changed (log in
+ * again). Every code but 4401 is retried with the usual backoff. */
+export type CloseCode = 4401 | 4429 | 4503 | 1008 | 1012;
 
 /** the reply of POST /assistant/transcribe */
 export interface TranscribeReply {

@@ -5,9 +5,15 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { createAudit } from './core/audit.ts';
-import { createAuthenticator, parseClientsFile, type Authenticator, type ClientsFile } from './core/auth.ts';
+import {
+  createAuthenticator,
+  haUserWarnings,
+  parseClientsFile,
+  type Authenticator,
+  type ClientsFile,
+} from './core/auth.ts';
 import { createRateLimiter } from './core/limits.ts';
-import { boxed, type AssistantConfig } from './core/config.ts';
+import { boxed, mockLoginWarning, type AssistantConfig } from './core/config.ts';
 import { createGate, type Gate } from './core/gate.ts';
 import { hostOf } from './core/guard.ts';
 import { createMockHa } from './core/ha-mock.ts';
@@ -64,6 +70,9 @@ export interface Assistant {
   auth: Authenticator;
   /** re-read the policy file; keeps the old one (and throws) if the new one is invalid */
   reloadPolicy(): Policy;
+  /** re-read the clients file (keeps the old one and throws if the new one is invalid) and check every logged-in user
+   * against it: a credential that is gone is closed 4401, a changed surface 1012. Returns how many were closed. */
+  reloadClients(): { clients: ClientsFile; closed: number };
   close(): Promise<void>;
 }
 
@@ -86,8 +95,14 @@ export function createAssistant(config: AssistantConfig, o: AssistantOverrides =
   const site = loadSite(config.siteDir);
   for (const w of site.warnings) log(`site: ${w}`);
   const clients = loadClients(config.clientsPath);
-  if (config.auth.includes('secret') && !clients.clients.length)
-    log(`auth: ${config.clientsPath} has no clients, so no access code works`);
+  const clientWarnings = (c: ClientsFile) => {
+    if (config.auth.includes('secret') && !c.clients.length)
+      log(`auth: ${config.clientsPath} has no clients, so no access code works`);
+    if (config.auth.includes('ha')) for (const w of haUserWarnings(c, config.haUsersOnly)) log(w);
+  };
+  clientWarnings(clients);
+  const mockLogins = mockLoginWarning(config);
+  if (mockLogins) log(mockLogins);
 
   let ha: HaBackend;
   if (o.ha) ha = o.ha;
@@ -101,6 +116,7 @@ export function createAssistant(config: AssistantConfig, o: AssistantOverrides =
     kinds: config.auth,
     clients,
     haSurface: config.haSurface,
+    haUsersOnly: config.haUsersOnly,
     currentUser: (token) => ha.currentUser(token),
     log,
   });
@@ -155,6 +171,8 @@ export function createAssistant(config: AssistantConfig, o: AssistantOverrides =
     info: { agent: agent.name, ha: ha.kind, transcribe: !!config.stt },
     formatTurn: (turn) => formatTurn(turn, site),
     authenticate: (hello, conn) => auth.verify(hello.auth, conn.remote ?? 'unknown'),
+    recheck: (user, cred) => auth.recheck(user, cred),
+    helloTimeoutMs: config.helloTimeoutMs,
     sayLimit: createRateLimiter(config.rateSay),
     audit,
     turnTimeoutMs: config.turnTimeoutMs,
@@ -169,6 +187,7 @@ export function createAssistant(config: AssistantConfig, o: AssistantOverrides =
     origins: config.origins,
     stt: config.stt,
     hub,
+    trustedProxies: config.trustedProxies,
     transcribeLimit: createRateLimiter(config.rateTranscribe),
     health: () => ({ agent: agent.name, ha: ha.kind, transcribe: !!config.stt }),
     fetchImpl: o.fetchImpl,
@@ -190,6 +209,12 @@ export function createAssistant(config: AssistantConfig, o: AssistantOverrides =
       gate.setPolicy(p);
       a.policy = p;
       return p;
+    },
+    reloadClients() {
+      const c = loadClients(config.clientsPath);
+      clientWarnings(c);
+      auth.setClients(c);
+      return { clients: c, closed: theHub.revalidate(auth.recheckLocal) };
     },
     async close() {
       await theHub.close();

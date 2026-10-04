@@ -14,6 +14,8 @@ export interface RateLimiter {
   take(key: string, n?: number): boolean;
   /** does the key have at least `n` tokens (nothing taken)? */
   has(key: string, n?: number): boolean;
+  /** give back `n` tokens (default 1) taken for something that didn't count, up to `burst` */
+  refund(key: string, n?: number): void;
 }
 
 /** "6/20" → { burst: 6, perMinute: 20 }; null if it isn't two positive whole numbers */
@@ -52,5 +54,10 @@ export function createRateLimiter(rate: Rate, now: () => number = Date.now): Rat
       return true;
     },
     has: (key, n = 1) => level(key).tokens >= n,
+    refund(key, n = 1) {
+      const b = level(key);
+      if (b.tokens >= rate.burst) buckets.delete(key);
+      else buckets.set(key, { tokens: Math.min(rate.burst, b.tokens + n), at: b.at });
+    },
   };
 }

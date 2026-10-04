@@ -5,14 +5,19 @@
 // The socket reconnects with backoff (1 s doubling to a minute, with jitter) and stays quiet about it: no toasts, only
 // the state, which the status item shows ("Assistant offline"). On every (re)connect it sends `hello` first, with a
 // per-tab client id (sessionStorage, so a reload keeps it and the server can re-offer a pending confirmation) and the
-// credential the plugin finds (the Home Assistant login or an access code). No credential, or the server refusing it
-// (close code 4401), is the 'unauthorised' state: no more tries until retry() (a new code was entered, say).
+// credential the plugin finds (the Home Assistant login or an access code), and nothing else until the `welcome`: only
+// then is it 'connected' (the server cuts off a connection that sends more before its login). No credential, or the
+// server refusing it (close code 4401), is the 'unauthorised' state: no more tries until retry() (a new code was
+// entered, say). Every other close, 4503 ("couldn't check the login right now": Home Assistant down) included, is
+// 'offline' and retried with the backoff, which only a welcome resets.
 import type { ClientMsg, HelloMsg, ServerMsg } from '../../../server/src/core/protocol.ts';
 
 export type ConnState = 'connecting' | 'connected' | 'offline' | 'unauthorised';
 
 /** the server's close code for a refused credential (don't come back with the same one) */
 export const CLOSE_UNAUTHORISED = 4401;
+/** the server couldn't check the credential right now (Home Assistant down or busy): retried like any lost connection */
+export const CLOSE_RETRY = 4503;
 
 export interface Transport {
   /** false if it couldn't be sent (not connected) */
@@ -29,14 +34,23 @@ export interface Transport {
   close(): void;
 }
 
-/** the WebSocket and transcription URLs for a server base ('/assistant', 'https://host:8787/assistant'), relative to
- * the page; http(s) becomes ws(s) */
+/** the WebSocket and transcription URLs for a server base ('/assistant'), relative to the page; http(s) becomes ws(s).
+ * Throws for a server on another origin: it would be handed the person's Home Assistant login. */
 export function endpoints(server: string, base: string): { ws: string; transcribe: string } {
   const root = new URL(`${server.replace(/\/+$/, '')}/`, base);
+  if (root.origin !== new URL(base).origin)
+    throw new Error(
+      `the assistant's server must be on this page's origin (a path such as /assistant), not ${root.origin}: ` +
+        'another origin would be sent the Home Assistant login',
+    );
   const ws = new URL('ws', root);
   ws.protocol = ws.protocol === 'https:' ? 'wss:' : ws.protocol === 'http:' ? 'ws:' : ws.protocol;
   return { ws: ws.href, transcribe: new URL('transcribe', root).href };
 }
+
+/** 'unauthorised' with nothing sent (no credential found): worth asking again when a login may have turned up */
+export const awaitsLogin = (state: ConnState, used: string | null): boolean =>
+  state === 'unauthorised' && used === null;
 
 /** reconnect delays: 1 s, 2 s, 4 s … up to a minute; ±20 % jitter so several tabs don't knock together */
 export function backoff(attempt: number, rnd = Math.random): number {
@@ -134,13 +148,18 @@ export function createSocketTransport(opts: {
     const giveUp = setTimeout(() => sock.close(), CONNECT_TIMEOUT);
     sock.onopen = () => {
       clearTimeout(giveUp);
-      attempt = 0;
       sock.send(JSON.stringify(hello));
-      set('connected');
     };
     sock.onmessage = (e) => {
       const m = parseServerMsg(e.data);
-      if (m) for (const f of msgFns) f(m);
+      if (!m) return;
+      // logged in: only now may anything else be sent (and only a login resets the backoff, so a server that keeps
+      // closing with 4503 is asked less and less often)
+      if (m.type === 'welcome' && ws === sock) {
+        attempt = 0;
+        set('connected');
+      }
+      for (const f of msgFns) f(m);
     };
     sock.onclose = (e) => {
       clearTimeout(giveUp);
@@ -163,7 +182,7 @@ export function createSocketTransport(opts: {
 
   return {
     send(m) {
-      if (!ws || ws.readyState !== WS.OPEN) return false;
+      if (!ws || ws.readyState !== WS.OPEN || state !== 'connected') return false;
       ws.send(JSON.stringify(m));
       return true;
     },

@@ -48,7 +48,9 @@ thermostat to 72", "run good night", "show me the water heater", "is the pond pu
 **mock Home Assistant** and the demo house, with the example policy, and lets in whoever has the access code. It
 listens on `http://127.0.0.1:8787/assistant/ws` and writes its data under `server/data/`. A viewer with
 [the plugin enabled](#the-browser-plugin) asks for the code once; with `JARVIS_ASSISTANT_AUTH=ha` the mock Home
-Assistant takes made-up `mock-user:<name>` tokens instead ([Authentication](#authentication)). A client that isn't a
+Assistant takes made-up `mock-user:<name>` tokens instead (list them under `ha_users`, or set
+`JARVIS_ASSISTANT_HA_USERS_ONLY=false`; the server warns in a box that anyone can then be anyone,
+[Authentication](#authentication)). A client that isn't a
 browser sends an `Origin` the server allows: with no `JARVIS_ASSISTANT_ORIGINS`, the server's own,
 `http://127.0.0.1:8787`.
 
@@ -96,6 +98,9 @@ Environment variables, optionally under a JSON file named by `JARVIS_ASSISTANT_C
 | `JARVIS_ASSISTANT_AUTH`            | none: **required**                    | Who may log in: `ha` (people's own Home Assistant logins), `secret` (access codes from the clients file) or `ha,secret` ([Authentication](#authentication))                                                                                                          |
 | `JARVIS_ASSISTANT_CLIENTS`         | none                                  | The clients file (YAML or JSON): access-code hashes with each client's surface, and per-HA-user surfaces. Required with `secret`                                                                                                                                     |
 | `JARVIS_ASSISTANT_HA_SURFACE`      | `screen`                              | The surface of a person logged in with Home Assistant, unless the clients file's `ha_users` says otherwise                                                                                                                                                           |
+| `JARVIS_ASSISTANT_HA_USERS_ONLY`   | `true`                                | `true`: only the Home Assistant users listed in the clients file's `ha_users` may log in. `false`: any valid Home Assistant user may, with `JARVIS_ASSISTANT_HA_SURFACE` unless listed                                                                               |
+| `JARVIS_ASSISTANT_HELLO_TIMEOUT_S` | `10`                                  | A connection that hasn't sent its `hello` after this many seconds is closed (4401)                                                                                                                                                                                   |
+| `JARVIS_ASSISTANT_TRUSTED_PROXY`   | none                                  | Comma-separated IP addresses of reverse proxies whose `X-Forwarded-For` names the client ([below](#behind-the-reverse-proxy)). Without it every client counts as the TCP peer                                                                                        |
 | `JARVIS_ASSISTANT_RATE_SAY`        | `6/20`                                | Messages per user: `burst/perMinute` (6 at once, then 20 a minute); over it, "slow down"                                                                                                                                                                             |
 | `JARVIS_ASSISTANT_RATE_TRANSCRIBE` | `6/20`                                | Recordings per user (`POST /transcribe`), the same way; over it, 429                                                                                                                                                                                                 |
 | `JARVIS_HA_MODE`                   | `mock`                                | `mock` (an in-process fake of the demo house) or `live`                                                                                                                                                                                                              |
@@ -112,8 +117,9 @@ the JSON file. The Claude Code process the SDK starts gets the server's environm
 so the Home Assistant token, the clients file's path and the STT key never reach the agent's side. Without
 transcription, `POST /transcribe` answers 503 and the panel offers typing only.
 
-Signals: `SIGHUP` re-reads the policy (an invalid file is reported and the old policy stays); `SIGINT` / `SIGTERM`
-stop cleanly. `GET {base}/health` answers `{ ok, agent, ha, transcribe }`.
+Signals: `SIGHUP` re-reads the policy and the clients file (an invalid file is reported and the old one stays) and
+closes the connections whose login the new clients file no longer allows ([Expiry and
+revocation](#expiry-and-revocation)); `SIGINT` / `SIGTERM` stop cleanly. `GET {base}/health` answers `{ ok, agent, ha, transcribe }`.
 
 ### Behind the reverse proxy
 
@@ -132,6 +138,7 @@ location /assistant/ {
     proxy_set_header Upgrade $http_upgrade;  # the WebSocket at /assistant/ws
     proxy_set_header Connection "upgrade";
     proxy_set_header Host $http_host;        # with the port (only used when JARVIS_ASSISTANT_ORIGINS is empty)
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;  # who the client is (JARVIS_ASSISTANT_TRUSTED_PROXY)
     proxy_read_timeout 1h;                   # an idle conversation stays open (the server pings every 30 s)
     client_max_body_size 11m;                # recorded speech (the server takes up to 10 MB)
     add_header Cache-Control "no-store" always;
@@ -142,6 +149,13 @@ With the image, run the assistant as a second container on the same network, set
 `JARVIS_ASSISTANT_ORIGINS` to the viewer's origin (`https://jarvis.example.lan`; required whenever the viewer has a
 non-loopback name), point `proxy_pass` at it (`http://jarvis-assistant:8787`) and mount the edited `nginx.conf` over
 `/etc/nginx/conf.d/default.conf`. Mount the site folder into both.
+
+**Name the proxy** in `JARVIS_ASSISTANT_TRUSTED_PROXY` (its address as the assistant sees it: `127.0.0.1` on the same
+machine, the nginx container's address on a Docker network). Then, and only for connections from that address, the
+server takes the client's address from `X-Forwarded-For`: the right-most entry that isn't a trusted proxy (the part to
+the left of it is whatever the client sent, so a client can't choose its address). The failed-login limit and the cap
+on connections waiting to log in then count each device in the house separately; without it they count the whole
+house as one address (the proxy's). Never list an address that clients can reach the server from directly.
 
 The plugin's `server` must be a **same-origin path** through this proxy (`/assistant`). Cross-origin isn't supported
 in v1: the server speaks plain HTTP and sends no CORS headers, so a page on another origin (or an `https://` page
@@ -170,47 +184,88 @@ mode. `JARVIS_ASSISTANT_AUTH` (required) says which credentials the server takes
 - **`ha`: the person's own Home Assistant login.** The viewer already holds their Home Assistant access token (the
   home-assistant plugin's login); the assistant plugin sends it with `hello`, and the server asks Home Assistant whose
   it is (a one-off websocket with that token: `auth`, `auth/current_user`, close; 5 s at most). The token is never
-  stored or used for anything else, never on the assistant's own connection, and the assistant's own token is refused
-  if someone presents it. A good answer is remembered for a minute under the token's hash, so a reconnecting tab
-  doesn't ask every time. Home Assistant unreachable means "not authorised". With the **mock** Home Assistant
-  (`JARVIS_HA_MODE=mock`) the tokens are made up: `mock-user:<name>` is the user `<name>`, anything else is refused
-  (never in live mode).
+  written anywhere or used for anything else, and never on the assistant's own connection; the server keeps the latest
+  one in memory for the life of the connection, to check the login again ([below](#expiry-and-revocation)). A token
+  of the **assistant's own** Home Assistant user is refused, whatever its string (the server asks Home Assistant who it
+  is itself when it connects). A good answer is remembered for a minute under the token's hash, so a reconnecting tab
+  doesn't ask every time. By default (`JARVIS_ASSISTANT_HA_USERS_ONLY=true`) only the users listed under the clients
+  file's `ha_users` may log in; `false` lets in anyone with a valid Home Assistant login. With the **mock** Home
+  Assistant (`JARVIS_HA_MODE=mock`) the tokens are made up: `mock-user:<name>` is the user `<name>` (id
+  `mock-<name>`), anything else is refused (never in live mode). Anyone can then log in as anyone, so the server says
+  so in a box at start-up: for trying it out only.
 - **`secret`: an access code**, for a device or person without a Home Assistant login (a wall tablet, a satellite
   bridge, a guest). The code is `<name>:<random>`; `npm run new-client-secret -- <name> [screen|speaker]` (in
   `server/`) prints a fresh one and the line for the clients file, which holds only the code's SHA-256 (compared in
   constant time), never the code. The panel asks for the code once and keeps it in that browser for that site.
 
-The clients file (`JARVIS_ASSISTANT_CLIENTS`, YAML or JSON) is checked strictly at start-up: unknown keys, a name
-used twice, a hash that isn't 64 hex digits or a missing surface stop the server.
+The clients file (`JARVIS_ASSISTANT_CLIENTS`, YAML or JSON) is checked strictly at start-up and on `SIGHUP`: unknown
+keys, a name used twice, the same hash twice, a hash that isn't 64 hex digits or a missing surface stop the server (or,
+on `SIGHUP`, keep the old file).
 
 ```yaml
 clients: # access codes: name, the SHA-256 of `<name>:<secret>`, and where it talks from
   - { name: hall-tablet, secret_sha256: 3b4c…(64 hex digits), surface: screen }
   - { name: kitchen-bridge, secret_sha256: 9f20…, surface: speaker }
-ha_users: # optional: a surface for some Home Assistant users (by id or by name); others get JARVIS_ASSISTANT_HA_SURFACE
-  - { name: Guest, surface: speaker }
+ha_users: # the Home Assistant users who may log in (JARVIS_ASSISTANT_HA_USERS_ONLY), and their surface
+  - { id: 8c1f0e2d4b6a49c7a1e3f5d7b9c2e4f6, surface: screen } # Ed
+  - { id: 2b4d6f8a0c1e43579bdf02468ace1357, surface: speaker } # the guest room's tablet login
 ```
 
+- **List Home Assistant users by `id`** (Settings → People → Users → the user: the id is in the address, or
+  `auth/current_user` in the developer tools). `name` works too, but names aren't unique and any user can be renamed,
+  so an entry by name lets in whoever has that name; the server warns at start-up for each one. An `id` entry wins over
+  a `name` entry for the same person.
+- **A shared login is one person.** If the viewer logs in to Home Assistant as one dedicated user for everyone (as
+  [SECURITY.md](../SECURITY.md) suggests), everyone using it is the same assistant user: one name in
+  the audit log, one rate limit, and their confirmations are each other's. Give people their own logins where who did
+  what matters, or an access code per device.
 - **The surface comes from the server**, never from the client: a `speaker` credential gets the speaker's policy
-  rules (and spoken confirmations) whatever its `hello` says. For Home Assistant logins it is
-  `JARVIS_ASSISTANT_HA_SURFACE` (`screen` by default) or the user's `ha_users` entry.
-- **Refused** (no credential, a wrong code, a token Home Assistant doesn't know, a kind the server doesn't take): the
-  server sends `error` "not authorised" and closes the socket with code **4401**; the panel says so, asks for a code
-  and doesn't retry on its own.
-- **Failed logins are limited per address**: after 5 (then 5 a minute) the address is refused without a check (close
-  code 4429) until a minute has passed. Behind the reverse proxy every client comes from the proxy's address, so this
-  counts the whole house's failures together: a slip or two never matters, a guessing script locks everyone out for a
-  minute at a time.
+  rules (and spoken confirmations) whatever its `hello` says. For Home Assistant logins it is the user's `ha_users`
+  entry, or `JARVIS_ASSISTANT_HA_SURFACE` (`screen` by default) for an unlisted user when
+  `JARVIS_ASSISTANT_HA_USERS_ONLY=false`.
+- **Refused** (no credential, a wrong code, a token Home Assistant doesn't know, a user not on `ha_users`, a kind the
+  server doesn't take): the server sends `error` "not authorised" and closes the socket with code **4401**; the panel
+  says so, asks for a code and doesn't retry on its own. **Couldn't check** (Home Assistant unreachable or too busy):
+  code **4503**, which the panel retries with its usual backoff, so an outage doesn't log everyone out.
+- **Failed logins are limited per address**: after 5 (then 5 a minute) the address's tries are refused without a check
+  (close code 4429). An access code is cheap to check, so it is checked first and the limit applies only when it is
+  wrong: a guessing script can't lock out a right code. A Home Assistant token is expensive to check (a round trip to
+  Home Assistant), so the limit comes first: its token is taken before the check (and given back when the login is
+  good), at most 2 checks run at once per address and 4 in all, and a check that fails because Home Assistant is down
+  counts too. Behind the reverse proxy, set `JARVIS_ASSISTANT_TRUSTED_PROXY` so the address is each client's
+  ([above](#behind-the-reverse-proxy)); without it the whole house shares the proxy's address.
+- **Before the login** a connection may send exactly one message, the `hello`, of at most 8 KB, within
+  `JARVIS_ASSISTANT_HELLO_TIMEOUT_S` (10 s; else 4401). Anything more (a second message while the hello is being
+  checked, a bigger one) cuts the connection off without a closing handshake. At most 8 connections per address and 64
+  in all may be waiting to log in; more get a 503 on the upgrade. A connection the server closes is cut off if it
+  hasn't gone a second later, and its later messages are ignored.
 - **The ticket.** `welcome` carries the user's name and a **ticket**: random, bound to that user and that connection,
-  dead when the connection closes and after 10 minutes (a fresh one arrives in a `ticket` message every 5). Recorded
-  speech goes to `POST {base}/transcribe` with `Authorization: Bearer <ticket>`; without a live ticket it is 401.
-- **Rate limits per user**: `say` and `/transcribe` each have a token bucket (`JARVIS_ASSISTANT_RATE_SAY`,
-  `JARVIS_ASSISTANT_RATE_TRANSCRIBE`, `burst/perMinute`, default `6/20`). Over it: an `error` "slow down" for `say`,
-  429 for `/transcribe`.
+  dead when the connection closes and after 10 minutes (a fresh one arrives in a `ticket` message every 5; a connection
+  has at most two live, the newest and the one before). Recorded speech goes to `POST {base}/transcribe` with
+  `Authorization: Bearer <ticket>`; without a live ticket it is 401.
+- **Rate limits per user**: `say`, `interrupt` and `reset` share one token bucket (`JARVIS_ASSISTANT_RATE_SAY`), and
+  `/transcribe` has its own (`JARVIS_ASSISTANT_RATE_TRANSCRIBE`), both `burst/perMinute`, default `6/20`. Over it: an
+  `error` "slow down" (and nothing happens) for the messages, 429 for `/transcribe`. After the login, a connection with
+  more than 50 messages waiting is closed (1008).
 - **Confirmations belong to the login.** A parked action records the user and the client id it came from; only a
   connection logged in as the same user with the same client id can answer it (click or spoken yes). Another user who
-  sends that client id gets "not your pending action".
-- The audit log records each login (who, or why not) and every decision with the user's name.
+  sends that client id gets "not your pending action". Someone else's `interrupt` stops the running turn but leaves its
+  confirmation to its owner (unanswered, it expires).
+- The audit log records each login (who, or why not), each connection closed for its login, and every decision with
+  the user's name.
+
+### Expiry and revocation
+
+- **Access codes and `ha_users`**: edit the clients file and send the server `SIGHUP` (`kill -HUP <pid>`,
+  `docker kill -s HUP jarvis-assistant`). Every logged-in connection is checked against the new file: one whose access
+  code is gone (or whose Home Assistant user is no longer listed, with `JARVIS_ASSISTANT_HA_USERS_ONLY`) is closed with
+  4401; one whose surface changed is closed with 1012 and logs in again with the new surface. The others stay.
+- **Home Assistant logins** are checked again with Home Assistant every 10 minutes. A Home Assistant access token
+  lasts 30 minutes, so the panel sends the server a fresh one (an `auth` message) every 5, and the check uses the
+  latest. A definite no (the user was removed, deactivated, or its tokens revoked in Home Assistant) closes the
+  connection with 4401; Home Assistant unreachable keeps it and tries again a minute later. The one-minute cache of
+  good answers applies here too, so revoking someone takes effect within about 11 minutes.
+- A `/transcribe` ticket dies with its connection, so a closed login can't keep uploading.
 
 ## Model access and its caveats
 
@@ -410,10 +465,10 @@ runs with it; the e2e test adds the section itself. Enable it on your site (fiel
 }
 ```
 
-| Field    | Meaning                                                                                                                                                      |
-| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `server` | Required. The server's base URL relative to the page: `/assistant` behind the same-origin proxy. WebSocket at `<server>/ws`, speech to `<server>/transcribe` |
-| `tts`    | Speak replies with the browser's speech synthesis (default `true`); the panel's toggle overrides it per browser                                              |
+| Field    | Meaning                                                                                                                                                                     |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `server` | Required. The server's base URL relative to the page, on its origin: `/assistant` behind the same-origin proxy. WebSocket at `<server>/ws`, speech to `<server>/transcribe` |
+| `tts`    | Speak replies with the browser's speech synthesis (default `true`); the panel's toggle overrides it per browser                                                             |
 
 - **Hold M** to talk, also while walking with the mouse captured and with the panel closed; release to send. A short
   press starts click-to-talk, which stops on a second press or after a second of quiet.
@@ -428,8 +483,12 @@ runs with it; the e2e test adds the section itself. Enable it on your site (fiel
 - **Logging in.** When this browser is logged in to Home Assistant (the home-assistant plugin, live), the plugin sends
   that login; otherwise the panel asks for an **access code**, kept in this browser for this site (**Forget code** in
   the panel's footer drops it and signs out). A typed code wins over the Home Assistant login. Refused, the panel says
-  so and waits for another code (or Retry) instead of trying again by itself. The panel's footer shows whom the server
-  took you for.
+  so and waits for another code (or Retry) instead of trying again by itself. If the Home Assistant login is still under
+  way when the assistant starts, it tries again as soon as the Home Assistant connector's state changes. Home Assistant
+  unreachable from the server is not a refusal: the panel shows "offline" and retries. The panel's footer shows whom
+  the server took you for.
+- `server` must be on the viewer's own origin (a path such as `/assistant`): a server elsewhere would be sent the
+  person's Home Assistant login, so the plugin refuses it with an error and stays off.
 
 To try the panel without any server, open the viewer with **`?assistant=mock`** (on a site with the section): an in-page
 fake server, which needs no login, speaks the same protocol from a few scripts (turn off the kitchen lights, set the
@@ -454,26 +513,29 @@ model; the real agent against the mock tries the model without touching the hous
 One WebSocket at `{base}/ws` carries JSON messages with a `type`; the types are in
 [`server/src/core/protocol.ts`](../server/src/core/protocol.ts), which the plugin imports.
 
-| Direction       | `type`                                 | Carries                                                                                                                                                    |
-| --------------- | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| client → server | `hello`                                | First message: client id, `auth` (`{ type: 'secret', secret }` or `{ type: 'ha', token }`), capabilities (`viewer`, `tts`), view. No surface: the server's |
-| client → server | `say`                                  | Text, `source: typed \| voice`, the view at the time                                                                                                       |
-| client → server | `interrupt`                            | Stop the current turn (anyone's: barge-in), drop this client's waiting ones, and cancel the confirmations of this client and of the running turn's         |
-| client → server | `confirm.reply`                        | `{ id, approved }`                                                                                                                                         |
-| client → server | `view.result`                          | `{ id, ok, detail }` for a `view.command`                                                                                                                  |
-| client → server | `reset`                                | Start a new conversation                                                                                                                                   |
-| server → client | `welcome`                              | The recent transcript, status, the agent's name, whether transcription is on, mock or live HA, the user's name, a `/transcribe` ticket                     |
-| server → client | `ticket`                               | A fresh `/transcribe` ticket (every 5 minutes; the last one works until it expires)                                                                        |
-| server → client | `status`                               | `idle`, `thinking` or `error`                                                                                                                              |
-| server → client | `turn.start` / `turn.end`              | A turn from any surface (every client sees it); `turn.end` carries an error or `interrupted`                                                               |
-| server → client | `text.delta`                           | Streamed reply text                                                                                                                                        |
-| server → client | `tool`                                 | A tool call: one human line, status (running, done, refused, pending, error), a subject                                                                    |
-| server → client | `confirm.request` / `confirm.resolved` | A pending action (summary, exact call, risk, `expiresAt` on the server's clock and `ttlMs` left) and how it ended                                          |
-| server → client | `view.command`                         | `fly`, `highlight`, `layer` or `clear`, to the client whose turn it is                                                                                     |
-| server → client | `error`                                | A message the client got wrong                                                                                                                             |
+| Direction       | `type`                                 | Carries                                                                                                                                                            |
+| --------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| client → server | `hello`                                | First message: client id, `auth` (`{ type: 'secret', secret }` or `{ type: 'ha', token }`), capabilities (`viewer`, `tts`), view. No surface: the server's         |
+| client → server | `say`                                  | Text, `source: typed \| voice`, the view at the time                                                                                                               |
+| client → server | `interrupt`                            | Stop the current turn (anyone's: barge-in), drop this client's waiting ones, and cancel this client's confirmations (and the running turn's, if it is this user's) |
+| client → server | `confirm.reply`                        | `{ id, approved }`                                                                                                                                                 |
+| client → server | `view.result`                          | `{ id, ok, detail }` for a `view.command`                                                                                                                          |
+| client → server | `reset`                                | Start a new conversation                                                                                                                                           |
+| client → server | `auth`                                 | `{ auth }`: a fresh copy of the login's credential (a refreshed Home Assistant token), for the server's re-check                                                   |
+| server → client | `welcome`                              | The recent transcript, status, the agent's name, whether transcription is on, mock or live HA, the user's name, a `/transcribe` ticket                             |
+| server → client | `ticket`                               | A fresh `/transcribe` ticket (every 5 minutes; the last one works until it expires)                                                                                |
+| server → client | `status`                               | `idle`, `thinking` or `error`                                                                                                                                      |
+| server → client | `turn.start` / `turn.end`              | A turn from any surface (every client sees it); `turn.end` carries an error or `interrupted`                                                                       |
+| server → client | `text.delta`                           | Streamed reply text                                                                                                                                                |
+| server → client | `tool`                                 | A tool call: one human line, status (running, done, refused, pending, error), a subject                                                                            |
+| server → client | `confirm.request` / `confirm.resolved` | A pending action (summary, exact call, risk, `expiresAt` on the server's clock and `ttlMs` left) and how it ended                                                  |
+| server → client | `view.command`                         | `fly`, `highlight`, `layer` or `clear`, to the client whose turn it is                                                                                             |
+| server → client | `error`                                | A message the client got wrong                                                                                                                                     |
 
 Anything before a good `hello` is refused and the socket closed with **4401** (4429: too many failed logins from this
-address). Speech is `POST {base}/transcribe` with `Authorization: Bearer <ticket>` and a multipart `file` (`audio/*`,
+address; 4503: the login couldn't be checked right now, try again). A login that stops being good is closed with 4401,
+one whose surface changed with 1012, a flood with 1008. The client gives up only on 4401; everything else is retried
+with backoff. Speech is `POST {base}/transcribe` with `Authorization: Bearer <ticket>` and a multipart `file` (`audio/*`,
 up to 10 MB; larger gets a 413), answered with `{ text }`; the client then sends `say`. The same Origin check as the
 WebSocket applies; no live ticket is 401, over the rate limit 429.
 

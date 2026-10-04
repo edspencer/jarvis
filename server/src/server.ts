@@ -10,7 +10,10 @@
 // itself, so config.ts insists on the list.
 // The Origin only says which page is asking; who is asking is the hello's credential (core/auth.ts, checked by the hub
 // before anything else) and, for /transcribe, the ticket that hello earned (`Authorization: Bearer <ticket>`). Both
-// are rate-limited per user, and failed logins per remote address.
+// are rate-limited per user, and failed logins per remote address: the TCP peer's, or, behind a proxy named in
+// JARVIS_ASSISTANT_TRUSTED_PROXY, the client's from X-Forwarded-For (core/auth.ts clientAddress). Before its login a
+// connection may send one small message (the hub enforces it: ws can't lower maxPayload per connection after the
+// upgrade), and only so many may wait to log in per address and in all (hub.admits, asked before the upgrade).
 // TODO(open question 4: where the server runs): next to the static site or on an agent host; the proxy config
 // examples follow from that.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -18,7 +21,7 @@ import type { AddressInfo } from 'node:net';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { SttConfig } from './core/config.ts';
-import { bearer } from './core/auth.ts';
+import { bearer, clientAddress } from './core/auth.ts';
 import type { Conn, Hub } from './core/hub.ts';
 import type { RateLimiter } from './core/limits.ts';
 import { MAX_AUDIO_BYTES, TranscribeError, transcribe as transcribeAudio } from './core/transcribe.ts';
@@ -38,6 +41,8 @@ export interface ServerOptions {
   origins: string[];
   stt: SttConfig | null;
   hub: Hub;
+  /** proxies whose X-Forwarded-For is believed (JARVIS_ASSISTANT_TRUSTED_PROXY) */
+  trustedProxies?: string[];
   /** POST /transcribe per user (none: unlimited) */
   transcribeLimit?: RateLimiter;
   health: () => Record<string, unknown>;
@@ -172,25 +177,33 @@ export function createAssistantServer(o: ServerOptions) {
       log(`ws: refused origin ${req.headers.origin ?? '(none)'}`);
       return refuse('403 Forbidden');
     }
+    const remote = clientAddress(req.socket.remoteAddress, req.headers['x-forwarded-for'], o.trustedProxies ?? []);
+    if (!o.hub.admits(remote)) {
+      log(`ws: refused ${remote}: too many connections waiting to log in`);
+      return refuse('503 Service Unavailable');
+    }
     wss.handleUpgrade(req, socket, head, (ws) => {
       const conn: WsConn = {
         request: req,
-        remote: req.socket.remoteAddress ?? 'unknown',
+        remote,
         send(m) {
           if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(m));
         },
         close(code = 1000, reason) {
           ws.close(code, reason?.slice(0, 120));
         },
+        terminate: () => ws.terminate(),
       };
       alive.set(ws, true);
       ws.on('pong', () => alive.set(ws, true));
       ws.on('message', (data, isBinary) => {
-        if (isBinary) return conn.send({ type: 'error', message: 'text messages only' });
-        void o.hub.onMessage(conn, data.toString());
+        // (before the login, binary goes to the hub too, which refuses it like any other bad first message)
+        if (isBinary && o.hub.authenticated(conn)) return conn.send({ type: 'error', message: 'text messages only' });
+        void o.hub.onMessage(conn, isBinary ? data : data.toString());
       });
       ws.on('close', () => o.hub.onClose(conn));
       ws.on('error', (e) => log(`ws: ${e.message}`));
+      if (!o.hub.onOpen(conn)) ws.terminate();
     });
   });
 

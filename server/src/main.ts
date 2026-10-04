@@ -1,6 +1,6 @@
 // jarvis-assistant: start-up and shutdown. Reads the configuration, checks the model credential, builds the assistant
-// (app.ts; an invalid policy file stops it here) and serves it. SIGHUP reloads the policy; SIGINT / SIGTERM shut down
-// cleanly.
+// (app.ts; an invalid policy file stops it here) and serves it. SIGHUP reloads the policy and the clients file (and
+// closes the connections whose login is gone); SIGINT / SIGTERM shut down cleanly.
 import { createAssistant, type Assistant } from './app.ts';
 import { existsSync } from 'node:fs';
 import {
@@ -51,6 +51,15 @@ async function main() {
       log(`assistant: policy reloaded (${p.rules.length} rules)`);
     } catch (e) {
       log(`assistant: policy NOT reloaded, keeping the old one:\n${(e as Error).message}`);
+    }
+    try {
+      const { clients, closed } = a.reloadClients();
+      log(
+        `assistant: clients reloaded (${clients.clients.length} access codes, ${clients.haUsers.length} ha_users); ` +
+          `${closed} connection(s) closed`,
+      );
+    } catch (e) {
+      log(`assistant: clients NOT reloaded, keeping the old ones:\n${(e as Error).message}`);
     }
   });
   let stopping = false;

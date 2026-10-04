@@ -10,6 +10,7 @@ import {
   DEFAULT_MODEL,
   loadConfig,
   loginCredentialsFile,
+  mockLoginWarning,
 } from '../src/core/config.ts';
 
 const ROOT = resolve(import.meta.dirname, '../..');
@@ -44,9 +45,48 @@ describe('loadConfig', () => {
       auth: ['ha'],
       clientsPath: null,
       haSurface: 'screen',
+      haUsersOnly: true,
+      helloTimeoutMs: 10_000,
+      trustedProxies: [],
       rateSay: { burst: 6, perMinute: 20 },
       rateTranscribe: { burst: 6, perMinute: 20 },
     });
+  });
+
+  it('JARVIS_ASSISTANT_HA_USERS_ONLY, JARVIS_ASSISTANT_HELLO_TIMEOUT_S and JARVIS_ASSISTANT_TRUSTED_PROXY', () => {
+    const c = loadConfig(
+      {
+        ...A,
+        JARVIS_ASSISTANT_HA_USERS_ONLY: 'false',
+        JARVIS_ASSISTANT_HELLO_TIMEOUT_S: '2.5',
+        JARVIS_ASSISTANT_TRUSTED_PROXY: '172.18.0.2, ::ffff:10.0.0.1,fd00::1',
+      },
+      ROOT,
+    );
+    expect(c).toMatchObject({
+      haUsersOnly: false,
+      helloTimeoutMs: 2500,
+      trustedProxies: ['172.18.0.2', '10.0.0.1', 'fd00::1'],
+    });
+    expect(loadConfig({ ...A, JARVIS_ASSISTANT_HA_USERS_ONLY: 'true' }, ROOT).haUsersOnly).toBe(true);
+    expect(() => loadConfig({ ...A, JARVIS_ASSISTANT_HA_USERS_ONLY: 'no' }, ROOT)).toThrow(
+      /HA_USERS_ONLY: true or false/,
+    );
+    for (const t of ['0', 'never'])
+      expect(() => loadConfig({ ...A, JARVIS_ASSISTANT_HELLO_TIMEOUT_S: t }, ROOT)).toThrow(/HELLO_TIMEOUT_S/);
+    for (const p of ['nginx', '10.0.0.0/8'])
+      expect(() => loadConfig({ ...A, JARVIS_ASSISTANT_TRUSTED_PROXY: p }, ROOT)).toThrow(
+        /JARVIS_ASSISTANT_TRUSTED_PROXY: an IP address/,
+      );
+  });
+
+  it('warns, boxed, when HA logins run against the mock (anyone can be anyone)', () => {
+    const w = mockLoginWarning({ auth: ['ha'], ha: { mode: 'mock' } })!;
+    expect(w.split('\n')[0]).toMatch(/^!+$/);
+    expect(w).toContain('HOME ASSISTANT LOGINS AGAINST THE MOCK');
+    expect(w).toMatch(/anyone can log in as\s+!\n! anyone with mock-user:<name>\. For trying it out only/);
+    expect(mockLoginWarning({ auth: ['secret'], ha: { mode: 'mock' } })).toBeNull();
+    expect(mockLoginWarning({ auth: ['ha', 'secret'], ha: { mode: 'live' } })).toBeNull();
   });
 
   it('JARVIS_ASSISTANT_AUTH is required (there is no anonymous mode) and must name ha and/or secret', () => {

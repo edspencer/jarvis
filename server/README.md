@@ -19,7 +19,8 @@ JARVIS_ASSISTANT_AGENT=scripted JARVIS_ASSISTANT_AUTH=secret JARVIS_ASSISTANT_CL
 
 The scripted agent (keyword rules, no model, no network) over the mock Home Assistant and the demo house with the
 example policy, at `ws://127.0.0.1:8787/assistant/ws`. Everyone logs in (`JARVIS_ASSISTANT_AUTH` is required): with an
-access code from the clients file, or with their Home Assistant login (`ha`; the mock takes `mock-user:<name>`). See
+access code from the clients file, or with their Home Assistant login (`ha`: only the users listed under `ha_users`
+unless `JARVIS_ASSISTANT_HA_USERS_ONLY=false`; the mock takes `mock-user:<name>`). See
 [Authentication](../docs/assistant.md#authentication); a client must also send an allowed `Origin` (here the server's
 own, `http://127.0.0.1:8787`). The demo house and `policy.example.yaml` are found from the server's own files; paths
 you set are resolved against the working directory (`server/` under `npm start`).

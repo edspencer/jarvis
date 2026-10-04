@@ -5,9 +5,16 @@
 //     (4401). The surface is the credential's, from the server's configuration. `welcome` brings the recent transcript
 //     and a /transcribe ticket (renewed every half ticket life). Every message is shape-checked here by hand and a bad
 //     one gets an `error`, never a crash;
+//   - before the login: exactly one message (the hello, at most maxHelloBytes) within helloTimeoutMs; a second one
+//     while the hello is being checked, or a big one, cuts the connection off. Unauthenticated connections are capped
+//     per address and in all (admits / onOpen). A connection the hub closes is gone at once: its later messages are
+//     ignored, it gets one audit line, and it is cut off (terminate) if it hasn't closed after closeGraceMs;
+//   - after it: messages in order, at most MAX_BACKLOG waiting per connection; logins are checked again (recheck):
+//     HA logins every recheckMs with the latest credential (`auth` messages bring fresh HA tokens), everyone when the
+//     clients file is reloaded (revalidate). Refused: closed 4401; a changed surface: closed 1012 (log in again);
 //   - owners: a client is its user and its client id together (`<user key>/<client id>`), so a client id says nothing
 //     without the login: confirmations, view commands and their answers belong to the owner;
-//   - rate limits: `say` per user (a token bucket, limits.ts);
+//   - rate limits: `say`, `interrupt` and `reset` per user (one token bucket, limits.ts);
 //   - turns: a FIFO queue, one at a time; the stream (turn.start, text.delta, tool, turn.end) goes to every client, so
 //     a second screen follows live; the transcript is bounded and in memory;
 //   - confirmations: the gate parks confirm-tier actions; the hub shows them to the client the turn came from only, and
@@ -18,7 +25,16 @@
 //   - a watchdog: a turn running longer than turnTimeoutMs is ended with an error and the agent reset, so the queue
 //     and `reset` can't wait forever on an agent that never finishes.
 import { randomUUID } from 'node:crypto';
-import { createTicketStore, TICKET_TTL_MS, type AuthResult, type AuthUser, type TicketInfo } from './auth.ts';
+import {
+  CLOSE_UNAUTHORISED,
+  createTicketStore,
+  NOT_AUTHORISED,
+  TICKET_TTL_MS,
+  type AuthResult,
+  type AuthUser,
+  type Recheck,
+  type TicketInfo,
+} from './auth.ts';
 import type { RateLimiter } from './limits.ts';
 import type {
   AssistantState,
@@ -41,7 +57,9 @@ export interface Conn {
   send(msg: ServerMsg): void;
   /** close it, with a WebSocket close code (4401: not authorised) */
   close(code?: number, reason?: string): void;
-  /** the peer's address, for the failed-login limit */
+  /** cut it off without the closing handshake */
+  terminate?(): void;
+  /** the client's address, for the failed-login limit and the unauthenticated-connection caps */
   readonly remote?: string;
 }
 
@@ -63,7 +81,21 @@ export interface HubOptions {
   formatTurn?: (turn: TurnInfo) => string;
   /** who is this hello? (core/auth.ts) Refused: the conn gets an error and is closed with the result's code. */
   authenticate: (hello: HelloMsg, conn: Conn) => Promise<AuthResult> | AuthResult;
-  /** `say` messages per user (none: unlimited) */
+  /** check a logged-in user again (core/auth.ts recheck); none: never */
+  recheck?: (user: AuthUser, auth: HelloAuth) => Promise<Recheck>;
+  /** how often an HA login is checked again (default 10 min), and how soon after a check that couldn't tell (HA
+   * down: the connection stays) it is tried again (default 1 min) */
+  recheckMs?: number;
+  recheckRetryMs?: number;
+  /** a connection that hasn't said hello in this long is closed 4401 (default 10 s) */
+  helloTimeoutMs?: number;
+  /** the largest message before the login (default 8 KB) */
+  maxHelloBytes?: number;
+  /** connections waiting to log in, per address and in all (default 8 and 64) */
+  preAuth?: { perAddress: number; total: number };
+  /** a connection the hub closed is cut off if it is still there after this long (default 1 s) */
+  closeGraceMs?: number;
+  /** `say`, `interrupt` and `reset` messages per user (none: unlimited) */
   sayLimit?: RateLimiter;
   /** how long a /transcribe ticket lives (default 10 min); a fresh one is sent every half of it */
   ticketTtlMs?: number;
@@ -87,9 +119,18 @@ export interface HubOptions {
 }
 
 export interface Hub {
+  /** may one more connection from this address wait to log in? (the server asks before the WebSocket upgrade) */
+  admits(remote: string): boolean;
+  /** a connection opened: false if it is over the caps (cut it off); else its hello deadline starts */
+  onOpen(conn: Conn): boolean;
   /** a raw message from a conn: a JSON string or an already-parsed value */
   onMessage(conn: Conn, data: unknown): Promise<void>;
   onClose(conn: Conn): void;
+  /** has it logged in? */
+  authenticated(conn: Conn): boolean;
+  /** check every logged-in user against `check` (the reloaded clients file): refused → closed 4401, a changed
+   * surface → closed 1012; returns how many were closed */
+  revalidate(check: (user: AuthUser, auth: HelloAuth) => Exclude<Recheck, 'unknown'>): number;
   /** gate hooks (createGate's onPending / onResolved) */
   onPending(p: PendingAction): void;
   onResolved(id: string, outcome: 'approved' | 'denied' | 'expired' | 'failed', detail?: string): void;
@@ -110,6 +151,12 @@ interface Client {
   /** ownerKey(user, the hello's clientId) */
   owner: string;
   user: AuthUser;
+  /** the login's credential, the latest copy (kept in memory for this connection only, to check the login again) */
+  auth: HelloAuth;
+  /** when the login was last found good, and last checked at all */
+  checkedAt: number;
+  triedAt: number;
+  checking?: boolean;
   surface: Surface;
   viewer: boolean;
   tts: boolean;
@@ -118,6 +165,8 @@ interface Client {
 
 interface Turn {
   info: TurnInfo;
+  /** the user it came from (AuthUser.key) */
+  userKey: string;
   source: 'typed' | 'voice';
   interrupted?: boolean;
   /** it has ended (a late tool call from it, e.g. after the watchdog, is refused) */
@@ -127,6 +176,12 @@ interface Turn {
 // ------------------------------------------------------------------------------------------------ validation
 
 const MAX_TEXT = 4000;
+/** messages waiting per connection after the login (a turn can keep `reset` waiting; a flood is cut off) */
+const MAX_BACKLOG = 50;
+const SLOW_DOWN = 'slow down: too many requests; try again in a moment';
+/** a message's size in bytes (an already-parsed value, from tests: 0) */
+const sizeOf = (d: unknown): number =>
+  typeof d === 'string' ? Buffer.byteLength(d) : d instanceof Uint8Array || d instanceof ArrayBuffer ? d.byteLength : 0;
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 const isId = (v: unknown): v is string => typeof v === 'string' && v.length > 0 && v.length <= 128;
 
@@ -187,6 +242,11 @@ export function parseClientMsg(data: unknown): ClientMsg | string {
       return { type: 'interrupt' };
     case 'reset':
       return { type: 'reset' };
+    case 'auth': {
+      const auth = helloAuth(m.auth);
+      if (!auth) return "auth: { type: 'secret', secret } or { type: 'ha', token }";
+      return { type: 'auth', auth };
+    }
     case 'confirm.reply':
       if (!isId(m.id) || typeof m.approved !== 'boolean') return 'confirm.reply: { id, approved: boolean }';
       return { type: 'confirm.reply', id: m.id, approved: m.approved };
@@ -216,10 +276,27 @@ export function createHub(opts: HubOptions): Hub {
   /** each conn's ticket renewal */
   const renewals = new Map<Conn, ReturnType<typeof setInterval>>();
 
+  const helloTimeout = opts.helloTimeoutMs ?? 10_000;
+  const maxHello = opts.maxHelloBytes ?? 8 * 1024;
+  const preAuth = opts.preAuth ?? { perAddress: 8, total: 64 };
+  const grace = opts.closeGraceMs ?? 1000;
+  const recheckMs = opts.recheckMs ?? 10 * 60_000;
+  const recheckRetry = opts.recheckRetryMs ?? 60_000;
+
   const clients = new Map<Conn, Client>();
   const chains = new Map<Conn, Promise<void>>();
-  /** conns that have closed (one closing during an async authenticate must not be registered afterwards) */
+  /** messages waiting per logged-in conn */
+  const backlog = new Map<Conn, number>();
+  /** conns that have closed or that the hub closed: their messages are ignored (one closing during an async
+   * authenticate must not be registered afterwards) */
   const gone = new WeakSet<Conn>();
+  /** conns that have sent their one message before the login */
+  const spoke = new WeakSet<Conn>();
+  /** conns waiting to log in (from onOpen): their address and hello deadline */
+  const waiting = new Map<Conn, { remote: string; timer: ReturnType<typeof setTimeout> }>();
+  const waitingAt = new Map<string, number>();
+  /** conns the hub closed, cut off if still there after the grace */
+  const reaping = new Map<Conn, ReturnType<typeof setTimeout>>();
   let transcript: TranscriptEntry[] = [...(opts.transcript ?? [])].slice(-limit);
   const queue: Turn[] = [];
   let current: Turn | null = null;
@@ -459,25 +536,140 @@ export function createHub(opts: HubOptions): Hub {
   // -------------------------------------------------------------------------------- messages
 
   const fail = (conn: Conn, message: string) => safeSend(conn, { type: 'error', message });
+  const unref = (t: ReturnType<typeof setTimeout>) => ((t as { unref?: () => void }).unref?.(), t);
+
+  const unwait = (conn: Conn) => {
+    const w = waiting.get(conn);
+    if (!w) return;
+    clearTimeout(w.timer);
+    waiting.delete(conn);
+    const n = (waitingAt.get(w.remote) ?? 1) - 1;
+    if (n > 0) waitingAt.set(w.remote, n);
+    else waitingAt.delete(w.remote);
+  };
+  const admits = (remote: string) => waiting.size < preAuth.total && (waitingAt.get(remote) ?? 0) < preAuth.perAddress;
+
+  /** the hub is done with a conn (closed, or about to be): forget it and everything that hangs off it */
+  function forget(conn: Conn) {
+    gone.add(conn);
+    unwait(conn);
+    const cl = clients.get(conn);
+    clients.delete(conn);
+    chains.delete(conn);
+    backlog.delete(conn);
+    tickets.revoke(conn);
+    clearInterval(renewals.get(conn));
+    renewals.delete(conn);
+    if (cl && !connsOf(cl.owner).length) {
+      gate.cancel(cl.owner);
+      dropViews(cl.owner);
+    }
+  }
+  const cutOff = (conn: Conn) => {
+    try {
+      conn.terminate?.();
+    } catch {}
+  };
+  /** Close a conn from the hub's side: gone at once (later messages are ignored), one audit line, then the error and
+   * the close code, and a cut-off if it hasn't gone after the grace. `now`: no error, no handshake: cut off at once. */
+  function drop(
+    conn: Conn,
+    code: number,
+    message: string,
+    detail: string,
+    o: { now?: boolean; decision?: string } = {},
+  ) {
+    if (gone.has(conn)) return;
+    const cl = clients.get(conn);
+    forget(conn);
+    opts.audit?.write({
+      kind: 'auth',
+      remote: conn.remote,
+      ...(cl ? { user: cl.user.name, client: cl.owner } : {}),
+      decision: o.decision ?? 'refused',
+      detail,
+    });
+    if (o.now) return cutOff(conn);
+    fail(conn, message);
+    try {
+      conn.close(code, message);
+    } catch {}
+    reaping.set(
+      conn,
+      unref(
+        setTimeout(() => {
+          reaping.delete(conn);
+          cutOff(conn);
+        }, grace),
+      ),
+    );
+  }
+
+  // -------------------------------------------------------------------------------- checking a login again
+
+  /** an HA login is due a check: the last good one is recheckMs old, and the last try recheckRetry */
+  const due = (cl: Client) => now() - cl.checkedAt >= recheckMs && now() - cl.triedAt >= recheckRetry;
+
+  function settle(conn: Conn, cl: Client, r: Recheck) {
+    if (r === 'ok') cl.checkedAt = now();
+    else if (r === 'refused')
+      drop(conn, CLOSE_UNAUTHORISED, NOT_AUTHORISED, 'the login is no longer good', { decision: 'revoked' });
+    else if (r === 'changed')
+      drop(conn, 1012, 'your login changed; connecting again', 'the login’s surface changed', { decision: 'changed' });
+    // 'unknown' (Home Assistant down): kept, and tried again after recheckRetry
+  }
+
+  async function recheck(conn: Conn, cl: Client) {
+    if (!opts.recheck || cl.checking) return;
+    cl.checking = true;
+    cl.triedAt = now();
+    let r: Recheck;
+    try {
+      r = await opts.recheck(cl.user, cl.auth);
+    } catch (e) {
+      log(`recheck failed: ${(e as Error).message}`);
+      r = 'unknown';
+    } finally {
+      cl.checking = false;
+    }
+    if (clients.get(conn) === cl) settle(conn, cl, r);
+  }
+
+  const sweep = opts.recheck
+    ? unref(
+        setInterval(
+          () => {
+            for (const [c, cl] of [...clients]) if (cl.user.via === 'ha' && due(cl)) void recheck(c, cl);
+          },
+          Math.min(recheckRetry, recheckMs),
+        ),
+      )
+    : null;
+
+  // -------------------------------------------------------------------------------- the first message
+
+  async function first(conn: Conn, data: unknown) {
+    const msg = parseClientMsg(data);
+    // nothing but a good hello before a successful login: anything else is refused and the socket closed
+    if (typeof msg === 'string' || msg.type !== 'hello')
+      return drop(
+        conn,
+        CLOSE_UNAUTHORISED,
+        typeof msg === 'string' ? msg : 'say hello first, with a credential',
+        'no hello',
+      );
+    return hello(conn, msg);
+  }
 
   async function handle(conn: Conn, data: unknown) {
-    const msg = parseClientMsg(data);
     const cl = clients.get(conn);
-    if (!cl) {
-      // nothing but a good hello before a successful login: anything else is refused and the socket closed
-      if (typeof msg === 'string' || msg.type !== 'hello') {
-        fail(conn, typeof msg === 'string' ? msg : 'say hello first, with a credential');
-        opts.audit?.write({ kind: 'auth', remote: conn.remote, decision: 'refused', detail: 'no hello' });
-        return conn.close(4401, 'not authorised');
-      }
-      return hello(conn, msg);
-    }
+    if (!cl || gone.has(conn)) return; // closed meanwhile
+    const msg = parseClientMsg(data);
     if (typeof msg === 'string') return fail(conn, msg);
     if (msg.type === 'hello') return fail(conn, 'hello: this connection has already said hello');
     switch (msg.type) {
       case 'say': {
-        if (opts.sayLimit && !opts.sayLimit.take(cl.user.key))
-          return fail(conn, 'slow down: too many requests; try again in a moment');
+        if (opts.sayLimit && !opts.sayLimit.take(cl.user.key)) return fail(conn, SLOW_DOWN);
         if (msg.view) cl.view = msg.view;
         // a voice-only surface answers a pending confirmation by voice: the server matches the whole utterance against
         // a fixed list (the gate's); the model never sees it and nothing it says can do the same
@@ -496,6 +688,7 @@ export function createHub(opts: HubOptions): Hub {
         if (queue.length >= 20) return fail(conn, 'too many requests waiting; try again in a moment');
         queue.push({
           source: msg.source,
+          userKey: cl.user.key,
           info: {
             turnId: newId(),
             clientId: cl.owner,
@@ -510,11 +703,14 @@ export function createHub(opts: HubOptions): Hub {
         return;
       }
       case 'interrupt': {
-        // this client's waiting turns go, the running one stops (whoever's it is: barge-in), and the confirmations of
-        // both close: the interrupter's and those of the running turn's client
+        if (opts.sayLimit && !opts.sayLimit.take(cl.user.key)) return fail(conn, SLOW_DOWN);
+        // this client's waiting turns and confirmations go, and the running turn stops (whoever's it is: barge-in).
+        // The running turn's confirmations go too only if it is this user's own (another tab of theirs): someone
+        // else's interrupt leaves their confirmation to them (unanswered, it expires: safe either way)
         for (let i = queue.length - 1; i >= 0; i--) if (queue[i].info.clientId === cl.owner) queue.splice(i, 1);
         gate.cancel(cl.owner);
-        if (current && current.info.clientId !== cl.owner) gate.cancel(current.info.clientId);
+        if (current && current.info.clientId !== cl.owner && current.userKey === cl.user.key)
+          gate.cancel(current.info.clientId);
         if (current) {
           current.interrupted = true;
           await agent.interrupt().catch((e) => log(`interrupt failed: ${(e as Error).message}`));
@@ -522,6 +718,7 @@ export function createHub(opts: HubOptions): Hub {
         return;
       }
       case 'reset': {
+        if (opts.sayLimit && !opts.sayLimit.take(cl.user.key)) return fail(conn, SLOW_DOWN);
         queue.length = 0;
         gate.cancel();
         if (current) {
@@ -548,6 +745,14 @@ export function createHub(opts: HubOptions): Hub {
         if (v && v.clientId === cl.owner) v.resolve({ ok: msg.ok, detail: msg.detail });
         return; // unknown or someone else's: ignored
       }
+      case 'auth': {
+        // a fresh copy of the credential (an HA token is refreshed every 30 minutes): kept for the next check, and
+        // checked now if one is due
+        if (msg.auth.type !== cl.user.via) return fail(conn, `auth: this connection logged in with ${cl.user.via}`);
+        cl.auth = msg.auth;
+        if (cl.user.via === 'ha' && due(cl)) await recheck(conn, cl);
+        return;
+      }
     }
   }
 
@@ -558,17 +763,17 @@ export function createHub(opts: HubOptions): Hub {
       r = await opts.authenticate(msg, conn);
     } catch (e) {
       log(`authenticate failed: ${(e as Error).message}`);
-      r = { ok: false, reason: 'not authorised', code: 4401 };
+      r = { ok: false, reason: NOT_AUTHORISED, code: CLOSE_UNAUTHORISED };
     }
-    if (gone.has(conn)) return; // it closed while we were deciding
-    if (!r.ok) {
-      opts.audit?.write({ kind: 'auth', remote: conn.remote, decision: 'refused', detail: r.reason });
-      fail(conn, r.reason);
-      return conn.close(r.code, r.reason);
-    }
+    if (gone.has(conn) || closed) return; // it closed (or was cut off) while we were deciding
+    if (!r.ok) return drop(conn, r.code, r.reason, r.reason);
+    unwait(conn);
     const cl: Client = {
       owner: ownerKey(r.user, msg.clientId),
       user: r.user,
+      auth: msg.auth,
+      checkedAt: now(),
+      triedAt: now(),
       surface: r.user.surface,
       viewer: msg.capabilities.includes('viewer'),
       tts: msg.capabilities.includes('tts'),
@@ -579,7 +784,7 @@ export function createHub(opts: HubOptions): Hub {
     safeSend(conn, welcome(cl, issue(conn, cl)));
     // a fresh ticket every half ticket life, so a long session can still talk (the old one works until it expires)
     const t = setInterval(() => safeSend(conn, { type: 'ticket', ticket: issue(conn, cl) }), ticketTtl / 2);
-    (t as { unref?: () => void }).unref?.();
+    unref(t);
     renewals.set(conn, t);
     // another connection of the same owner (a second socket of that tab, a quick reconnect while the old socket is
     // still open): show it the confirmations still waiting. A plain reload usually finds none: when an owner's last
@@ -599,31 +804,80 @@ export function createHub(opts: HubOptions): Hub {
   });
 
   return {
-    onMessage(conn, data) {
-      // per connection, in order (an async hello finishes before the next message)
-      const next = (chains.get(conn) ?? Promise.resolve()).then(() =>
-        handle(conn, data).catch((e) => {
-          log(`message failed: ${(e as Error).stack ?? e}`);
-          fail(conn, 'internal error');
-        }),
+    admits,
+
+    onOpen(conn) {
+      const remote = conn.remote ?? 'unknown';
+      if (closed || !admits(remote)) {
+        log(`refused a connection from ${remote}: too many waiting to log in`);
+        return false;
+      }
+      const timer = unref(
+        setTimeout(() => drop(conn, CLOSE_UNAUTHORISED, NOT_AUTHORISED, 'no hello in time'), helloTimeout),
       );
+      waiting.set(conn, { remote, timer });
+      waitingAt.set(remote, (waitingAt.get(remote) ?? 0) + 1);
+      return true;
+    },
+
+    onMessage(conn, data) {
+      if (gone.has(conn) || closed) return Promise.resolve();
+      if (!clients.has(conn)) {
+        // before the login: one message, the hello, and a small one; anything more is a flood, cut off at once
+        if (spoke.has(conn)) {
+          drop(conn, 1008, '', 'a message before the login finished', { now: true });
+          return Promise.resolve();
+        }
+        spoke.add(conn);
+        if (sizeOf(data) > maxHello) {
+          drop(conn, 1009, '', `a ${sizeOf(data)}-byte message before the login`, { now: true });
+          return Promise.resolve();
+        }
+        return first(conn, data).catch((e) => {
+          log(`hello failed: ${(e as Error).stack ?? e}`);
+          drop(conn, CLOSE_UNAUTHORISED, 'internal error', 'internal error');
+        });
+      }
+      // after it: per connection, in order, a bounded number waiting
+      const n = backlog.get(conn) ?? 0;
+      if (n >= MAX_BACKLOG) {
+        drop(conn, 1008, 'too many messages at once', 'message flood', { decision: 'closed' });
+        return Promise.resolve();
+      }
+      backlog.set(conn, n + 1);
+      const next = (chains.get(conn) ?? Promise.resolve())
+        .then(() =>
+          handle(conn, data).catch((e) => {
+            log(`message failed: ${(e as Error).stack ?? e}`);
+            fail(conn, 'internal error');
+          }),
+        )
+        .finally(() => {
+          const m = (backlog.get(conn) ?? 1) - 1;
+          if (m > 0 && !gone.has(conn)) backlog.set(conn, m);
+          else backlog.delete(conn);
+        });
       chains.set(conn, next);
       return next;
     },
 
     onClose(conn) {
-      gone.add(conn);
-      const cl = clients.get(conn);
-      clients.delete(conn);
-      chains.delete(conn);
-      tickets.revoke(conn);
-      clearInterval(renewals.get(conn));
-      renewals.delete(conn);
-      if (!cl) return;
-      if (!connsOf(cl.owner).length) {
-        gate.cancel(cl.owner);
-        dropViews(cl.owner);
+      clearTimeout(reaping.get(conn));
+      reaping.delete(conn);
+      forget(conn);
+    },
+
+    authenticated: (conn) => clients.has(conn),
+
+    revalidate(check) {
+      let n = 0;
+      for (const [conn, cl] of [...clients]) {
+        const r = check(cl.user, cl.auth);
+        if (r === 'ok') continue;
+        settle(conn, cl, r);
+        n++;
       }
+      return n;
     },
 
     onPending(p) {
@@ -653,6 +907,10 @@ export function createHub(opts: HubOptions): Hub {
 
     async close() {
       closed = true;
+      if (sweep) clearInterval(sweep);
+      for (const c of [...waiting.keys()]) unwait(c);
+      for (const t of reaping.values()) clearTimeout(t);
+      reaping.clear();
       queue.length = 0;
       gate.cancel();
       if (current) await agent.interrupt().catch(() => {});

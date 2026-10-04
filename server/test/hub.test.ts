@@ -5,13 +5,13 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { memoryAudit } from '../src/core/audit.ts';
-import { createAuthenticator, sha256Hex, type AuthResult } from '../src/core/auth.ts';
+import { createAuthenticator, sha256Hex, type AuthResult, type Recheck } from '../src/core/auth.ts';
 import { createRateLimiter, type RateLimiter } from '../src/core/limits.ts';
 import { createGate, type Gate } from '../src/core/gate.ts';
 import { createMockHa, type MockHa } from '../src/core/ha-mock.ts';
-import { createHub, parseClientMsg, type Conn, type Hub } from '../src/core/hub.ts';
+import { createHub, parseClientMsg, type Conn, type Hub, type HubOptions } from '../src/core/hub.ts';
 import { loadSite } from '../src/core/knowledge.ts';
 import { parsePolicy } from '../src/core/policy.ts';
 import type { ClientMsg, ServerMsg } from '../src/core/protocol.ts';
@@ -26,6 +26,8 @@ const site = loadSite(resolve(import.meta.dirname, '../../examples/demo-site'));
 interface FakeConn extends Conn {
   sent: ServerMsg[];
   closed: boolean;
+  /** cut off (terminate) */
+  terminated: boolean;
   code?: number;
   of<T extends ServerMsg['type']>(type: T): Extract<ServerMsg, { type: T }>[];
 }
@@ -33,9 +35,11 @@ function conn(remote = '10.0.0.7'): FakeConn {
   const c: FakeConn = {
     sent: [],
     closed: false,
+    terminated: false,
     remote,
     send: (m) => void c.sent.push(structuredClone(m)),
     close: (code) => void ((c.closed = true), (c.code = code)),
+    terminate: () => void (c.terminated = true),
     of: (type) => c.sent.filter((m) => m.type === type) as never,
   };
   return c;
@@ -130,6 +134,21 @@ function rig(
   return { hub, gate, ha, agent, audit };
 }
 
+/** a hub of its own over the rig's agent and gate, with some options */
+const hubOf = (r: Rig, o: Partial<HubOptions> = {}) =>
+  createHub({
+    agent: r.agent,
+    tools: [],
+    gate: r.gate,
+    audit: r.audit,
+    info: { agent: 'fake', ha: 'mock', transcribe: false },
+    authenticate: authenticator(),
+    ...o,
+  });
+const authLines = (r: Rig) => r.audit.records.filter((x) => x.kind === 'auth');
+const SLOW = 'slow down: too many requests; try again in a moment';
+const sleep = (ms: number) => new Promise((res) => setTimeout(res, ms));
+
 const until = async (pred: () => unknown, ms = 1000) => {
   const end = Date.now() + ms;
   while (!pred()) {
@@ -202,6 +221,7 @@ describe('parseClientMsg', () => {
       { type: 'say', text: 'hi', source: 'telepathy' },
       { type: 'confirm.reply', id: 'x', approved: 'yes' },
       { type: 'view.result', id: 'x' },
+      { type: 'auth', auth: 'tok' },
       { type: 'launch' },
     ])
       expect(typeof parseClientMsg(bad)).toBe('string');
@@ -275,7 +295,7 @@ describe('hub: clients', () => {
     }
   });
 
-  it('after 5 failed logins an address is refused unchecked (4429), others are not', async () => {
+  it('after 5 failed logins an address is refused unchecked (4429), others are not; a right code still gets in', async () => {
     const r = rig();
     for (let i = 0; i < 5; i++) {
       const c = conn('10.9.9.9');
@@ -283,12 +303,106 @@ describe('hub: clients', () => {
       expect(c.code).toBe(4401);
     }
     const blocked = conn('10.9.9.9');
-    await r.hub.onMessage(blocked, hello('t')); // even the right code
+    await r.hub.onMessage(blocked, hello('t', { auth: { type: 'secret', secret: 'alice:guess' } }));
     expect(blocked.sent).toEqual([{ type: 'error', message: 'too many failed attempts; try again in a minute' }]);
     expect(blocked.code).toBe(4429);
+    const right = conn('10.9.9.9'); // the access code is checked first: a right one isn't locked out by the guesses
+    await r.hub.onMessage(right, hello('t'));
+    expect(right.of('welcome')).toHaveLength(1);
     const other = conn('10.0.0.8');
     await r.hub.onMessage(other, hello('t'));
     expect(other.of('welcome')).toHaveLength(1);
+  });
+
+  it('before the login only the hello: anything sent while it is checked cuts the connection off, nothing queued', async () => {
+    const r = rig();
+    const wait = deferred();
+    const verify = authenticator();
+    let checks = 0;
+    const hub = hubOf(r, { authenticate: async (h, c) => (checks++, await wait.promise, verify(h, c)) });
+    const c = conn();
+    const p = hub.onMessage(c, hello('t'));
+    for (let i = 0; i < 1000; i++) void hub.onMessage(c, JSON.stringify(say(`flood ${i}`)));
+    for (let i = 0; i < 10; i++) void hub.onMessage(c, hello('t'));
+    expect(c.terminated).toBe(true);
+    wait.resolve();
+    await p;
+    expect(checks).toBe(1);
+    expect(hub.clientCount()).toBe(0); // the hello was good, but the connection is gone
+    expect(c.sent).toEqual([]);
+    await hub.idle();
+    expect(r.agent.prompts).toEqual([]);
+    expect(authLines(r)).toMatchObject([{ decision: 'refused', detail: 'a message before the login finished' }]);
+  });
+
+  it('a big first message is cut off unread', async () => {
+    const r = rig();
+    const hub = hubOf(r);
+    const c = conn();
+    await hub.onMessage(c, JSON.stringify({ ...hello('t'), pad: 'x'.repeat(9000) }));
+    expect(c).toMatchObject({ terminated: true, sent: [] });
+    expect(hub.clientCount()).toBe(0);
+    const ok = conn();
+    await hub.onMessage(ok, JSON.stringify({ ...hello('t'), pad: 'x'.repeat(4000) }));
+    expect(ok.of('welcome')).toHaveLength(1);
+  });
+
+  it('a refused connection is gone at once: later messages ignored, one audit line, cut off after the grace', async () => {
+    const r = rig();
+    const hub = hubOf(r, { closeGraceMs: 20 });
+    const c = conn();
+    await hub.onMessage(c, hello('t', { auth: { type: 'secret', secret: 'alice:wrong' } }));
+    expect(c).toMatchObject({ closed: true, code: 4401, terminated: false });
+    for (let i = 0; i < 5; i++) await hub.onMessage(c, hello('t')); // even with the right code now
+    await hub.onMessage(c, JSON.stringify(say('hi')));
+    expect(c.sent).toEqual([{ type: 'error', message: 'not authorised' }]);
+    expect(hub.clientCount()).toBe(0);
+    expect(authLines(r)).toHaveLength(1);
+    await until(() => c.terminated); // it didn't close: cut off
+    // one that closes in time isn't
+    const d = conn();
+    await hub.onMessage(d, JSON.stringify(say('x')));
+    expect(d.code).toBe(4401);
+    hub.onClose(d);
+    await sleep(40);
+    expect(d.terminated).toBe(false);
+  });
+
+  it('caps the connections waiting to log in, per address and in all; no hello in time: 4401', async () => {
+    const r = rig();
+    const hub = hubOf(r, { preAuth: { perAddress: 2, total: 3 }, helloTimeoutMs: 30 });
+    const [a1, a2, a3] = [conn('10.1.1.1'), conn('10.1.1.1'), conn('10.1.1.1')];
+    expect([hub.onOpen(a1), hub.onOpen(a2)]).toEqual([true, true]);
+    expect(hub.admits('10.1.1.1')).toBe(false);
+    expect(hub.onOpen(a3)).toBe(false);
+    const b = conn('10.2.2.2');
+    expect(hub.onOpen(b)).toBe(true);
+    expect(hub.admits('10.3.3.3')).toBe(false); // all of them
+    await hub.onMessage(a1, hello('t')); // logged in: no longer waiting
+    expect(hub.authenticated(a1)).toBe(true);
+    expect(hub.admits('10.1.1.1')).toBe(true);
+    hub.onClose(b);
+    expect(hub.admits('10.3.3.3')).toBe(true);
+    await until(() => a2.closed); // never said hello
+    expect(a2).toMatchObject({ code: 4401, sent: [{ type: 'error', message: 'not authorised' }] });
+    expect(authLines(r).at(-1)).toMatchObject({ decision: 'refused', detail: 'no hello in time' });
+    await sleep(40);
+    expect(a1.closed).toBe(false);
+    expect(hub.admits('10.1.1.1')).toBe(true);
+    await hub.close();
+  });
+
+  it('after the login a flood of waiting messages closes the connection (1008)', async () => {
+    const r = rig(() => new Promise(() => {}), { turnTimeoutMs: 100 });
+    const a = await join2(r);
+    await r.hub.onMessage(a, JSON.stringify(say('hang')));
+    await until(() => a.of('turn.start').length);
+    void r.hub.onMessage(a, JSON.stringify({ type: 'reset' })); // waits for the hung turn
+    for (let i = 0; i < 60; i++) void r.hub.onMessage(a, JSON.stringify(say(`m${i}`)));
+    expect(a).toMatchObject({ closed: true, code: 1008 });
+    expect(r.hub.clientCount()).toBe(0);
+    await r.hub.idle();
+    expect(r.agent.prompts).toEqual(['[turn] hang']);
   });
 
   it('the surface comes from the credential: a speaker stays a speaker whatever its hello says', async () => {
@@ -379,6 +493,109 @@ describe('hub: clients', () => {
     await r.hub.onMessage(a, JSON.stringify(say('four')));
     await r.hub.idle();
     expect(r.agent.prompts).toEqual(['[turn] one', '[turn] two', '[turn] bob', '[turn] four']);
+  });
+
+  it('interrupt and reset come out of the same bucket: over it, "slow down" and nothing happens', async () => {
+    const r = rig(undefined, { sayLimit: createRateLimiter({ burst: 2, perMinute: 1 }, () => 0) });
+    const a = await join2(r);
+    await r.hub.onMessage(a, JSON.stringify({ type: 'reset' }));
+    await r.hub.onMessage(a, JSON.stringify({ type: 'interrupt' }));
+    const welcomes = a.of('welcome').length;
+    await r.hub.onMessage(a, JSON.stringify({ type: 'reset' }));
+    await r.hub.onMessage(a, JSON.stringify({ type: 'interrupt' }));
+    await r.hub.onMessage(a, JSON.stringify(say('hi')));
+    expect(r.agent.resets).toBe(1);
+    expect(a.of('welcome')).toHaveLength(welcomes);
+    expect(a.of('error').map((e) => e.message)).toEqual([SLOW, SLOW, SLOW]);
+    expect(r.agent.prompts).toEqual([]);
+  });
+
+  it('revalidate (the clients file reloaded): a gone login is closed 4401, a changed surface 1012, the rest stay', async () => {
+    const r = rig();
+    const a = await join2(r);
+    const b = await join2(r, 'tab-2', { auth: secret('bob') });
+    const k = await join2(r, 'kitchen', { auth: secret('kitchen') });
+    const seen: unknown[] = [];
+    const n = r.hub.revalidate((u, cred) => {
+      seen.push(cred);
+      return u.name === 'alice' ? 'refused' : u.name === 'kitchen' ? 'changed' : 'ok';
+    });
+    expect(n).toBe(2);
+    expect(seen).toContainEqual(secret('alice')); // (with the credential it logged in with)
+    expect(a).toMatchObject({ closed: true, code: 4401 });
+    expect(a.of('error').at(-1)!.message).toBe('not authorised');
+    expect(k).toMatchObject({ closed: true, code: 1012 });
+    expect(b.closed).toBe(false);
+    expect(r.hub.clientCount()).toBe(1);
+    expect(r.hub.ticket(a.of('welcome')[0].ticket)).toBeNull();
+    await r.hub.onMessage(a, JSON.stringify(say('still here?')));
+    await r.hub.idle();
+    expect(r.agent.prompts).toEqual([]);
+    expect(authLines(r).slice(-2)).toMatchObject([
+      { user: 'alice', decision: 'revoked' },
+      { user: 'kitchen', decision: 'changed' },
+    ]);
+  });
+
+  it('an HA login is checked again every 10 minutes with the latest token; HA down keeps it; refused closes 4401', async () => {
+    vi.useFakeTimers();
+    try {
+      const r = rig();
+      let verdict: Recheck = 'ok';
+      const seen: string[] = [];
+      const hub = hubOf(r, {
+        authenticate: async () => ({ ok: true, user: { key: 'ha:u1', name: 'Ana', via: 'ha', surface: 'screen' } }),
+        recheck: async (_u, cred) => (seen.push(cred.type === 'ha' ? cred.token : '?'), verdict),
+      });
+      const c = conn();
+      await hub.onMessage(c, hello('t', { auth: { type: 'ha', token: 't0' } }));
+      expect(c.of('welcome')).toHaveLength(1);
+      await vi.advanceTimersByTimeAsync(9 * 60_000);
+      expect(seen).toEqual([]);
+      await hub.onMessage(c, { type: 'auth', auth: { type: 'ha', token: 't1' } }); // a fresh token: kept
+      await hub.onMessage(c, { type: 'auth', auth: { type: 'secret', secret: 'x:y' } });
+      expect(c.of('error').at(-1)!.message).toBe('auth: this connection logged in with ha');
+      expect(seen).toEqual([]); // (not due yet)
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(seen).toEqual(['t1']);
+      verdict = 'unknown'; // Home Assistant down: kept, and tried again a minute later
+      await vi.advanceTimersByTimeAsync(10 * 60_000);
+      expect(seen).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(seen).toHaveLength(3);
+      expect(c.closed).toBe(false);
+      verdict = 'refused';
+      await vi.advanceTimersByTimeAsync(60_000);
+      expect(c).toMatchObject({ closed: true, code: 4401 });
+      expect(hub.clientCount()).toBe(0);
+      await hub.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a fresh HA token arriving when a check is due is checked at once', async () => {
+    vi.useFakeTimers();
+    try {
+      const r = rig();
+      const seen: string[] = [];
+      const hub = hubOf(r, {
+        authenticate: async () => ({ ok: true, user: { key: 'ha:u1', name: 'Ana', via: 'ha', surface: 'screen' } }),
+        recheck: async (_u, cred) => (seen.push(cred.type === 'ha' ? cred.token : '?'), 'refused'),
+        recheckMs: 25_500,
+        recheckRetryMs: 1000,
+      });
+      const c = conn();
+      await hub.onMessage(c, hello('t', { auth: { type: 'ha', token: 't0' } }));
+      await vi.advanceTimersByTimeAsync(25_600); // due, and the next sweep is 400 ms away
+      expect(seen).toEqual([]);
+      await hub.onMessage(c, { type: 'auth', auth: { type: 'ha', token: 't1' } });
+      expect(seen).toEqual(['t1']);
+      expect(c).toMatchObject({ closed: true, code: 4401 });
+      await hub.close();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('a refused login cannot be talked past: an authenticate that throws refuses', async () => {
@@ -824,7 +1041,7 @@ describe('hub: confirmations', () => {
     expect(r.agent.results[0]).toMatch(/^the person declined/);
   });
 
-  it('an interrupt from another client cancels the running turn’s confirmations too (barge-in)', async () => {
+  it('an interrupt from another tab of the same user cancels the running turn’s confirmations too (barge-in)', async () => {
     const r = rig(actScript);
     const a = await join2(r);
     const b = await join2(r, 'tab-2');
@@ -836,6 +1053,25 @@ describe('hub: confirmations', () => {
     expect(r.ha.calls).toEqual([]);
     expect(a.of('confirm.resolved')[0]).toMatchObject({ outcome: 'denied', detail: 'cancelled' });
     expect(a.of('turn.end').at(-1)).toMatchObject({ interrupted: true });
+  });
+
+  it('an interrupt from another user stops the turn but leaves the confirmation to its owner', async () => {
+    const r = rig(actScript);
+    const a = await join2(r);
+    const b = await join2(r, 'tab-b', { auth: secret('bob') });
+    await r.hub.onMessage(a, JSON.stringify(say('set the hall to 72')));
+    await until(() => a.of('confirm.request').length);
+    await r.hub.onMessage(b, JSON.stringify({ type: 'interrupt' }));
+    expect(r.agent.interrupted).toBe(true);
+    expect(r.gate.pending(owner('alice', 'tab-1'))).toHaveLength(1);
+    expect(a.of('confirm.resolved')).toEqual([]);
+    await r.hub.onMessage(
+      a,
+      JSON.stringify({ type: 'confirm.reply', id: a.of('confirm.request')[0].id, approved: false }),
+    );
+    await r.hub.idle();
+    expect(a.of('turn.end').at(-1)).toMatchObject({ interrupted: true });
+    expect(r.ha.calls).toEqual([]);
   });
 
   it('disconnecting cancels the pending confirmation', async () => {

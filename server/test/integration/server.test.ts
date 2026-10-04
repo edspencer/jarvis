@@ -14,7 +14,7 @@ import { createScriptedAgent } from '../../src/agent-scripted.ts';
 import { newClientSecret } from '../../src/core/auth.ts';
 import { loadConfig } from '../../src/core/config.ts';
 import { buildSystemPrompt } from '../../src/core/knowledge.ts';
-import type { MockHa } from '../../src/core/ha-mock.ts';
+import { createMockHa, mockCurrentUser, type MockHa } from '../../src/core/ha-mock.ts';
 import type { ServerMsg } from '../../src/core/protocol.ts';
 import { originAllowed } from '../../src/server.ts';
 
@@ -34,7 +34,8 @@ writeFileSync(
       ({ entry: e }) => `  - { name: ${e.name}, secret_sha256: ${e.secretSha256}, surface: ${e.surface} }`,
     ),
     'ha_users:',
-    '  - { name: Ana, surface: speaker }',
+    '  - { id: mock-ana, surface: speaker }',
+    '  - { id: mock-ben, surface: screen }',
     '',
   ].join('\n'),
 );
@@ -94,8 +95,8 @@ afterAll(async () => {
 });
 
 /** a ws client that keeps every message and can wait for one */
-async function client(origin = ORIGIN, at = base) {
-  const ws = new WebSocket(`ws://${at}/ws`, { origin });
+async function client(origin = ORIGIN, at = base, headers: Record<string, string> = {}) {
+  const ws = new WebSocket(`ws://${at}/ws`, { origin, headers });
   const got: ServerMsg[] = [];
   ws.on('message', (d) => got.push(JSON.parse(d.toString())));
   const closed = new Promise<number>((res) => ws.once('close', (code) => res(code)));
@@ -265,6 +266,11 @@ describe('assistant server', () => {
     await d.wait('turn.end');
     c.ws.close();
     d.ws.close();
+    // JARVIS_ASSISTANT_HA_USERS_ONLY (the default): someone Home Assistant knows but ha_users doesn't list is refused
+    const e = await client();
+    e.send({ type: 'hello', clientId: 'cy', auth: { type: 'ha', token: 'mock-user:Cy' }, capabilities: [] });
+    expect(await e.closed).toBe(4401);
+    expect(e.got).toEqual([{ type: 'error', message: 'not authorised' }]);
   });
 
   it('the surface comes from the credential: a speaker that says it is a screen is still a speaker', async () => {
@@ -413,16 +419,158 @@ describe('limits (a second server with small ones)', () => {
     b.ws.close();
   });
 
-  it('5 failed logins from an address, then it is refused unchecked (4429), even with the right code', async () => {
+  it('5 failed logins from an address, then its guesses are refused unchecked (4429); the right code still works', async () => {
     for (let i = 0; i < 5; i++) {
       const c = await client(ORIGIN, at);
       c.send({ type: 'hello', clientId: 'x', auth: { type: 'secret', secret: `tablet:guess-${i}` }, capabilities: [] });
       expect(await c.closed).toBe(4401);
     }
     const c = await client(ORIGIN, at);
-    c.send({ type: 'hello', clientId: 'x', auth: tablet, capabilities: [] });
+    c.send({ type: 'hello', clientId: 'x', auth: { type: 'secret', secret: 'tablet:guess-5' }, capabilities: [] });
     expect(await c.closed).toBe(4429);
     expect(c.got).toEqual([{ type: 'error', message: 'too many failed attempts; try again in a minute' }]);
+    const d = await client(ORIGIN, at);
+    expect((await d.login(tablet)).user).toEqual({ name: 'tablet' });
+    d.ws.close();
+  });
+});
+
+describe('logins (a server of their own: a slow mock Home Assistant, a trusted proxy, a short hello deadline)', () => {
+  let app3: Assistant;
+  let at: string;
+  const logs: string[] = [];
+  const CLIENTS3 = join(TMP, 'clients3.yaml');
+  const writeClients = (lines: string[]) =>
+    writeFileSync(
+      CLIENTS3,
+      ['clients:', ...lines, 'ha_users:', '  - { id: mock-ana, surface: screen }', ''].join('\n'),
+    );
+  const line = (c: typeof TABLET, surface = c.entry.surface) =>
+    `  - { name: ${c.entry.name}, secret_sha256: ${c.entry.secretSha256}, surface: ${surface} }`;
+  beforeAll(async () => {
+    writeClients([line(TABLET), line(SPEAKER)]);
+    const config = loadConfig(
+      {
+        JARVIS_ASSISTANT_PORT: '0',
+        JARVIS_ASSISTANT_AGENT: 'scripted',
+        JARVIS_ASSISTANT_ORIGINS: ORIGIN,
+        JARVIS_ASSISTANT_POLICY: join(SERVER_DIR, 'policy.example.yaml'),
+        JARVIS_ASSISTANT_DATA: join(TMP, 'data-logins'),
+        JARVIS_SITE_DIR: resolve(SERVER_DIR, '../examples/demo-site'),
+        JARVIS_ASSISTANT_AUTH: 'secret,ha',
+        JARVIS_ASSISTANT_CLIENTS: CLIENTS3,
+        JARVIS_ASSISTANT_TRUSTED_PROXY: '127.0.0.1',
+        JARVIS_ASSISTANT_HELLO_TIMEOUT_S: '0.5',
+      },
+      SERVER_DIR,
+    );
+    // the mock's logins, slowly; mock-user:Down is Home Assistant being unreachable
+    const ha = Object.assign(createMockHa(), {
+      async currentUser(token: string) {
+        await new Promise((r) => setTimeout(r, 150));
+        if (token === 'mock-user:Down') throw new Error('ECONNREFUSED');
+        return mockCurrentUser(token);
+      },
+    });
+    app3 = createAssistant(config, { ha, agent: createScriptedAgent({ chunkDelayMs: 0 }), log: (m) => logs.push(m) });
+    at = `127.0.0.1:${(await app3.server.listen()).port}/assistant`;
+  });
+  afterAll(async () => {
+    await app3?.close();
+  });
+  const hello = (auth: unknown, clientId = 'x') => ({ type: 'hello', clientId, auth, capabilities: [] });
+  const status = (headers: Record<string, string> = {}) =>
+    new Promise<number>((res) => {
+      const ws = new WebSocket(`ws://${at}/ws`, { origin: ORIGIN, headers });
+      ws.on('unexpected-response', (_req, r) => res(r.statusCode ?? 0));
+      ws.on('open', () => res(101));
+      ws.on('error', () => {});
+    });
+
+  it('says loudly at start-up that HA logins against the mock let anyone be anyone', () => {
+    expect(logs.join('\n')).toMatch(/HOME ASSISTANT LOGINS AGAINST THE MOCK[\s\S]*anyone can log in as/);
+  });
+
+  it('a hello still being checked plus a flood: cut off, nothing queued', async () => {
+    const c = await client(ORIGIN, at);
+    c.send(hello({ type: 'ha', token: 'mock-user:Ana' }));
+    for (let i = 0; i < 200; i++) c.send({ type: 'say', text: `flood ${i}`, source: 'typed' });
+    expect(await c.closed).toBe(1006); // terminated: no closing handshake
+    expect(c.got).toEqual([]);
+    await new Promise((r) => setTimeout(r, 250)); // the check finishes: nobody is let in
+    expect(app3.hub.clientCount()).toBe(0);
+    expect(app3.hub.transcript()).toEqual([]);
+  });
+
+  it('a big first message is cut off; a binary one is refused', async () => {
+    const c = await client(ORIGIN, at);
+    c.ws.send(JSON.stringify({ ...hello({ type: 'secret', secret: TABLET.code }), pad: 'x'.repeat(9000) }));
+    expect(await c.closed).toBe(1006);
+    const d = await client(ORIGIN, at);
+    d.ws.send(Buffer.from([1, 2, 3]), { binary: true });
+    expect(await d.closed).toBe(4401);
+  });
+
+  it('no hello within JARVIS_ASSISTANT_HELLO_TIMEOUT_S: closed 4401', async () => {
+    const c = await client(ORIGIN, at);
+    const t0 = Date.now();
+    expect(await c.closed).toBe(4401);
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(400);
+  });
+
+  it('at most 8 connections from an address wait to log in (behind the trusted proxy: per client address)', async () => {
+    const waiting = await Promise.all(
+      Array.from({ length: 8 }, () => client(ORIGIN, at, { 'x-forwarded-for': '10.7.7.7' })),
+    );
+    expect(await status({ 'x-forwarded-for': '10.7.7.7' })).toBe(503);
+    expect(await status({ 'x-forwarded-for': '6.6.6.6, 10.7.7.8' })).toBe(101); // another client of the proxy
+    for (const w of waiting) w.ws.terminate();
+    await new Promise((r) => setTimeout(r, 100));
+    expect(await status({ 'x-forwarded-for': '10.7.7.7' })).toBe(101);
+    await new Promise((r) => setTimeout(r, 600)); // (the open ones time out)
+  });
+
+  it('Home Assistant unreachable is 4503 (the client retries), not 4401', async () => {
+    const c = await client(ORIGIN, at, { 'x-forwarded-for': '10.8.0.1' });
+    c.send(hello({ type: 'ha', token: 'mock-user:Down' }));
+    expect(await c.closed).toBe(4503);
+    expect(c.got).toEqual([{ type: 'error', message: 'Home Assistant could not check the login; trying again' }]);
+  });
+
+  it('the failed-login limit counts the client behind the proxy, not the proxy', async () => {
+    const guess = async (xff: string) => {
+      const c = await client(ORIGIN, at, { 'x-forwarded-for': xff });
+      c.send(hello({ type: 'secret', secret: 'tablet:guess' }));
+      return c.closed;
+    };
+    for (let i = 0; i < 5; i++) expect(await guess('10.9.0.1')).toBe(4401);
+    expect(await guess('10.9.0.1')).toBe(4429);
+    expect(await guess('evil, 10.9.0.1')).toBe(4429); // a forged left part changes nothing
+    expect(await guess('10.9.0.2')).toBe(4401); // someone else in the house is not locked out
+  });
+
+  it('SIGHUP reloads the clients file: a removed code is closed 4401, a changed surface 1012, the rest stay', async () => {
+    const t = await client(ORIGIN, at);
+    await t.login(tablet);
+    const k = await client(ORIGIN, at);
+    await k.login(speaker);
+    const h = await client(ORIGIN, at);
+    await h.login({ type: 'ha', token: 'mock-user:Ana' });
+    expect(app3.hub.clientCount()).toBe(3);
+    writeClients([line(SPEAKER, 'screen')]);
+    expect(app3.reloadClients().closed).toBe(2);
+    expect(await t.closed).toBe(4401);
+    expect(await k.closed).toBe(1012);
+    expect(app3.hub.clientCount()).toBe(1);
+    // a broken file keeps the old one
+    writeFileSync(CLIENTS3, 'clients: [\n');
+    expect(() => app3.reloadClients()).toThrow(/clients3\.yaml/);
+    const again = await client(ORIGIN, at);
+    expect((await again.login(speaker)).user).toEqual({ name: 'kitchen-speaker' });
+    h.send({ type: 'say', text: 'what do you remember', source: 'typed' });
+    expect((await h.wait('turn.start')).surface).toBe('screen');
+    h.ws.close();
+    again.ws.close();
   });
 });
 

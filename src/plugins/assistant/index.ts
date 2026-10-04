@@ -13,7 +13,10 @@
 // home-assistant plugin's `home-assistant.auth` service, or an access code from the server's clients file, typed into
 // the panel once and kept with ctx.storage (this site, this browser; "Forget code" drops it). A typed code wins over
 // the Home Assistant login (it was entered for this assistant). Without either, or when the server refuses it (4401),
-// the panel asks for a code and nothing retries until one is entered. The welcome's ticket authorises /transcribe.
+// the panel asks for a code and nothing retries until one is entered, or until the Home Assistant login turns up (its
+// connector's state changes: the login may still be under way when the assistant first asks). A Home Assistant token
+// lasts 30 minutes, so a fresh one is sent (`auth`) every 5 for the server's periodic re-check. The welcome's ticket
+// authorises /transcribe. The server must be on the page's origin (endpoints): another would get the login.
 //
 // ?assistant=mock swaps the socket for an in-page scripted server (mock.ts): same protocol, no network, no audio, no
 // model, no credentials (it takes a made-up one), deterministic. The talk button and M then simulate a transcription
@@ -31,7 +34,7 @@ import type {
   ViewContext,
 } from '../../../server/src/core/protocol.ts';
 import { initialTranscript, reduce, type LocalMsg, type TranscriptState } from './transcript';
-import { createSocketTransport, clientId, endpoints, type ConnState, type Transport } from './transport';
+import { awaitsLogin, createSocketTransport, clientId, endpoints, type ConnState, type Transport } from './transport';
 import { createMockTransport } from './mock';
 import { createSpeaker } from './speech';
 import { record, recordIfWanted, transcribe, type Recording } from './talk';
@@ -51,6 +54,8 @@ interface HomeAssistantAuth {
 }
 /** where the access code is kept (ctx.storage: per site, this browser) */
 const CODE_KEY = 'accessCode';
+/** how often a Home Assistant login sends the server a fresh token (they last 30 minutes) */
+const AUTH_REFRESH_MS = 5 * 60_000;
 
 export default definePlugin<AssistantConfig>({
   id: 'assistant',
@@ -59,7 +64,14 @@ export default definePlugin<AssistantConfig>({
   after: ['home-assistant'],
   async setup(ctx) {
     const mock = ctx.url.get('assistant') === 'mock';
-    const urls = endpoints(ctx.config.server || '/assistant', document.baseURI);
+    let urls: { ws: string; transcribe: string };
+    try {
+      urls = endpoints(ctx.config.server || '/assistant', document.baseURI);
+    } catch (e) {
+      // (stays off: nothing connects, nothing shows)
+      ctx.toast({ text: `Assistant: ${(e as Error).message}`, tone: 'bad' });
+      return;
+    }
     let tts = ctx.storage.get<boolean>('tts', ctx.config.tts !== false);
     /** the access code typed into the panel, if any */
     let code = ctx.storage.get<string | null>(CODE_KEY, null);
@@ -151,6 +163,16 @@ export default definePlugin<AssistantConfig>({
       changed();
     });
     transport.onMessage((m) => onServer(m));
+    // nothing to log in with yet: the Home Assistant login may turn up when its connector's state changes
+    ctx.store.onConnectors(() => {
+      if (!mock && !code && awaitsLogin(transport.state, used)) transport.retry();
+    });
+    // a fresh Home Assistant token for the server's re-check, before the one it has expires
+    const refresh = setInterval(() => {
+      if (mock || conn !== 'connected' || used !== 'ha') return;
+      void credential().then((auth) => auth?.type === 'ha' && transport.send({ type: 'auth', auth }));
+    }, AUTH_REFRESH_MS);
+    ctx.own(() => clearInterval(refresh));
 
     const send = (m: ClientMsg): boolean => transport.send(m);
 

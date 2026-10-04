@@ -49,8 +49,11 @@ export interface LiveHa extends HaBackend {
 
 export interface HaUserCheckOptions {
   url: string;
-  /** the assistant's own token: a person presenting it is refused (it would make them the assistant) */
+  /** the assistant's own token: a person presenting it is refused (it would make them the assistant); a fast path */
   ownToken?: string;
+  /** the assistant's own HA user id: a token of that user is refused, whatever its string (rejects: not known yet, so
+   * the check can't be made: the login is retried later) */
+  ownUserId?: () => Promise<string>;
   /** the whole check (ms, default 5 s) */
   timeoutMs?: number;
   /** how long a good answer is remembered, by the token's hash (ms, default 60 s); refusals never are */
@@ -66,6 +69,7 @@ export interface HaUserCheckOptions {
  * token (auth, then auth/current_user, then close). null: HA refused the token. Throws: HA couldn't be asked (no
  * answer in time, the socket failed), which the authenticator treats as "not authorised" too. The token is not kept;
  * a good answer is cached for a minute under the token's SHA-256, so a reconnecting tab doesn't ask HA every time.
+ * Any token of the assistant's own HA user is refused (null), not just its own token string.
  */
 export function createHaUserCheck(o: HaUserCheckOptions): (token: string) => Promise<HaIdentity | null> {
   const url = websocketUrl(o.url);
@@ -77,12 +81,16 @@ export function createHaUserCheck(o: HaUserCheckOptions): (token: string) => Pro
   const makeSocket = o.socket ?? defaultSocket;
   const cache = new Map<string, { who: HaIdentity; until: number }>();
 
+  /** the person, unless it is the assistant's own user */
+  const notOwn = async (who: HaIdentity | null) =>
+    who && o.ownUserId && who.id === (await o.ownUserId()) ? null : who;
+
   return async (token) => {
     if (typeof token !== 'string' || !token) return null;
-    if (o.ownToken && token === o.ownToken) return null;
+    if (o.ownToken && token.trim() === o.ownToken.trim()) return null;
     const key = createHash('sha256').update(token).digest('hex');
     const hit = cache.get(key);
-    if (hit && hit.until > now()) return hit.who;
+    if (hit && hit.until > now()) return notOwn(hit.who);
     cache.delete(key);
     for (const [k, v] of cache) if (v.until <= now()) cache.delete(k);
 
@@ -126,7 +134,7 @@ export function createHaUserCheck(o: HaUserCheckOptions): (token: string) => Pro
       };
     });
     if (who) cache.set(key, { who, until: now() + cacheMs });
-    return who;
+    return notOwn(who);
   };
 }
 
@@ -162,6 +170,7 @@ export function createLiveHa(opts: LiveHaOptions): LiveHa {
   const userCheck = createHaUserCheck({
     url: opts.url,
     ownToken: opts.token,
+    ownUserId: () => ownUser(),
     socket: opts.socket,
     setTimeout: opts.setTimeout,
     clearTimeout: opts.clearTimeout,
@@ -175,6 +184,22 @@ export function createLiveHa(opts: LiveHaOptions): LiveHa {
   let retry: unknown = null;
   const inflight = new Map<number, Waiting>();
   let readyWaiters: { resolve(): void; reject(e: Error): void }[] = [];
+  /** the assistant's own HA user id (auth/current_user on this connection, once), and the request for it */
+  let ownId: string | null = null;
+  let asking: Promise<string> | null = null;
+
+  /** who the assistant is in Home Assistant (asked once connected; a person's token of that user is refused) */
+  function ownUser(): Promise<string> {
+    if (ownId) return Promise.resolve(ownId);
+    asking ??= request<{ id?: unknown }>({ type: 'auth/current_user' })
+      .then((r) => {
+        if (typeof r?.id !== 'string' || !r.id) throw new Error('auth/current_user gave no user id');
+        ownId = r.id;
+        return r.id;
+      })
+      .finally(() => (asking = null));
+    return asking;
+  }
 
   const settleReady = (err?: Error) => {
     const ws_ = readyWaiters;
@@ -242,6 +267,7 @@ export function createLiveHa(opts: LiveHaOptions): LiveHa {
         delay = backoffMin;
         log('ha-live: connected');
         settleReady();
+        if (!ownId) ownUser().catch((e) => log(`ha-live: couldn't learn the assistant's own user: ${e.message}`));
         return;
       case 'auth_invalid':
         log(`ha-live: token refused: ${String(msg.message ?? '')}`);

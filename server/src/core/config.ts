@@ -3,11 +3,11 @@
 // validated here, once, so the rest of the server can trust it; nothing is hard-coded beyond these defaults.
 // See docs/assistant.md for the table.
 import { existsSync, readFileSync } from 'node:fs';
-import { isIPv4 } from 'node:net';
+import { isIP, isIPv4 } from 'node:net';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { AUTH_KINDS, type AuthKind } from './auth.ts';
+import { AUTH_KINDS, plainIp, type AuthKind } from './auth.ts';
 import { parseRate, type Rate } from './limits.ts';
 import type { Surface } from './protocol.ts';
 
@@ -53,6 +53,12 @@ export interface AssistantConfig {
   clientsPath: string | null;
   /** the surface of a person logged in with their Home Assistant token (unless the clients file says otherwise) */
   haSurface: Surface;
+  /** only the HA users listed in the clients file's ha_users may log in */
+  haUsersOnly: boolean;
+  /** a connection that hasn't said hello in this long is closed */
+  helloTimeoutMs: number;
+  /** reverse proxies whose X-Forwarded-For names the client (empty: the TCP peer is the client) */
+  trustedProxies: string[];
   /** per user: `say` messages and POST /transcribe uploads */
   rateSay: Rate;
   rateTranscribe: Rate;
@@ -100,6 +106,9 @@ export const CONFIG_KEYS = [
   'JARVIS_ASSISTANT_AUTH',
   'JARVIS_ASSISTANT_CLIENTS',
   'JARVIS_ASSISTANT_HA_SURFACE',
+  'JARVIS_ASSISTANT_HA_USERS_ONLY',
+  'JARVIS_ASSISTANT_HELLO_TIMEOUT_S',
+  'JARVIS_ASSISTANT_TRUSTED_PROXY',
   'JARVIS_ASSISTANT_RATE_SAY',
   'JARVIS_ASSISTANT_RATE_TRANSCRIBE',
 ] as const;
@@ -267,6 +276,20 @@ export function loadConfig(env: Env = process.env, cwd: string = process.cwd()):
   const haSurface = (get(e, 'JARVIS_ASSISTANT_HA_SURFACE') ?? 'screen') as Surface;
   if (haSurface !== 'screen' && haSurface !== 'speaker')
     problems.push(`JARVIS_ASSISTANT_HA_SURFACE: screen or speaker, not ${haSurface}`);
+  const onlyRaw = get(e, 'JARVIS_ASSISTANT_HA_USERS_ONLY') ?? 'true';
+  if (onlyRaw !== 'true' && onlyRaw !== 'false')
+    problems.push(`JARVIS_ASSISTANT_HA_USERS_ONLY: true or false, not ${onlyRaw}`);
+  const helloRaw = get(e, 'JARVIS_ASSISTANT_HELLO_TIMEOUT_S') ?? '10';
+  const helloS = Number(helloRaw);
+  if (!/^\d+(\.\d+)?$/.test(helloRaw) || !(helloS > 0))
+    problems.push(`JARVIS_ASSISTANT_HELLO_TIMEOUT_S: a number of seconds > 0, not ${helloRaw}`);
+  const trustedProxies: string[] = [];
+  for (const raw of (get(e, 'JARVIS_ASSISTANT_TRUSTED_PROXY') ?? '').split(',')) {
+    const ip = plainIp(raw);
+    if (!ip) continue;
+    if (!isIP(ip)) problems.push(`JARVIS_ASSISTANT_TRUSTED_PROXY: an IP address (no names or ranges), not ${ip}`);
+    else trustedProxies.push(ip);
+  }
   const rate = (k: string) => {
     const raw = get(e, k);
     if (!raw) return DEFAULT_RATE;
@@ -298,9 +321,21 @@ export function loadConfig(env: Env = process.env, cwd: string = process.cwd()):
     auth,
     clientsPath,
     haSurface,
+    haUsersOnly: onlyRaw !== 'false',
+    helloTimeoutMs: helloS * 1000,
+    trustedProxies,
     rateSay,
     rateTranscribe,
   };
+}
+
+/** the start-up warning for `ha` logins against the mock Home Assistant, or null */
+export function mockLoginWarning(config: Pick<AssistantConfig, 'auth' | 'ha'>): string | null {
+  if (!config.auth.includes('ha') || config.ha.mode !== 'mock') return null;
+  return boxed('HOME ASSISTANT LOGINS AGAINST THE MOCK', [
+    'JARVIS_ASSISTANT_AUTH has ha, but JARVIS_HA_MODE is mock: anyone can log in as',
+    'anyone with mock-user:<name>. For trying it out only; never on a network you share.',
+  ]);
 }
 
 // ------------------------------------------------------------------------------------------------ model credentials
