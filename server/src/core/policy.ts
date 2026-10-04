@@ -90,8 +90,17 @@ export const SERVICE = /^[a-z_]+$/;
 const DOMAIN = /^[a-z_]+$/;
 const ENTITY_GLOB = /^[a-z_*]+\.[a-z0-9_*]+$/;
 const DATA_KEY = /^[a-z_][a-z0-9_]*$/;
-/** keys a rule may not name in bounds/data: the target is never data, and minutes belongs to max_minutes */
-const RESERVED_DATA = new Set(['entity_id', 'device_id', 'area_id', 'floor_id', 'label_id', 'minutes']);
+/** keys a rule may not name in bounds/data: the target is never data, minutes belongs to max_minutes, and asking for a
+ * service's response is gate.read's alone (its built-in list, never the policy's) */
+const RESERVED_DATA = new Set([
+  'entity_id',
+  'device_id',
+  'area_id',
+  'floor_id',
+  'label_id',
+  'minutes',
+  'return_response',
+]);
 
 export const domainOf = (entityId: string): string => entityId.split('.')[0];
 
@@ -366,6 +375,7 @@ export function requestProblem(req: unknown): string | null {
   const data = (req.data ?? {}) as Record<string, unknown>;
   for (const k of ['entity_id', 'device_id', 'area_id', 'floor_id', 'label_id'])
     if (Object.hasOwn(data, k)) return `${k} in data is not allowed (name entities in entity_ids)`;
+  if (Object.hasOwn(data, 'return_response')) return 'return_response in data is not allowed';
   for (const k of Object.keys(req)) if (!['entity_ids', 'service', 'data'].includes(k)) return `unknown field ${k}`;
   return null;
 }

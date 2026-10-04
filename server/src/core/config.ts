@@ -404,6 +404,23 @@ export function authWarnings(env: Env, agent: AgentKind = 'sdk', loginCredential
   };
 }
 
+/**
+ * What the Claude Code process said it uses (its `system`/`init` message's apiKeySource), checked against what we gave
+ * it: an API key in use ('ANTHROPIC_API_KEY', 'apiKeyHelper', '/login managed key', …: anything but 'none') while
+ * CLAUDE_CODE_OAUTH_TOKEN is set means the subscription token lost and usage is billed to the API. The boxed warning,
+ * or null. An unknown or missing source says nothing.
+ */
+export function credentialWarning(o: { apiKeySource: unknown; oauthTokenSet: boolean }): string | null {
+  const src = typeof o.apiKeySource === 'string' ? o.apiKeySource : '';
+  if (!o.oauthTokenSet || !src || src === 'none') return null;
+  return boxed('BILLED TO AN API KEY, NOT YOUR SUBSCRIPTION', [
+    `CLAUDE_CODE_OAUTH_TOKEN is set, but Claude Code reports apiKeySource=${src}:`,
+    'every turn is billed to that API key, not to your Claude subscription.',
+    'Remove the API key (ANTHROPIC_API_KEY, an apiKeyHelper or a /login key) to use the plan,',
+    'or unset CLAUDE_CODE_OAUTH_TOKEN if API billing is what you want.',
+  ]);
+}
+
 /** where Claude Code keeps `claude login` credentials */
 export function loginCredentialsFile(env: Env): string {
   return join(env.CLAUDE_CONFIG_DIR?.trim() || join(env.HOME?.trim() || homedir(), '.claude'), '.credentials.json');

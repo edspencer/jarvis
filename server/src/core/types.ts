@@ -20,7 +20,7 @@ export interface HaHistoryPoint {
   at: string;
 }
 
-/** Where the assistant reads and acts. Only the gate (core/gate.ts) may call callService. */
+/** Where the assistant reads and acts. Only the gate (core/gate.ts) may call callService and respond. */
 export interface HaBackend {
   readonly kind: 'mock' | 'live';
   /** current states; all of them without ids */
@@ -28,6 +28,9 @@ export interface HaBackend {
   history(entityId: string, from: Date, to: Date): Promise<HaHistoryPoint[]>;
   /** one service call; entity_id is always a list of entities in `domain` */
   callService(domain: string, service: string, data: { entity_id: string[] } & Record<string, unknown>): Promise<void>;
+  /** one call of a service that returns data (HA's return_response), e.g. weather.get_forecasts: its `response`. Only
+   * gate.read calls it, and only for the gate's built-in read-only services. */
+  respond(domain: string, service: string, data: { entity_id: string[] } & Record<string, unknown>): Promise<unknown>;
   /** who a person's own access token belongs to (the `ha` login, core/auth.ts): null if HA refuses it; throws if HA
    * can't be asked. Never the assistant's own connection or token. */
   currentUser(token: string): Promise<HaIdentity | null>;
@@ -65,6 +68,10 @@ export type ActOutcome =
   | { status: 'denied'; summary: string } // the person said no
   | { status: 'expired'; summary: string } // nobody answered within the TTL
   | { status: 'failed'; summary: string; error: string }; // Home Assistant said no
+
+/** The gate's answer to a read (gate.read): a read-only response service's data, or why not. */
+export type ReadOutcome =
+  { status: 'done'; response: unknown } | { status: 'refused'; reason: string } | { status: 'failed'; error: string }; // Home Assistant said no
 
 /** a parked `confirm` action, as the hub shows it to the person */
 export interface PendingAction {

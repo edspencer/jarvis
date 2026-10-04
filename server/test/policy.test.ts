@@ -90,6 +90,23 @@ describe('parsePolicy', () => {
     expect(msg).toContain('invalid policy test');
   });
 
+  it('has no key for read-only response services: read / respond / return_response are errors, not a widening', () => {
+    expect(bad({ version: 1, read: ['weather.get_forecasts'] })).toMatch(/read: unknown key/);
+    expect(bad({ version: 1, respond: { 'calendar.get_events': {} } })).toMatch(/respond: unknown key/);
+    expect(bad(rules({ read: { domain: 'weather', service: 'get_forecasts' } }))).toMatch(
+      /rules\[0\]\.read: unknown key/,
+    );
+    expect(bad(rules({ allow: { domain: 'calendar', service: 'get_events', respond: true } }))).toMatch(
+      /rules\[0\]\.allow\.respond: unknown key/,
+    );
+    expect(bad(rules({ allow: { domain: 'weather', service: 'get_forecasts' }, data: ['return_response'] }))).toMatch(
+      /return_response can't be service data here/,
+    );
+    expect(bad(rules({ allow: { domain: 'light', service: 'turn_on' }, bounds: { return_response: [0, 1] } }))).toMatch(
+      /return_response can't be service data here/,
+    );
+  });
+
   it('rejects a bad version, a non-list rules, a non-mapping policy', () => {
     expect(bad({ version: 2 })).toMatch(/version: must be 1/);
     expect(bad({})).toMatch(/version: must be 1/);
@@ -414,6 +431,10 @@ describe('data: bounds and named keys', () => {
     expect(t('cool').tier).toBe('confirm');
     expect(t(3).reason).toMatch(/hvac_mode must be a string or true\/false/);
     expect(t({ mode: 'cool' }).tier).toBe('deny');
+  });
+  it('return_response is never data (only gate.read asks for a response)', () => {
+    const r = ev({ entity_ids: ['light.hall'], service: 'turn_on', data: { return_response: true } });
+    expect(r).toMatchObject({ tier: 'deny', reason: 'return_response in data is not allowed', calls: [] });
   });
   it('a self-approval attempt in data is just an unknown key', () => {
     for (const k of ['confirmed', 'approve', 'approved', 'confirm_id', 'pending_id'])

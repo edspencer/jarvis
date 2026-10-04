@@ -283,6 +283,11 @@ reaches the browser.
   a shared, hosted assistant on a subscription.
 - **If both are set, the API key silently wins** (so does `ANTHROPIC_AUTH_TOKEN`): every turn is billed to the API, not
   to your plan. The server prints a boxed warning at start-up; unset one of them.
+- **What was actually used** is logged once per session from Claude Code's own report:
+  `assistant: session <id> model=<model> apiKeySource=<source>` (never a secret). If it reports an API key
+  (`ANTHROPIC_API_KEY`, `apiKeyHelper`, a `/login` key: anything but `none`) while `CLAUDE_CODE_OAUTH_TOKEN` is set,
+  a second boxed warning says usage is being billed to that key, not your subscription; this also catches a key the
+  start-up check can't see.
 - A household (several people talking to one assistant on one person's plan) is a reasonable reading of personal use,
   but Anthropic's terms don't address it explicitly. It is an open question, not a promise.
 
@@ -317,18 +322,19 @@ folder in the data directory.
 
 **House tools** (an in-process MCP server; the model sees them as `mcp__house__<name>`):
 
-| Tool                                            | Does                                                                                                                                                                                                                                                                 |
-| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ha_find`                                       | Resolves words ("the kitchen pendants", "thermostat") to entities: id, name, area, state, the site subject, and what the policy allows                                                                                                                               |
-| `ha_state`                                      | Current state and the useful attributes of up to 20 entities                                                                                                                                                                                                         |
-| `ha_history`                                    | One entity's history over the last 1–168 hours, summarised (changes; min / max / mean for numbers)                                                                                                                                                                   |
-| `ha_act`                                        | Calls one service on entities of one domain. Goes through the policy gate: done, refused (with the reason), or asks and waits for the answer                                                                                                                         |
-| `site_search`                                   | Searches the site's rooms, light fixtures, equipment registry, placed devices and controls; hits carry a subject the viewer can fly to                                                                                                                               |
-| `site_rooms`                                    | The rooms by storey, with their fixtures and registry items                                                                                                                                                                                                          |
-| `registry_get`                                  | One registry item: make, model, location, specs, documents, entities                                                                                                                                                                                                 |
-| `view_fly`, `view_highlight`, `view_layer`      | Fly the asking screen's view to a subject, pulse subjects, show or hide a view layer or the cutaway / upper-storey toggle ("no viewer attached" on a speaker). The viewer refuses any other name: plugin chips (whose keys can switch real things) are never pressed |
-| `view_where`                                    | Where the person is in the view and what is selected (also given with each turn)                                                                                                                                                                                     |
-| `memory_save`, `memory_search`, `memory_forget` | House-wide notes ("the big lamp" is a given light; preferences) in `<data>/memory/house/`, at most 200                                                                                                                                                               |
+| Tool                                            | Does                                                                                                                                                                                                                                                                    |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ha_find`                                       | Resolves words ("the kitchen pendants", "thermostat") to entities: id, name, area, state, the site subject, and what the policy allows                                                                                                                                  |
+| `ha_state`                                      | Current state and the useful attributes of up to 20 entities                                                                                                                                                                                                            |
+| `ha_history`                                    | One entity's history over the last 1–168 hours, summarised (changes; min / max / mean for numbers)                                                                                                                                                                      |
+| `ha_weather`                                    | The forecast from Home Assistant's weather entity (the first `weather.*`, or one named): current condition and temperature, then up to 7 days (`daily`, the default) or 12 hours (`hourly`). Read-only; see [read-only response services](#read-only-response-services) |
+| `ha_act`                                        | Calls one service on entities of one domain. Goes through the policy gate: done, refused (with the reason), or asks and waits for the answer                                                                                                                            |
+| `site_search`                                   | Searches the site's rooms, light fixtures, equipment registry, placed devices and controls; hits carry a subject the viewer can fly to                                                                                                                                  |
+| `site_rooms`                                    | The rooms by storey, with their fixtures and registry items                                                                                                                                                                                                             |
+| `registry_get`                                  | One registry item: make, model, location, specs, documents, entities                                                                                                                                                                                                    |
+| `view_fly`, `view_highlight`, `view_layer`      | Fly the asking screen's view to a subject, pulse subjects, show or hide a view layer or the cutaway / upper-storey toggle ("no viewer attached" on a speaker). The viewer refuses any other name: plugin chips (whose keys can switch real things) are never pressed    |
+| `view_where`                                    | Where the person is in the view and what is selected (also given with each turn)                                                                                                                                                                                        |
+| `memory_save`, `memory_search`, `memory_forget` | House-wide notes ("the big lamp" is a given light; preferences) in `<data>/memory/house/`, at most 200                                                                                                                                                                  |
 
 There is deliberately no tool for raw service calls.
 
@@ -375,6 +381,24 @@ How a call is decided:
   `allow: { domain: script }` would let the model run any script with any service. A service always runs in the
   entity's own domain, so the generic `homeassistant.*` services can't be reached at all.
 - An entity Home Assistant doesn't know is refused.
+
+### Read-only response services
+
+Some Home Assistant services return data instead of changing anything (`weather.get_forecasts`, `calendar.get_events`,
+…). The server knows a fixed, **built-in** list of these and the exact data each takes, and only `ha_weather` uses it:
+today just `weather.get_forecasts` with `type: daily` or `type: hourly`.
+
+- The list is **not configurable**: the policy file has no key for it (`read:` or `respond:` is an unknown key, so the
+  file is refused), and no rule widens it: an `allow` rule naming `weather.get_forecasts` or `calendar.get_events`
+  doesn't let anything else be read. Adding a service is a code change and a review, because "returns data and
+  changes nothing" has to be checked per service, and some response services do change things.
+- It is **outside the policy** on purpose: a forecast reveals nothing about the house and changes nothing, so it works
+  even with a deny-everything policy.
+- It is checked as strictly as an action: the service must be on the list, every entity in its domain and known to
+  Home Assistant, and the data exactly as listed (`twice_daily`, other keys or `return_response` are refused).
+- `ha_act` can't reach it: an action naming a listed service is refused (use the read tool) whatever the policy
+  allows, and an action can never ask for a response (`return_response` is refused as data, and no rule may name it).
+- Reads are audited like actions, as `kind: read`.
 
 ### An example for the demo house
 
@@ -446,11 +470,11 @@ A `confirm` action is held **on the server**, not by the model:
 
 ### The audit log
 
-Every gate decision (allowed, refused, pending, approved, declined, expired, failed, and the `max_minutes` off calls)
-is appended to `<data>/audit.jsonl` as one JSON line: time, the user's name, client, surface, the person's words, the
-request, the tier, the outcome and the exact call; so is every login, accepted or refused. Actions also appear in Home
-Assistant's logbook under the assistant's own user. The file grows until you rotate it (`logrotate` with `copytruncate`
-works); how long to keep it is an open question.
+Every gate decision (allowed, refused, pending, approved, declined, expired, failed, the `max_minutes` off calls, and
+read-only service reads, as `kind: read`) is appended to `<data>/audit.jsonl` as one JSON line: time, the user's
+name, client, surface, the person's words, the request, the tier, the outcome and the exact call; so is every login,
+accepted or refused. Actions also appear in Home Assistant's logbook under the assistant's own user. The file grows
+until you rotate it (`logrotate` with `copytruncate` works); how long to keep it is an open question.
 
 ## The browser plugin
 

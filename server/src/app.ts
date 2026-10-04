@@ -130,12 +130,13 @@ export function createAssistant(config: AssistantConfig, o: AssistantOverrides =
     onResolved: (id, outcome, detail) => hub?.onResolved(id, outcome, detail),
     audit: (r) =>
       audit.write({
-        kind: 'gate',
+        // read: a read-only response service (gate.read, e.g. ha_weather's forecast), outside the policy
+        kind: r.kind === 'read' ? 'read' : 'gate',
         user: r.user,
         client: r.clientId,
         surface: r.surface,
         utterance: r.utterance,
-        tool: 'ha_act',
+        ...(r.kind === 'read' ? {} : { tool: 'ha_act' }),
         args: r.request,
         tier: r.tier,
         decision: r.outcome,

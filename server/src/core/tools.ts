@@ -1,5 +1,5 @@
 // The house tools the agent sees (as mcp__house__<name>): Home Assistant reads, the one action tool (ha_act, which goes
-// through the policy gate and nowhere else), the site and registry, the 3D viewer, and a small house-wide memory.
+// through the policy gate and nowhere else), the forecast (ha_weather, through the gate's built-in read-only path), the site and registry, the 3D viewer, and a small house-wide memory.
 // Pure handlers over their dependencies, so the same specs serve the SDK agent, the scripted agent and the tests.
 // There is deliberately no raw service-call tool. Design §5.2, §6.2-6.4.
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -11,6 +11,7 @@ import type {
   HaBackend,
   HaState,
   ParamSpec,
+  ReadOutcome,
   Tier,
   ToolEnv,
   ToolSpec,
@@ -20,6 +21,7 @@ import { human, roomName, scoreFields, searchSite, tokens, type SiteKnowledge } 
 /** the part of the gate (core/gate.ts) the tools use */
 export interface ToolGate {
   act(req: ActRequest, ctx: ActContext): Promise<ActOutcome>;
+  read(req: ActRequest, ctx: ActContext): Promise<ReadOutcome>;
   evaluate(req: ActRequest, ctx: ActContext): Promise<{ tier: Tier; reason: string; summary: string }>;
 }
 
@@ -42,6 +44,20 @@ const MAX_FIND = 10;
 export const MEMORY_MAX_CHARS = 4000;
 export const MEMORY_MAX_FILES = 200;
 const ENTITY_RE = /^[a-z_]+\.[a-z0-9_]+$/;
+/** forecast entries ha_weather returns, by type */
+const FORECAST_MAX: Readonly<Record<string, number>> = { daily: 7, hourly: 12 };
+/** the forecast fields worth a sentence (the rest: wind_bearing, dew_point, uv_index, …) */
+const FORECAST_FIELDS = [
+  'datetime',
+  'condition',
+  'temperature',
+  'templow',
+  'precipitation_probability',
+  'precipitation',
+  'wind_speed',
+];
+/** a weather entity's attributes ha_weather passes on with its state */
+const WEATHER_ATTRS = ['temperature', 'temperature_unit', 'humidity', 'precipitation_unit', 'wind_speed_unit'];
 
 // ------------------------------------------------------------------------------------------------ argument helpers
 
@@ -351,6 +367,51 @@ export function createTools(deps: ToolDeps): ToolSpec[] {
           out.recent = changes.slice(-20);
         }
         return out;
+      },
+    },
+    {
+      name: 'ha_weather',
+      description:
+        "The weather forecast from Home Assistant's weather entity: the current condition and temperature, then the next days (daily, the default, up to 7) or hours (hourly, up to 12) with condition, high/low, chance and amount of rain, and wind. Read-only.",
+      readOnly: true,
+      params: {
+        entity_id: p('string', "a weather.* entity (default: the house's weather entity)", { optional: true }),
+        type: p('string', 'daily (default) or hourly', { optional: true, enum: ['daily', 'hourly'] }),
+      },
+      async run(args, env) {
+        const type = optStr(args, 'type', 20) ?? 'daily';
+        if (!Object.hasOwn(FORECAST_MAX, type)) throw new ToolInputError(`type: daily or hourly, not ${type}`);
+        const asked = optStr(args, 'entity_id', 120);
+        if (asked !== undefined && !/^weather\.[a-z0-9_]+$/.test(asked))
+          throw new ToolInputError(`entity_id: not a weather.* entity: ${asked}`);
+        env.activity('Reading the forecast', 'running');
+        const st = asked
+          ? (await ha.states([asked])).find((s) => s.entity_id === asked)
+          : (await ha.states()).find((s) => domainOf(s.entity_id) === 'weather');
+        if (!st) {
+          env.activity('No weather entity', 'error');
+          return { error: asked ? `no such entity: ${asked}` : 'Home Assistant has no weather entity' };
+        }
+        const id = st.entity_id;
+        const o = await gate.read({ entity_ids: [id], service: 'get_forecasts', data: { type } }, ctx(env));
+        if (o.status === 'refused') {
+          env.activity('Forecast refused', 'refused');
+          return `refused: ${o.reason}`;
+        }
+        if (o.status === 'failed') {
+          env.activity('Forecast failed', 'error');
+          return `Home Assistant failed: ${o.error}`;
+        }
+        const r = o.response as Record<string, { forecast?: unknown } | undefined> | null | undefined;
+        const raw = r && typeof r === 'object' ? r[id]?.forecast : undefined;
+        const forecast = (Array.isArray(raw) ? raw : [])
+          .filter((f): f is Record<string, unknown> => !!f && typeof f === 'object')
+          .slice(0, FORECAST_MAX[type])
+          .map((f) => Object.fromEntries(FORECAST_FIELDS.filter((k) => f[k] != null).map((k) => [k, f[k]])));
+        const current: Record<string, unknown> = {};
+        for (const k of WEATHER_ATTRS) if (st.attributes[k] != null) current[k] = st.attributes[k];
+        env.activity('Reading the forecast', 'done');
+        return { entity_id: id, name: nameOf(st, id), condition: st.state, ...current, type, forecast };
       },
     },
     {

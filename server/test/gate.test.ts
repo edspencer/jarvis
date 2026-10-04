@@ -1,7 +1,7 @@
 // The gate: the only caller of callService. Every tier against the mock HA, confirmations (TTL, replay, other
 // clients, cancel, spoken yes/no), re-evaluation on approval, max_minutes timers, and model self-approval attempts.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createGate } from '../src/core/gate.ts';
+import { createGate, READ_SERVICES } from '../src/core/gate.ts';
 import type { AuditRecord, GateOptions } from '../src/core/gate.ts';
 import { EMPTY_POLICY, parsePolicy } from '../src/core/policy.ts';
 import { createMockHa, mockEntityIds, MOCK_EXTRA_IDS } from '../src/core/ha-mock.ts';
@@ -558,6 +558,129 @@ describe('max_minutes', () => {
   });
 });
 
+describe('read: the built-in read-only response services', () => {
+  const daily = { entity_ids: ['weather.home'], service: 'get_forecasts', data: { type: 'daily' } };
+  /** spies proving nothing but respond (and only when expected) reached HA */
+  function spied(policy: unknown = EXAMPLE_POLICY) {
+    const g = setup(policy);
+    return { ...g, call: vi.spyOn(g.ha, 'callService'), respond: vi.spyOn(g.ha, 'respond') };
+  }
+
+  it('the table is exactly weather.get_forecasts with type daily / hourly, and frozen', () => {
+    expect(READ_SERVICES).toEqual({ 'weather.get_forecasts': { type: ['daily', 'hourly'] } });
+    expect(Object.isFrozen(READ_SERVICES)).toBe(true);
+    expect(Object.isFrozen(READ_SERVICES['weather.get_forecasts'].type)).toBe(true);
+  });
+
+  it('works under a deny-all policy: only respond is called, and it is audited as a read', async () => {
+    const g = spied();
+    g.gate.setPolicy(EMPTY_POLICY);
+    const o = await g.gate.read(daily, screen);
+    expect(o.status).toBe('done');
+    const fc = (o as { response: Record<string, { forecast: unknown[] }> }).response['weather.home'].forecast;
+    expect(fc.length).toBeGreaterThan(0);
+    const hourly = await g.gate.read({ ...daily, data: { type: 'hourly' } }, speaker);
+    expect(hourly.status).toBe('done');
+    expect(g.ha.responds).toEqual([
+      { domain: 'weather', service: 'get_forecasts', data: { entity_id: ['weather.home'], type: 'daily' } },
+      { domain: 'weather', service: 'get_forecasts', data: { entity_id: ['weather.home'], type: 'hourly' } },
+    ]);
+    expect(g.call).not.toHaveBeenCalled();
+    expect(g.audits[0]).toMatchObject({
+      kind: 'read',
+      clientId: 'tab-1',
+      tier: 'allow',
+      outcome: 'done',
+      reason: 'read-only service weather.get_forecasts',
+      detail: 'weather.get_forecasts on weather.home {"type":"daily"}',
+    });
+  });
+
+  it('refuses anything outside the table, other data, other entities; HA is never called', async () => {
+    const g = spied();
+    const refused: [Parameters<typeof g.gate.read>[0], RegExp][] = [
+      [{ entity_ids: ['light.hall'], service: 'turn_on' }, /light\.turn_on is not a read-only service/],
+      [{ entity_ids: ['calendar.home'], service: 'get_events', data: {} }, /calendar\.get_events is not a read-only/],
+      [{ entity_ids: ['weather.home'], service: 'get_forecast', data: { type: 'daily' } }, /not a read-only service/],
+      [{ ...daily, data: { type: 'bogus' } }, /needs type: daily or hourly \(got "bogus"\)/],
+      [{ ...daily, data: { type: 'twice_daily' } }, /needs type: daily or hourly/],
+      [{ ...daily, data: { type: 1 } }, /needs type: daily or hourly \(got number\)/],
+      [{ ...daily, data: {} }, /needs type: daily or hourly \(got none\)/],
+      [{ entity_ids: ['weather.home'], service: 'get_forecasts' }, /needs type/],
+      [{ ...daily, data: { type: 'daily', extra: 1 } }, /extra is not allowed in the data for weather\.get_forecasts/],
+      [{ ...daily, data: { type: 'daily', return_response: true } }, /return_response in data is not allowed/],
+      [{ ...daily, data: { type: 'daily', entity_id: 'weather.x' } }, /entity_id in data is not allowed/],
+      [
+        { ...daily, entity_ids: ['weather.home', 'sensor.outdoor_temperature'] },
+        /sensor\.outdoor_temperature is not in weather/,
+      ],
+      [{ ...daily, entity_ids: ['sensor.outdoor_temperature'] }, /sensor\.get_forecasts is not a read-only service/],
+      [{ ...daily, entity_ids: ['weather.nowhere'] }, /weather\.nowhere: not a known entity/],
+      [{ ...daily, entity_ids: [] }, /no entity_ids/],
+      [{ ...daily, service: 'weather.get_forecasts' }, /is not a service name/],
+    ];
+    for (const [req, why] of refused) {
+      const o = await g.gate.read(req, screen);
+      expect(o.status, JSON.stringify(req)).toBe('refused');
+      expect((o as { reason: string }).reason).toMatch(why);
+    }
+    expect((await g.gate.read(daily, { surface: 'screen', clientId: '' })).status).toBe('refused');
+    expect(g.respond).not.toHaveBeenCalled();
+    expect(g.call).not.toHaveBeenCalled();
+    expect(g.ha.calls).toEqual([]);
+    expect(g.audits.every((a) => a.kind === 'read' && a.tier === 'deny' && a.outcome === 'refused')).toBe(true);
+    expect(g.audits).toHaveLength(refused.length + 1);
+  });
+
+  it('a policy that allows weather.get_forecasts (or calendar.get_events) widens nothing', async () => {
+    const g = spied({
+      version: 1,
+      rules: [
+        { allow: { domain: 'weather', service: 'get_forecasts' }, data: ['type'] },
+        { allow: { domain: 'calendar', service: 'get_events' } },
+      ],
+    });
+    expect((await g.gate.read({ ...daily, data: { type: 'twice_daily' } }, screen)).status).toBe('refused');
+    expect((await g.gate.read({ entity_ids: ['calendar.home'], service: 'get_events' }, screen)).status).toBe(
+      'refused',
+    );
+    // and ha_act can't reach it, whatever the policy says
+    const o = await g.gate.act(daily, screen);
+    expect(o).toEqual({
+      status: 'refused',
+      reason: 'weather.get_forecasts returns data and changes nothing: use the read tool for it, not ha_act',
+    });
+    expect((await g.gate.evaluate(daily, screen)).tier).toBe('deny');
+    expect(g.audits.at(-1)).toMatchObject({ kind: 'act', tier: 'deny', outcome: 'refused' });
+    expect(g.respond).not.toHaveBeenCalled();
+    expect(g.call).not.toHaveBeenCalled();
+  });
+
+  it('act can never ask for a response', async () => {
+    const g = spied({ version: 1, rules: [{ allow: { domain: 'light', service: 'turn_on' } }] });
+    const o = await g.gate.act(
+      { entity_ids: ['light.hall'], service: 'turn_on', data: { return_response: true } },
+      screen,
+    );
+    expect(o).toEqual({ status: 'refused', reason: 'return_response in data is not allowed' });
+    expect(g.respond).not.toHaveBeenCalled();
+    expect(g.call).not.toHaveBeenCalled();
+  });
+
+  it('HA failing or unreadable states: failed / refused, audited', async () => {
+    const g = spied();
+    g.respond.mockRejectedValueOnce(new Error('no forecast'));
+    expect(await g.gate.read(daily, screen)).toEqual({ status: 'failed', error: 'no forecast' });
+    expect(g.audits.at(-1)).toMatchObject({ kind: 'read', outcome: 'failed', reason: 'no forecast' });
+    vi.spyOn(g.ha, 'states').mockRejectedValueOnce(new Error('offline'));
+    expect(await g.gate.read(daily, screen)).toEqual({
+      status: 'refused',
+      reason: "couldn't read Home Assistant states: offline",
+    });
+    expect(g.call).not.toHaveBeenCalled();
+  });
+});
+
 describe('mock HA', () => {
   it('has the demo lights, the controls, and the made-up entities', () => {
     const ids = mockEntityIds();
@@ -644,5 +767,36 @@ describe('mock HA', () => {
     expect(await createMockHa().history('light.nope', from, to)).toEqual([]);
     const lights = await createMockHa().history('light.hall', from, to);
     expect(new Set(lights.map((p) => p.state))).toEqual(new Set(['on', 'off']));
+  });
+
+  it('respond: weather.get_forecasts only, deterministic for the clock and seed; nothing else answers', async () => {
+    const now = () => Date.parse('2026-10-04T09:30:00Z');
+    const ha = createMockHa({ seed: 3, now });
+    const get = (type: string, h = ha) =>
+      h.respond('weather', 'get_forecasts', { entity_id: ['weather.home'], type }) as Promise<
+        Record<string, { forecast: Record<string, unknown>[] }>
+      >;
+    const d = (await get('daily'))['weather.home'].forecast;
+    expect(d).toHaveLength(10);
+    expect(d[0]).toMatchObject({ datetime: '2026-10-05T00:00:00.000Z' });
+    expect(Object.keys(d[0])).toEqual(
+      expect.arrayContaining(['condition', 'temperature', 'templow', 'precipitation_probability', 'wind_speed']),
+    );
+    const h = (await get('hourly'))['weather.home'].forecast;
+    expect(h).toHaveLength(48);
+    expect(h[0].datetime).toBe('2026-10-04T10:00:00.000Z');
+    expect(h[0]).not.toHaveProperty('templow');
+    expect(await get('daily', createMockHa({ seed: 3, now }))).toEqual(await get('daily'));
+    expect(await get('daily', createMockHa({ seed: 4, now }))).not.toEqual(await get('daily'));
+    await expect(get('twice_daily')).rejects.toThrow(/daily or hourly/);
+    await expect(ha.respond('calendar', 'get_events', { entity_id: ['weather.home'] })).rejects.toThrow(/no response/);
+    await expect(ha.respond('weather', 'get_forecasts', { entity_id: ['light.hall'], type: 'daily' })).rejects.toThrow(
+      /not in weather/,
+    );
+    await expect(ha.respond('weather', 'get_forecasts', { entity_id: ['weather.x'], type: 'daily' })).rejects.toThrow(
+      /unknown entity/,
+    );
+    expect(ha.responds).toHaveLength(4);
+    expect(ha.calls).toEqual([]);
   });
 });

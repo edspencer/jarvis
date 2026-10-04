@@ -3,7 +3,8 @@
 // thermostat to confirm, a lock and a garage door to refuse, a timed valve and pump, a network switch that must never
 // be switched). Only the demo building: never point it at a real site's files. No network, no real HA.
 // callService changes states the obvious way and records every call in `calls`; history is synthetic and
-// deterministic (seeded), so tests can assert on it.
+// deterministic (seeded), so tests can assert on it. respond answers weather.get_forecasts only (synthetic daily or
+// hourly forecasts from the clock and the seed) and records it in `responds`.
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -23,6 +24,8 @@ export interface MockHa extends HaBackend {
   readonly kind: 'mock';
   /** every callService, in order (data as given) */
   readonly calls: { domain: string; service: string; data: { entity_id: string[] } & Record<string, unknown> }[];
+  /** every respond, in order (data as given) */
+  readonly responds: { domain: string; service: string; data: { entity_id: string[] } & Record<string, unknown> }[];
   /** the live state objects, by entity id (tests may poke them) */
   readonly entities: Map<string, HaState>;
 }
@@ -158,6 +161,39 @@ export function mockCurrentUser(token: string): HaIdentity | null {
 /** the most hourly history points one call returns (a month) */
 const MAX_POINTS = 24 * 31;
 
+/** how many forecast entries weather.get_forecasts gives, by type */
+const FORECAST_LEN: Readonly<Record<string, number>> = { daily: 10, hourly: 48 };
+const CONDITIONS = ['sunny', 'partlycloudy', 'cloudy', 'rainy', 'lightning-rainy', 'partlycloudy', 'sunny'];
+
+/** a synthetic forecast for a weather entity: from the next midnight / hour (UTC), deterministic for the clock and seed */
+function forecast(st: HaState, type: string, nowMs: number, seed: number): Record<string, unknown>[] {
+  const step = type === 'daily' ? 86_400_000 : 3_600_000;
+  const start = Math.ceil(nowMs / step) * step;
+  const base = typeof st.attributes.temperature === 'number' ? st.attributes.temperature : 75;
+  const rand = prng(seed ^ hash(`${st.entity_id}/${type}`) ^ Math.floor(start / step));
+  return Array.from({ length: FORECAST_LEN[type] }, (_, i) => {
+    const t = start + i * step;
+    const hour = new Date(t).getUTCHours();
+    const wet = rand();
+    const precip = wet > 0.6 ? Math.round((wet - 0.6) * 50) / 2 : 0;
+    const temp =
+      type === 'daily'
+        ? base + Math.round((rand() - 0.5) * 8)
+        : base + Math.round(Math.sin(((hour - 9) / 24) * 2 * Math.PI) * 6);
+    return {
+      datetime: new Date(t).toISOString(),
+      condition: precip ? (wet > 0.9 ? 'lightning-rainy' : 'rainy') : CONDITIONS[Math.floor(rand() * 3)],
+      temperature: temp,
+      ...(type === 'daily' ? { templow: temp - 10 - Math.round(rand() * 4) } : {}),
+      precipitation_probability: Math.round(wet * 100),
+      precipitation: precip,
+      wind_speed: Math.round(rand() * 150) / 10,
+      wind_bearing: Math.round(rand() * 360),
+      humidity: 55 + Math.round(rand() * 35),
+    };
+  });
+}
+
 /** A mock HA over the demo building. `createMockHa()`, `createMockHa(42)` or `createMockHa({ seed, siteDir })`. */
 export function createMockHa(opts: number | MockHaOptions = {}): MockHa {
   const o: MockHaOptions = typeof opts === 'number' ? { seed: opts } : opts;
@@ -214,6 +250,7 @@ export function createMockHa(opts: number | MockHaOptions = {}): MockHa {
       add({ entity_id: c.entity_id, state: 'off', attributes: { friendly_name: c.label ?? c.entity_id } });
 
   const calls: MockHa['calls'] = [];
+  const responds: MockHa['responds'] = [];
 
   const set = (id: string, state: string, attrs: Record<string, unknown> = {}) => {
     const cur = entities.get(id)!;
@@ -318,6 +355,7 @@ export function createMockHa(opts: number | MockHaOptions = {}): MockHa {
   return {
     kind: 'mock',
     calls,
+    responds,
     entities,
     async states(ids) {
       const list = ids ? ids.map((id) => entities.get(id)).filter((x): x is HaState => !!x) : [...entities.values()];
@@ -360,6 +398,23 @@ export function createMockHa(opts: number | MockHaOptions = {}): MockHa {
       calls.push({ domain, service, data: structuredClone(data) });
       const { entity_id: _ids, ...rest } = data;
       for (const id of ids) handler(id, rest);
+    },
+    async respond(domain, service, data) {
+      if (domain !== 'weather' || service !== 'get_forecasts')
+        throw new Error(`mock HA: ${domain}.${service} returns no response`);
+      const ids = data?.entity_id;
+      if (!Array.isArray(ids) || !ids.length) throw new Error('mock HA: no entity_id');
+      const { entity_id: _ids, ...rest } = data;
+      if (!Object.hasOwn(FORECAST_LEN, String(rest.type)) || Object.keys(rest).length !== 1)
+        throw new Error(`mock HA: weather.get_forecasts needs type daily or hourly`);
+      for (const id of ids) {
+        if (!entities.has(id)) throw new Error(`mock HA: unknown entity ${id}`);
+        if (!id.startsWith('weather.')) throw new Error(`mock HA: ${id} is not in weather`);
+      }
+      responds.push({ domain, service, data: structuredClone(data) });
+      return Object.fromEntries(
+        ids.map((id) => [id, { forecast: forecast(entities.get(id)!, String(rest.type), now(), seed) }]),
+      );
     },
   };
 }

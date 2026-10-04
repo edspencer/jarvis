@@ -7,6 +7,7 @@ import {
   authWarnings,
   boxed,
   ConfigError,
+  credentialWarning,
   DEFAULT_MODEL,
   loadConfig,
   loginCredentialsFile,
@@ -307,5 +308,19 @@ describe('authWarnings', () => {
     expect(b.at(-1)).toBe(b[0]);
     expect(new Set(b.map((l) => l.length)).size).toBe(1);
     expect(b[1]).toBe('! TITLE !');
+  });
+});
+
+describe('credentialWarning', () => {
+  it('warns, boxed, only when an API key is in use while CLAUDE_CODE_OAUTH_TOKEN is set', () => {
+    for (const src of ['ANTHROPIC_API_KEY', 'apiKeyHelper', '/login managed key']) {
+      const w = credentialWarning({ apiKeySource: src, oauthTokenSet: true });
+      expect(w).toMatch(/^!+\n! BILLED TO AN API KEY, NOT YOUR SUBSCRIPTION/);
+      expect(w).toContain(`apiKeySource=${src}`);
+    }
+    expect(credentialWarning({ apiKeySource: 'none', oauthTokenSet: true })).toBeNull();
+    expect(credentialWarning({ apiKeySource: 'ANTHROPIC_API_KEY', oauthTokenSet: false })).toBeNull();
+    expect(credentialWarning({ apiKeySource: undefined, oauthTokenSet: true })).toBeNull();
+    expect(credentialWarning({ apiKeySource: 42, oauthTokenSet: true })).toBeNull();
   });
 });

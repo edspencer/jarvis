@@ -4,8 +4,8 @@
 // The person's own HA login (from the viewer) is for identifying who is talking: currentUser() checks it on a separate,
 // one-off websocket (auth, auth/current_user, close) and never on this connection (createHaUserCheck below).
 //
-// Only the gate (core/gate.ts) may call callService. This file just speaks the protocol: auth, get_states,
-// history/history_during_period and call_service, with a timeout on every request and reconnection with exponential
+// Only the gate (core/gate.ts) may call callService and respond. This file just speaks the protocol: auth, get_states,
+// history/history_during_period and call_service (respond: with return_response, for read-only services), with a timeout on every request and reconnection with exponential
 // backoff. Requests made while disconnected wait for the connection (up to their timeout).
 //
 // Tests: the framing is unit-tested against a fake in-process socket (server/test/ha-live.test.ts); nothing here is ever
@@ -365,6 +365,18 @@ export function createLiveHa(opts: LiveHaOptions): LiveHa {
     async callService(domain, service, data) {
       const { entity_id, ...serviceData } = data;
       await request({ type: 'call_service', domain, service, service_data: serviceData, target: { entity_id } });
+    },
+    async respond(domain, service, data) {
+      const { entity_id, ...serviceData } = data;
+      const r = await request<{ response?: unknown } | null>({
+        type: 'call_service',
+        domain,
+        service,
+        service_data: serviceData,
+        target: { entity_id },
+        return_response: true,
+      });
+      return r?.response;
     },
     close() {
       closed = true;

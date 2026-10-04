@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { createGate, type Gate } from '../src/core/gate.ts';
 import { createMockHa, type MockHa } from '../src/core/ha-mock.ts';
 import { loadSite } from '../src/core/knowledge.ts';
-import { parsePolicy } from '../src/core/policy.ts';
+import { EMPTY_POLICY, parsePolicy } from '../src/core/policy.ts';
 import { createTools, ToolInputError, type ToolDeps } from '../src/core/tools.ts';
 import type { PendingAction, ToolEnv, ToolSpec, TurnInfo } from '../src/core/types.ts';
 import { EXAMPLE_POLICY } from './policy-fixture.ts';
@@ -68,6 +68,7 @@ describe('tool specs', () => {
         'ha_find',
         'ha_history',
         'ha_state',
+        'ha_weather',
         'memory_forget',
         'memory_save',
         'memory_search',
@@ -160,6 +161,93 @@ describe('ha_state / ha_history', () => {
     expect(l.hours).toBe(168);
     expect(l.changes).toBeGreaterThan(0);
     expect(l.recent.length).toBeLessThanOrEqual(20);
+  });
+});
+
+describe('ha_weather', () => {
+  const FIELDS = [
+    'datetime',
+    'condition',
+    'temperature',
+    'templow',
+    'precipitation_probability',
+    'precipitation',
+    'wind_speed',
+  ];
+
+  it('defaults to the weather entity and daily: the current conditions and 7 trimmed days, even with a deny-all policy', async () => {
+    const r = rig();
+    r.gate.setPolicy(EMPTY_POLICY);
+    const en = env();
+    const out = await run(r, 'ha_weather', {}, en);
+    expect(out).toMatchObject({
+      entity_id: 'weather.home',
+      name: 'Home',
+      condition: 'partlycloudy',
+      temperature: 81,
+      temperature_unit: '°F',
+      humidity: 64,
+      type: 'daily',
+    });
+    expect(out.forecast).toHaveLength(7);
+    for (const f of out.forecast) for (const k of Object.keys(f)) expect(FIELDS).toContain(k);
+    expect(out.forecast[0]).toHaveProperty('templow');
+    expect(out.forecast[0]).not.toHaveProperty('wind_bearing');
+    expect(en.chips).toEqual([
+      { summary: 'Reading the forecast', status: 'running', subject: undefined },
+      { summary: 'Reading the forecast', status: 'done', subject: undefined },
+    ]);
+    expect(r.ha.responds).toEqual([
+      { domain: 'weather', service: 'get_forecasts', data: { entity_id: ['weather.home'], type: 'daily' } },
+    ]);
+    expect(r.ha.calls).toEqual([]);
+  });
+
+  it('hourly: 12 entries; a named entity', async () => {
+    const r = rig();
+    const out = await run(r, 'ha_weather', { entity_id: 'weather.home', type: 'hourly' });
+    expect(out.type).toBe('hourly');
+    expect(out.forecast).toHaveLength(12);
+    expect(out.forecast[0]).not.toHaveProperty('templow');
+    expect(r.ha.calls).toEqual([]);
+  });
+
+  it('no weather entity, an unknown one, bad input, HA failing', async () => {
+    const r = rig();
+    expect(await run(r, 'ha_weather', { entity_id: 'weather.nowhere' })).toEqual({
+      error: 'no such entity: weather.nowhere',
+    });
+    await expect(run(r, 'ha_weather', { entity_id: 'light.hall' })).rejects.toThrow(ToolInputError);
+    await expect(run(r, 'ha_weather', { type: 'twice_daily' })).rejects.toThrow(/daily or hourly/);
+    r.ha.respond = async () => {
+      throw new Error('weather service down');
+    };
+    expect(await run(r, 'ha_weather', {})).toBe('Home Assistant failed: weather service down');
+    r.ha.entities.delete('weather.home');
+    const en = env();
+    expect(await run(r, 'ha_weather', {}, en)).toEqual({ error: 'Home Assistant has no weather entity' });
+    expect(en.chips.at(-1)).toMatchObject({ status: 'error' });
+    expect(r.ha.calls).toEqual([]);
+  });
+
+  it('ha_act cannot reach the forecast service', async () => {
+    const r = rig();
+    const out = await run(r, 'ha_act', {
+      entity_ids: ['weather.home'],
+      service: 'get_forecasts',
+      data: { type: 'daily' },
+    });
+    expect(out).toMatch(/^refused: weather\.get_forecasts returns data and changes nothing: use the read tool/);
+    expect(r.ha.responds).toEqual([]);
+    expect(r.ha.calls).toEqual([]);
+  });
+
+  it('a gate refusal comes back as refused', async () => {
+    const r = rig();
+    r.gate.read = async () => ({ status: 'refused', reason: 'not today' });
+    const en = env();
+    expect(await run(r, 'ha_weather', {}, en)).toBe('refused: not today');
+    expect(en.chips.at(-1)).toMatchObject({ summary: 'Forecast refused', status: 'refused' });
   });
 });
 

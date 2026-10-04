@@ -19,7 +19,7 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { checkToolUse } from './core/guard.ts';
-import type { Effort } from './core/config.ts';
+import { credentialWarning, type Effort } from './core/config.ts';
 import type { Agent, AgentEvent, ParamSpec, ToolRunner, ToolSpec, TurnInfo } from './core/types.ts';
 
 export interface SdkAgentOptions {
@@ -150,6 +150,8 @@ export function createSdkAgent(o: SdkAgentOptions): Agent {
   let q: Query | null = null;
   let input: ReturnType<typeof inputQueue> | null = null;
   let fresh = false; // reset(): don't resume
+  let childVars: Record<string, string | undefined> = {}; // the env the current process got
+  let lastInit = ''; // the session / model / credential last logged (the CLI re-sends init every turn)
 
   const loadSession = (): string | undefined => {
     if (fresh) return undefined;
@@ -231,7 +233,7 @@ export function createSdkAgent(o: SdkAgentOptions): Agent {
       includePartialMessages: true,
       cwd,
       ...(resume ? { resume } : {}),
-      env: childEnv(process.env),
+      env: (childVars = childEnv(process.env)),
       stderr: (d) => log(`claude: ${d.trimEnd()}`),
     };
     const thisQ = run({ prompt: input, options });
@@ -278,9 +280,22 @@ export function createSdkAgent(o: SdkAgentOptions): Agent {
     t.resolve();
   }
 
+  /** which session, model and credential, once per session (and again if they change); never a secret's value */
+  function logInit(sessionId: string, model: unknown, apiKeySource: unknown) {
+    const key = JSON.stringify([sessionId, model, apiKeySource]);
+    if (key === lastInit) return;
+    lastInit = key;
+    log(
+      `assistant: session ${String(sessionId).slice(0, 8)} model=${String(model)} apiKeySource=${String(apiKeySource)}`,
+    );
+    const w = credentialWarning({ apiKeySource, oauthTokenSet: !!childVars.CLAUDE_CODE_OAUTH_TOKEN?.trim() });
+    if (w) log(w);
+  }
+
   function handle(m: SDKMessage) {
     if (m.type === 'system' && m.subtype === 'init') {
       saveSession(m.session_id);
+      logInit(m.session_id, m.model, m.apiKeySource);
       return;
     }
     const t = turn;

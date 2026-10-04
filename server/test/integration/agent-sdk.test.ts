@@ -16,6 +16,10 @@ interface FakeOpts {
   badResume?: boolean;
   /** interrupt() throws (the turn still ends when its `result` comes) */
   interruptThrows?: boolean;
+  /** more fields of the init message (model, apiKeySource, …) */
+  init?: Record<string, unknown>;
+  /** send init again before every turn, as the CLI does in streaming-input mode */
+  initEachTurn?: boolean;
 }
 
 /** a fake query(): answers each pushed user message with the messages `reply` gives */
@@ -38,9 +42,11 @@ function fakeQuery(reply: Reply, fo: FakeOpts = {}) {
         }
         throw new Error(`No conversation found with session ID: ${params.options.resume}`);
       }
-      yield { type: 'system', subtype: 'init', session_id: sid } as unknown as SDKMessage;
+      const init = { type: 'system', subtype: 'init', ...fo.init, session_id: sid } as unknown as SDKMessage;
+      yield init;
       let n = 0;
       for await (const m of params.prompt) {
+        if (fo.initEachTurn && n > 0) yield init;
         call.prompts.push(String(m.message.content));
         const out = reply(String(m.message.content), n++);
         if (out === 'die') throw new Error('process exited with code 1');
@@ -103,7 +109,13 @@ const TOOLS: ToolSpec[] = [
 
 function agent(
   reply: Reply,
-  extra: { knowledgeDir?: string | null; dataDir?: string; web?: boolean; blockedHosts?: string[] } & FakeOpts = {},
+  extra: {
+    knowledgeDir?: string | null;
+    dataDir?: string;
+    web?: boolean;
+    blockedHosts?: string[];
+    log?: (m: string) => void;
+  } & FakeOpts = {},
 ) {
   const fq = fakeQuery(reply, extra);
   const dataDir = extra.dataDir ?? mkdtempSync(join(tmpdir(), 'jarvis-sdk-'));
@@ -117,7 +129,7 @@ function agent(
     web: extra.web,
     blockedHosts: extra.blockedHosts,
     queryImpl: fq.impl,
-    log: () => {},
+    log: extra.log ?? (() => {}),
   });
   const turn = async (text: string) => {
     const events: AgentEvent[] = [];
@@ -211,6 +223,44 @@ describe('sdk agent', () => {
       });
     expect(await h('Write')).toMatchObject({ hookSpecificOutput: { permissionDecision: 'deny' } });
     expect(await h('WebSearch')).toEqual({});
+  });
+
+  it('logs the session, model and credential source once per session; warns, boxed, when an API key beats the OAuth token', async () => {
+    const keep = { ...process.env };
+    const logged = async (apiKeySource: string, oauth: string | undefined) => {
+      delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+      if (oauth !== undefined) process.env.CLAUDE_CODE_OAUTH_TOKEN = oauth;
+      const lines: string[] = [];
+      const { a, turn } = agent(() => [result('s')], {
+        init: { model: 'claude-test-1', apiKeySource },
+        initEachTurn: true,
+        log: (m) => lines.push(m),
+      });
+      await turn('one');
+      await turn('two');
+      await turn('three');
+      await a.reset(); // a new session logs again
+      await turn('four');
+      return lines;
+    };
+    try {
+      const sub = await logged('none', 'oat-secret-value');
+      expect(sub).toEqual([
+        'assistant: session session- model=claude-test-1 apiKeySource=none',
+        'assistant: session session- model=claude-test-1 apiKeySource=none',
+      ]);
+      const billed = await logged('ANTHROPIC_API_KEY', 'oat-secret-value');
+      expect(billed.filter((l) => l.startsWith('assistant: session'))).toHaveLength(2);
+      const boxes = billed.filter((l) => l.includes('BILLED TO AN API KEY, NOT YOUR SUBSCRIPTION'));
+      expect(boxes).toHaveLength(2); // with each session's line, not each turn's
+      expect(boxes[0]).toMatch(/^!+\n/);
+      expect(billed.join('\n')).not.toContain('oat-secret-value');
+      expect(await logged('ANTHROPIC_API_KEY', undefined)).toHaveLength(2); // API billing is what was asked for
+      expect(await logged('ANTHROPIC_API_KEY', '  ')).toHaveLength(2); // blank: not set
+    } finally {
+      for (const k of Object.keys(process.env)) if (!(k in keep)) delete process.env[k];
+      Object.assign(process.env, keep);
+    }
   });
 
   it('saves the session id and resumes it after a restart; reset starts fresh', async () => {

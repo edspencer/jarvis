@@ -1,5 +1,5 @@
-// The gate: the ONLY place in the server that calls HaBackend.callService (design §5.3). ha_act hands it the model's
-// request and the turn's context; the gate reads fresh states, asks the policy (policy.ts) and then
+// The gate: the ONLY place in the server that calls HaBackend.callService or HaBackend.respond (design §5.3). ha_act
+// hands it the model's request and the turn's context; the gate reads fresh states, asks the policy (policy.ts) and then
 //   - allow:   makes the call(s) and reports done / failed;
 //   - confirm: parks the action (confirm.ts), tells the hub through onPending (which shows the dialog on the client the
 //              request came from) and resolves when that person answers (reply / spoken) or the TTL passes;
@@ -10,15 +10,38 @@
 // just an unknown key the policy refuses, and a repeated act() parks a new action rather than approving the old one.
 // On approval the policy is evaluated again against fresh states (it or the house may have changed meanwhile).
 //
+// read(): the read-only response services (READ_SERVICES, e.g. weather.get_forecasts) go through their own path: a
+// built-in list in this file, not the policy, so a deny-all policy still reads the forecast and no policy file can add
+// to the list; only HaBackend.respond, never callService. act() refuses them, and can never ask for a response.
+//
 // max_minutes: after a timed run (turn_on, open_valve, …) the gate schedules the matching off call. The timer lives in
 // this process: a server restart loses it and the thing stays on. TODO: persist timers, or hand them to HA (a timer
 // helper / automation owned by the assistant's user).
-import type { ActContext, ActOutcome, ActRequest, HaBackend, HaState, PendingAction, Tier } from './types.ts';
+import type {
+  ActContext,
+  ActOutcome,
+  ActRequest,
+  HaBackend,
+  HaState,
+  PendingAction,
+  ReadOutcome,
+  Tier,
+} from './types.ts';
 import type { Surface } from './protocol.ts';
 import { createConfirmStore, matchSpoken, DEFAULT_TTL_MS } from './confirm.ts';
 import type { Parked } from './confirm.ts';
-import { describeCalls, describeRequest, evaluatePolicy, requestProblem } from './policy.ts';
+import { describeCalls, describeRequest, domainOf, evaluatePolicy, requestProblem } from './policy.ts';
 import type { Evaluation, Policy, PlannedTimer } from './policy.ts';
+
+/**
+ * The read-only response services gate.read may call, and the exact data each takes (every key, one of its values).
+ * Built in, deliberately: the policy file has no key for them and no rule widens this list; each returns data and
+ * changes nothing (Home Assistant documents weather.get_forecasts as returning forecasts, with no side effects).
+ * Adding one is a code change and a review, not a configuration edit.
+ */
+export const READ_SERVICES: Readonly<Record<string, Readonly<Record<string, readonly string[]>>>> = deepFreeze({
+  'weather.get_forecasts': { type: ['daily', 'hourly'] },
+});
 
 export type ResolvedOutcome = 'approved' | 'denied' | 'expired' | 'failed';
 
@@ -26,6 +49,8 @@ export type ResolvedOutcome = 'approved' | 'denied' | 'expired' | 'failed';
 export interface AuditRecord {
   /** ISO time */
   at: string;
+  /** act: ha_act's path (the policy); read: a read-only response service (READ_SERVICES) */
+  kind: 'act' | 'read';
   clientId: string;
   /** the authenticated user's name */
   user?: string;
@@ -63,6 +88,8 @@ export interface Gate {
   /** evaluate, then: allow → call HA; confirm → park, notify via onPending, and resolve when the person answers or the
    * TTL passes; deny → refused */
   act(req: ActRequest, ctx: ActContext): Promise<ActOutcome>;
+  /** a read-only response service from READ_SERVICES, whatever the policy says: its response, or refused / failed */
+  read(req: ActRequest, ctx: ActContext): Promise<ReadOutcome>;
   /** dry run (no side effects): the tier and reason, for ha_find to show and for tests */
   evaluate(req: ActRequest, ctx: ActContext): Promise<{ tier: Tier; reason: string; summary: string }>;
   /** a click in the confirm dialog: only the client the request was sent to, only once, only before expiry */
@@ -101,9 +128,9 @@ export function createGate(opts: GateOptions): Gate {
   const clearT = opts.clearTimeout ?? ((h: unknown) => globalThis.clearTimeout(h as ReturnType<typeof setTimeout>));
   const offTimers = new Map<string, OffTimer>(); // entity → its pending off call
 
-  const audit = (r: Omit<AuditRecord, 'at'>) => {
+  const audit = (r: Omit<AuditRecord, 'at' | 'kind'> & { kind?: AuditRecord['kind'] }) => {
     try {
-      opts.audit?.({ at: new Date(now()).toISOString(), ...r });
+      opts.audit?.({ at: new Date(now()).toISOString(), kind: 'act', ...r });
     } catch {
       // the audit sink failing must not change what happens
     }
@@ -141,7 +168,7 @@ export function createGate(opts: GateOptions): Gate {
     ctx: ActContext,
   ): Promise<{ ev: Evaluation; summary: string; states: Map<string, HaState> }> {
     const states = new Map<string, HaState>();
-    const problem = contextProblem(ctx) ?? requestProblem(req);
+    const problem = contextProblem(ctx) ?? requestProblem(req) ?? readServiceProblem(req);
     if (problem) return { ev: refusal(problem), summary: 'Invalid request', states };
     let ev: Evaluation;
     try {
@@ -252,6 +279,38 @@ export function createGate(opts: GateOptions): Gate {
       });
     },
 
+    async read(req, ctx) {
+      const snap = snapshot(req);
+      const base = { ...who(ctx), kind: 'read' as const, request: snap };
+      const refuse = (reason: string): ReadOutcome => {
+        audit({ ...base, tier: 'deny', outcome: 'refused', reason });
+        return { status: 'refused', reason };
+      };
+      const problem = contextProblem(ctx) ?? requestProblem(snap) ?? readProblem(snap);
+      if (problem) return refuse(problem);
+      const domain = domainOf(snap.entity_ids[0]);
+      const known = new Set<string>();
+      try {
+        for (const s of await backend.states(snap.entity_ids))
+          if (s && typeof s.entity_id === 'string') known.add(s.entity_id);
+      } catch (err) {
+        return refuse(`couldn't read Home Assistant states: ${message(err)}`);
+      }
+      const unknown = snap.entity_ids.filter((id) => !known.has(id));
+      if (unknown.length) return refuse(`${unknown.join(', ')}: not a known entity`);
+      const data = { ...snap.data, entity_id: [...snap.entity_ids] };
+      const detail = describeCalls([{ domain, service: snap.service, data }]);
+      const reason = `read-only service ${domain}.${snap.service}`;
+      try {
+        const response = await backend.respond(domain, snap.service, data);
+        audit({ ...base, tier: 'allow', outcome: 'done', reason, detail });
+        return { status: 'done', response };
+      } catch (err) {
+        audit({ ...base, tier: 'allow', outcome: 'failed', reason: message(err), detail });
+        return { status: 'failed', error: message(err) };
+      }
+    },
+
     async evaluate(req, ctx) {
       const { ev, summary } = await decide(snapshot(req), ctx);
       return { tier: ev.tier, reason: ev.reason, summary };
@@ -318,6 +377,39 @@ const refusal = (reason: string): Evaluation => ({
 function contextProblem(ctx: ActContext): string | null {
   if (!ctx || typeof ctx.clientId !== 'string' || !ctx.clientId) return 'no client';
   if (ctx.surface !== 'screen' && ctx.surface !== 'speaker') return 'unknown surface';
+  return null;
+}
+
+const readKey = (domain: string, service: string) => {
+  const k = `${domain}.${service}`;
+  return Object.hasOwn(READ_SERVICES, k) ? k : null;
+};
+
+/** act(): a read-only service is never an action (whatever the policy allows) */
+function readServiceProblem(req: ActRequest): string | null {
+  for (const d of new Set(req.entity_ids.map(domainOf))) {
+    const k = readKey(d, req.service);
+    if (k) return `${k} returns data and changes nothing: use the read tool for it, not ha_act`;
+  }
+  return null;
+}
+
+/** read(): null if this is a READ_SERVICES call with exactly its data, else why not (the request is well formed) */
+function readProblem(req: ActRequest): string | null {
+  const domain = domainOf(req.entity_ids[0]);
+  const k = readKey(domain, req.service);
+  if (!k) return `${domain}.${req.service} is not a read-only service (only ${Object.keys(READ_SERVICES).join(', ')})`;
+  const other = req.entity_ids.find((id) => domainOf(id) !== domain);
+  if (other) return `${other} is not in ${domain}`;
+  const spec = READ_SERVICES[k];
+  const data = req.data ?? {};
+  for (const key of Object.keys(data))
+    if (!Object.hasOwn(spec, key)) return `${key} is not allowed in the data for ${k}`;
+  for (const [key, values] of Object.entries(spec)) {
+    const v = data[key];
+    if (typeof v !== 'string' || !values.includes(v))
+      return `${k} needs ${key}: ${values.join(' or ')} (got ${typeof v === 'string' ? JSON.stringify(v) : v === undefined ? 'none' : typeof v})`;
+  }
   return null;
 }
 

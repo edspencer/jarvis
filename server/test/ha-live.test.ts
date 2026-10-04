@@ -131,6 +131,42 @@ describe('ha-live framing', () => {
     ]);
   });
 
+  it('respond: call_service with return_response, answering its response; callService never asks for one', async () => {
+    const { ha, sockets, auth } = setup();
+    auth();
+    const r = ha.respond('weather', 'get_forecasts', { entity_id: ['weather.home'], type: 'daily' });
+    await vi.advanceTimersByTimeAsync(0);
+    const m = sockets[0].last();
+    expect(m).toEqual({
+      id: m.id,
+      type: 'call_service',
+      domain: 'weather',
+      service: 'get_forecasts',
+      service_data: { type: 'daily' },
+      target: { entity_id: ['weather.home'] },
+      return_response: true,
+    });
+    const response = { 'weather.home': { forecast: [{ datetime: '2026-10-05T00:00:00Z', temperature: 88 }] } };
+    sockets[0].recv({ id: m.id, type: 'result', success: true, result: { context: { id: 'x' }, response } });
+    expect(await r).toEqual(response);
+
+    const bad = ha.respond('weather', 'get_forecasts', { entity_id: ['weather.home'], type: 'bogus' });
+    await vi.advanceTimersByTimeAsync(0);
+    sockets[0].recv({
+      id: sockets[0].last().id,
+      type: 'result',
+      success: false,
+      error: { code: 'invalid_format', message: 'bad type' },
+    });
+    await expect(bad).rejects.toThrow('Home Assistant: bad type (invalid_format)');
+
+    const call = ha.callService('light', 'turn_on', { entity_id: ['light.hall'] });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sockets[0].last()).not.toHaveProperty('return_response');
+    sockets[0].recv({ id: sockets[0].last().id, type: 'result', success: true, result: { context: {} } });
+    await call;
+  });
+
   it('errors and timeouts reject', async () => {
     const { ha, sockets, auth } = setup();
     auth();
