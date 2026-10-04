@@ -132,6 +132,17 @@ export interface Reading {
   partial: boolean;
   /** the reported remainder sensor gave it (an Other) */
   reported?: boolean;
+  /** an Other's remainder before it was clamped at 0 (W) */
+  raw?: number | null;
+}
+
+/** An Other far below zero: the children add up to well more than the parent measures. A little below zero is the
+ * meters disagreeing; this much usually means a mapping error (a meter under the wrong parent, a kW sensor without a
+ * unit read as W). The shortfall in W, or null if it's within max(50 W, 5 % of the parent). */
+export function overshoot(r: Reading | undefined, parentW: number | null | undefined): number | null {
+  const raw = r?.raw;
+  if (raw === null || raw === undefined) return null;
+  return raw < -Math.max(50, 0.05 * Math.abs(parentW ?? 0)) ? -raw : null;
 }
 
 /** Every meter's power for one moment: `get` reads the store. */
@@ -158,7 +169,7 @@ export function compute(tree: Tree, get: (id: string) => EntityState | undefined
         w = r.w === null || sum === null ? null : r.w - sum;
       }
       // a remainder a little below zero is the meters' disagreement, not a negative load
-      out.set(m.other.id, { w: w === null ? null : Math.max(0, w), partial: false, reported: rep !== null });
+      out.set(m.other.id, { w: w === null ? null : Math.max(0, w), partial: false, reported: rep !== null, raw: w });
     }
     return r;
   };

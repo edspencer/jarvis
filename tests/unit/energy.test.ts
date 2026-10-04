@@ -99,7 +99,7 @@ describe('energy tree: parents, children and Other', () => {
     const { tree, rs } = run(panel(), { 'sensor.p': '1000', 'sensor.a': '300', 'sensor.b': '200' });
     expect(tree.byId['p'].other!.id).toBe('p.other');
     expect(tree.byId['p.other'].isOther).toBe(true);
-    expect(rs.get('p.other')).toEqual({ w: 500, partial: false, reported: false });
+    expect(rs.get('p.other')).toEqual({ w: 500, partial: false, reported: false, raw: 500 });
   });
 
   it('Other is clamped at 0 when the children read more than the parent', () => {
@@ -116,9 +116,9 @@ describe('energy tree: parents, children and Other', () => {
   it('a reported remainder wins over the computed one; when it is unavailable, the computed one is used', () => {
     const m = panel({ remainder: 'sensor.bal' });
     const a = run(m, { 'sensor.p': '1000', 'sensor.a': '300', 'sensor.b': '200', 'sensor.bal': '123' });
-    expect(a.rs.get('p.other')).toEqual({ w: 123, partial: false, reported: true });
+    expect(a.rs.get('p.other')).toEqual({ w: 123, partial: false, reported: true, raw: 123 });
     const b = run(m, { 'sensor.p': '1000', 'sensor.a': '300', 'sensor.b': '200', 'sensor.bal': 'unavailable' });
-    expect(b.rs.get('p.other')).toEqual({ w: 500, partial: false, reported: false });
+    expect(b.rs.get('p.other')).toEqual({ w: 500, partial: false, reported: false, raw: 500 });
     expect(a.tree.entityIds).toContain('sensor.bal');
   });
 

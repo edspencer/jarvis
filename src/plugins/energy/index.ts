@@ -26,6 +26,7 @@ import {
   countable,
   kwh,
   parents,
+  overshoot,
   powerOf,
   sumOf,
   share,
@@ -38,8 +39,9 @@ import {
   type Reading,
 } from './tree';
 import { fmtKWh, fmtW, legendSteps, loadColour, pct, position } from './scale';
-import { downsample, integrate, midnight, sparkline, sumSeries, type Series } from './history';
+import { sparkline, sumSeries } from './history';
 import { mockHistory, mockStates } from './mock';
+import { createPast, type Past } from './past';
 import { createEnergyScene, type Anchor, type Tint } from './scene';
 
 const DAY = 24 * 3600e3;
@@ -54,13 +56,6 @@ interface PinsLike {
 interface PlatesLike {
   byBox?: Record<string, { centre?: THREE.Vector3 }>;
   byId?: Record<string, { centre?: THREE.Vector3 }>;
-}
-
-/** a meter's past: the 24-hour series (W) and today's kWh worked out from it */
-interface Past {
-  at: number;
-  series: Series;
-  today: number | null;
 }
 
 export default definePlugin<EnergyConfig>({
@@ -162,9 +157,7 @@ export default definePlugin<EnergyConfig>({
     });
 
     // ------------------------------------------------------------------ history: sparklines and today's kWh
-    const past = new Map<string, Past>();
     let disposed = false;
-    const pending = new Set<string>();
     /** W per unit of an entity's history (from its unit now); null: not in the store, or not a power unit */
     const factor = (e: string): number | null => {
       const st = get(e);
@@ -177,49 +170,27 @@ export default definePlugin<EnergyConfig>({
       if (f === null) return [];
       return (await store.history(e, from, to)).map((p) => ({ ...p, v: p.v === null ? null : p.v * f }));
     };
-    /** the 24-hour series of a meter: its power entities summed, or its children's */
-    const seriesOf = async (m: Meter, from: number, to: number): Promise<{ s: Series; pts: HistoryPoint[][] }> => {
-      if (m.power.length) {
-        const pts = await Promise.all(m.power.map((e) => historyOf(e, from, to)));
-        return { s: sumSeries(pts.map((p) => downsample(p, from, to, BUCKETS))), pts };
-      }
-      const kids = m.children.filter((c) => c.kind === m.kind);
-      if (!kids.length) return { s: [], pts: [] };
-      const all = await Promise.all(kids.map((c) => seriesOf(c, from, to)));
-      // a child with no history at all is left out rather than blanking the whole day
-      const known = all.map((a) => a.s).filter((x) => x.some((v) => v !== null));
-      return { s: known.length ? sumSeries(known) : [], pts: [] };
-    };
+    // at most 4 requests at once; a parent's fetch caches its children's (past.ts)
+    const past = createPast({
+      history: historyOf,
+      ttl: HISTORY_TTL,
+      span: DAY,
+      buckets: BUCKETS,
+      onError: (m, e) => ctx.log.warn(`energy: no history for ${m.id}: ${e.message}`),
+    });
+    /** a meter's past as known now; asks for it if it isn't fresh (the UI refreshes when it comes) */
     function wantPast(m: Meter): Past | null {
-      const p = past.get(m.id);
-      if ((!p || Date.now() - p.at > HISTORY_TTL) && !pending.has(m.id) && !m.isOther) {
-        pending.add(m.id);
-        const to = Date.now(),
-          from = to - DAY;
-        seriesOf(m, from, to)
-          .then(({ s, pts }) => {
-            const t0 = Math.max(from, midnight(to));
-            // only from a history that reaches back to midnight (not just what this page has seen)
-            const covers = pts.length > 0 && pts.every((p) => p.length > 0 && p[0].t <= t0 + 15 * 60e3);
-            const today = covers ? sumAll(pts.map((p) => integrate(p, t0, to))) : null;
-            past.set(m.id, { at: Date.now(), series: s, today });
-          })
-          .catch((e: Error) => {
-            ctx.log.warn(`energy: no history for ${m.id}: ${e.message}`);
-            past.set(m.id, { at: Date.now(), series: [], today: null });
-          })
-          .finally(() => {
-            pending.delete(m.id);
-            if (disposed) return;
-            ctx.inspector.refresh((s) => metersOf(s).includes(m));
-            panel.refresh();
-          });
-      }
-      return p ?? null;
+      if (!m.isOther && !past.settled(m))
+        void past.load(m).then(() => {
+          if (disposed) return;
+          ctx.inspector.refresh((s) => metersOf(s).includes(m));
+          panel.refresh();
+        });
+      return past.get(m);
     }
     const todayOf = (m: Meter): { v: number | null; derived: boolean } => {
       if (m.today.length) return { v: sumAll(m.today.map((e) => kwh(get(e)))), derived: false };
-      return { v: past.get(m.id)?.today ?? null, derived: true };
+      return { v: past.get(m)?.today ?? null, derived: true };
     };
 
     // ------------------------------------------------------------------ the scene: energy mode
@@ -368,13 +339,17 @@ export default definePlugin<EnergyConfig>({
               { type: 'empty', text: 'No live data: connect a data source (the status strip) to see the loads.' },
             ];
           const load = tot.load;
-          if (view === 'today') for (const m of top(tree, rs)) if (!m.today.length) wantPast(m);
+          // Today: by kWh where it is known (an energy sensor, or a history already fetched), the rest after them by
+          // their power now; only the rows shown, and only those without an energy sensor, fetch their history
           const consumers =
             view === 'today'
               ? top(tree, rs)
-                  .sort((a, b) => (todayOf(b).v ?? -1) - (todayOf(a).v ?? -1))
+                  .map((m, i) => [m, todayOf(m).v, i] as const)
+                  .sort((a, b) => (b[1] ?? -1) - (a[1] ?? -1) || a[2] - b[2])
                   .slice(0, 8)
+                  .map(([m]) => m)
               : top(tree, rs, 8);
+          if (view === 'today') for (const m of consumers) if (!m.today.length) wantPast(m);
           return [
             { type: 'meter', value: meterValue(load), unit: unitOf(load), spark: houseSpark() },
             {
@@ -443,6 +418,15 @@ export default definePlugin<EnergyConfig>({
 
     // ------------------------------------------------------------------ the inspector's Energy section
     const confTone = (c?: string) => (c === 'high' ? 'ok' : c === 'low' ? 'warn' : c === 'mock' ? 'info' : 'off');
+    /** the warning for a parent whose children add up to well more than it measures (on it and on its Other) */
+    const overText = (m: Meter): string | null => {
+      const parent = m.isOther ? m.parent! : m.other ? m : null;
+      if (!parent?.other) return null;
+      const over = overshoot(rs.get(parent.other.id), rs.get(parent.id)?.w);
+      return over === null
+        ? null
+        : `Its meters add up to ${fmtW(over)} more than ${parent.label} measures (Other is shown as 0). Usually a mapping error: a meter under the wrong parent, or a kW sensor without a unit read as W.`;
+    };
     function detail(m: Meter): Blocks {
       const r = rs.get(m.id);
       const w = r?.w ?? null;
@@ -508,6 +492,7 @@ export default definePlugin<EnergyConfig>({
           ],
         },
         p === null && !m.isOther && { type: 'text', text: { text: 'Loading the last 24 hours…', muted: true } },
+        overText(m) && { type: 'callout', tone: 'warn', text: overText(m)! },
         m.spec.question && { type: 'callout', tone: 'warn', text: `Open question: ${m.spec.question}` },
         m.spec.note && { type: 'note', text: m.spec.note },
         m.parent && { type: 'links', title: 'On', items: [subjectOf(m.parent)] },
@@ -584,6 +569,41 @@ export default definePlugin<EnergyConfig>({
       },
     });
 
+    // ------------------------------------------------------------------ readings that look like mapping errors (logged once)
+    const told = new Set<string>();
+    const tellOnce = (key: string, msg: string) => {
+      if (told.has(key)) return;
+      told.add(key);
+      ctx.log.warn(`energy: ${msg}`);
+    };
+    function checkReadings(): void {
+      for (const m of tree.all) {
+        if (m.isOther) {
+          const over = overshoot(rs.get(m.id), rs.get(m.parent!.id)?.w);
+          if (over !== null)
+            tellOnce(
+              `over:${m.id}`,
+              `${m.parent!.label}'s children add up to ${fmtW(over)} more than it measures: a meter under the wrong parent, or a kW sensor without a unit?`,
+            );
+          continue;
+        }
+        // a number in a unit that isn't power (VA) or energy (Wh, kWh) is no data: say why
+        for (const [list, read, what] of [
+          [m.power, watts, 'power (W, kW)'],
+          [[...m.today, ...m.month], kwh, 'energy (Wh, kWh)'],
+        ] as const)
+          for (const e of list) {
+            const st = get(e);
+            if (st && Number.isFinite(Number(st.state)) && st.state !== '' && read(st) === null)
+              tellOnce(
+                `unit:${e}`,
+                `${e} is in "${st.attributes?.unit_of_measurement ?? ''}", not a ${what} unit: it reads as no data`,
+              );
+          }
+      }
+    }
+    checkReadings();
+
     // ------------------------------------------------------------------ updates: coalesced, at most once a second
     let dirty = false;
     store.onChange(() => (dirty = true), tree.entityIds);
@@ -593,6 +613,7 @@ export default definePlugin<EnergyConfig>({
       dirty = false;
       rs = compute(tree, get);
       tot = totals(tree, rs);
+      checkReadings();
       if (panel.isOpen) panel.refresh();
       ctx.hud.invalidate();
       ctx.inspector.refresh((s) => metersOf(s).length > 0);

@@ -53,7 +53,9 @@ empty or not a number, or whose unit is neither, is no data.
 The 24-hour sparklines come from `store.history`: the connector's recorder if it has one (Home Assistant's history),
 else what the page has seen. A sensor's history is a step function, so each of the 96 quarter-hour points is the
 time-weighted mean of what held during it; a short spike still shows, scaled by how long it lasted. A meter's history
-is fetched when something shows it and kept for five minutes. A meter with no `energy.today` entity gets today's
+is fetched when something shows it and kept for five minutes. At most four history requests run at once (the rest
+wait their turn), each entity is fetched once per meter, and a meter without power of its own builds its series from
+its children's, keeping each child's as it goes, so opening a child afterwards costs nothing. A meter with no `energy.today` entity gets today's
 kilowatt-hours by integrating its power history from local midnight, marked "from power" in the inspector; only if
 that history reaches back to midnight (a recorder's does; what a page opened at noon has seen doesn't), else it shows
 no figure rather than part of the day's.
@@ -225,13 +227,23 @@ says "some meters have no data" and its header adds a "+".
 **Consumers** are the load meters without children: the leaves, and every _Other_. A parent is never listed with its
 children, so the consumers add up to the house's load without counting anything twice (give or take an _Other_
 clamped at 0). Top consumers is the eight biggest of them. In the _Today_ view, a consumer without an `energy.today`
-entity gets its kilowatt-hours from its power history (fetched when the view is shown); an _Other_ has none.
+entity gets its kilowatt-hours from its power history; an _Other_ has none. The list is sorted by the kilowatt-hours
+known so far (the rest after them, by their power now), and only the rows shown fetch their history, so the view costs
+at most eight meters' requests at a time and settles as their figures arrive.
 
 **Several meters on one thing.** When several meters feed the same object or room, a meter counts only if none of its
 ancestors with data also feeds it (a circuit and the plug on it both feed the kitchen: the kitchen gets the circuit's
 power, or the plug's while the circuit's sensor is down). If one of the counted meters has no data, the sum is marked
 partial (in the inspector, and "(partial)" in the hover label).
-The inspector lists the others as "counted in its parent".
+The inspector lists the others as "counted in its parent". The other way round, a circuit that feeds several rooms
+counts its whole power in each of them (it isn't split: the map doesn't say how its load divides), so the rooms' tints
+can add up to more than the circuit; the house's load and the consumers never do.
+
+**Readings that look wrong.** An _Other_ is clamped at 0, but its raw remainder is kept: when it is below
+−max(50 W, 5 % of the parent's power), the children add up to more than the parent measures, which usually means a
+mapping error (a meter under the wrong parent, or a kW sensor without a `unit_of_measurement` read as W). The parent's
+and the _Other_'s Energy sections then say so, and it is logged once. A number whose unit is neither power nor energy
+(`VA`, say) reads as no data, and that too is logged once per entity.
 
 **Sources and storage** are signed (storage positive while charging), never summed into the load, and shown on their
 own lines in the panel. A source or storage meter under a load is not summed into it either (the validator warns).
@@ -279,9 +291,11 @@ recomputes at most once a second, and the HUD re-renders only what changed.
 
 - No sparkline per row in the lists: the `list` block has bars but no sparklines.
 - Sources and storage aren't drawn in the scene unless they feed something; _Others_ are never drawn.
-- A meter without its own power entities (a panel summed from its circuits) has no today's figure unless it has an
-  `energy.today` entity: today's kilowatt-hours are integrated only from a meter's own power history, and only when
-  that history reaches back to midnight.
+- A meter without its own power entities (a panel summed from its circuits) gets today's figure from its children's
+  power histories, and only when every one of them reaches back to midnight (a child's `energy.today` entity isn't
+  used for it).
+- Home Assistant's history API takes several entities in one request; the store's `history(id, …)` takes one, so the
+  plugin limits how many run at once instead of batching them.
 - No net metering (grid import and export) and no costs or tariffs.
 - Energy mode and the blueprint overlay's model fade both change the model's materials, and they don't know about each
   other: turn one off before using the other, or the house can stay faded until the page is reloaded.

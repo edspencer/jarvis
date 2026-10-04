@@ -134,6 +134,11 @@ conf, src, meta })`. They come from the site's mapping files (the lights plugin 
   registry item's entities; faults a device's), so any plugin can ask `store.entitiesOf('pins:elec.panel.a')`. The
   Home Assistant section appears on anything that has bindings. A mock connector's bindings (`conf: 'mock'`) give way
   to any real one. Bindings never extend what a connector allows.
+- **Materials are shared.** A plugin that swaps a mesh's material for a while (energy mode's ghost) keeps the mesh's
+  own in `mesh.userData.baseMaterial` until it puts it back; a plugin that prepares materials from a mesh's (the lights
+  clone a fixture's) reads `userData.baseMaterial ?? material`, and picking does the same. A plugin that swaps
+  materials puts back the one it saved only if the mesh still has its temporary one, so a swap made meanwhile by
+  someone else survives.
 - The allow-list protects against bugs and misclicks, not hostile code: Home Assistant's login tokens are in
   `localStorage`, readable by any code on the page, plugins included. The README says how to limit the damage (a
   dedicated, non-admin Home Assistant user for the viewer).
