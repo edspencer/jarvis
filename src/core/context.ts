@@ -3,6 +3,7 @@
 import type { Site } from '../site';
 import type { Hud } from '../ui/hud';
 import type { Picker } from './inspect';
+import type { MaterialStack } from './material-stack';
 import type { Bus } from './plugin/events';
 import { createStorage } from './plugin/env';
 import type { PluginHost } from './plugin/host';
@@ -23,6 +24,8 @@ import type {
 export interface CoreServices {
   site: Site;
   three: ThreeApi;
+  /** the material overrides (each plugin gets them scoped to its life) */
+  materials: MaterialStack;
   view: ViewApi;
   picker: Picker;
   bus: Bus;
@@ -80,7 +83,7 @@ export function createContextFactory(core: CoreServices) {
       id,
       site: core.site,
       config,
-      three: core.three,
+      three: { ...core.three, materials: core.materials.scoped(own, log.warn) },
       view: {
         ...core.view,
         state: core.view.state,
