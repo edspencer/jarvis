@@ -30,19 +30,20 @@ test('walks up the stair to the landing', async () => {
   await twin(page, 'twin.teleport(11.3, 2.4, 0, 0)');
   if (await twin<boolean>(page, 'twin.state.ghost')) await page.keyboard.press('g');
   expect(await twin<boolean>(page, 'twin.state.ghost')).toBe(false);
-  // run (Shift): software WebGL draws few frames a second, and the walker's step per frame is capped
-  await page.keyboard.down('Shift');
+  // Hold W and step the walker in the page, 50 ms at a time (the viewer's own per-frame cap): the same physics as
+  // the render loop's, but not tied to the frame rate, which in software WebGL on a CI runner is a frame or two a second.
   await page.keyboard.down('w');
-  await page.waitForFunction(
-    () => {
-      const t = (window as unknown as { twin: { toPlan(p: unknown): { Y: number }; player: { pos: unknown } } }).twin;
-      return t.toPlan(t.player.pos).Y > 8;
-    },
-    null,
-    { timeout: 60_000, polling: 250 },
-  );
+  const reached = await page.evaluate(() => {
+    const t = (
+      window as unknown as {
+        twin: { toPlan(p: unknown): { Y: number }; player: { pos: unknown }; stepWalk(dt: number): void };
+      }
+    ).twin;
+    for (let i = 0; i < 400 && t.toPlan(t.player.pos).Y <= 8; i++) t.stepWalk(0.05);
+    return t.toPlan(t.player.pos).Y > 8;
+  });
   await page.keyboard.up('w');
-  await page.keyboard.up('Shift');
+  expect(reached, `reached the landing (at ${JSON.stringify(await at())})`).toBe(true);
   const p = await at();
   expect(p.Z, `standing on the first floor (at ${JSON.stringify(p)})`).toBeCloseTo(3.2, 1);
   await twin(page, 'twin.updateWhere()');
