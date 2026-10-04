@@ -245,10 +245,14 @@ export function createTools(deps: ToolDeps): ToolSpec[] {
         for (const [id, s] of byId) {
           if (domain && domainOf(id) !== domain) continue;
           const si = siteIndex.get(id);
+          // a word that names the domain itself ('weather', 'lock', 'lights') counts like a name: otherwise
+          // weather.forecast_home ('Forecast Home') loses "weather" to a dozen sensors called "Weather station …"
+          const d = domainOf(id);
+          const named = tokens(d.replace(/_/g, ' ')).every((t) => q.includes(t));
           const score = scoreFields(q, [
             [nameOf(s, id), 3],
             [id.split('.')[1] ?? '', 2.5],
-            [DOMAIN_WORDS[domainOf(id)] ?? domainOf(id), 1.5],
+            [DOMAIN_WORDS[d] ?? d, named ? 3.5 : 1.5],
             [areaOf(s, id) ?? '', 1.5],
             [(si?.rooms ?? []).map((r) => roomName(site, r)).join(' '), 1.5],
             [(si?.names ?? []).join(' '), 2.5],

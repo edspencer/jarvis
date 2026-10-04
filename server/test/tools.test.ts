@@ -107,6 +107,28 @@ describe('ha_find', () => {
     expect(lock.matches[0].policy).toMatchObject({ unlock: expect.stringMatching(/^deny/) });
   });
 
+  it('finds the weather entity for "weather" among many sensors named Weather station …', async () => {
+    const r = rig();
+    // the live house: weather.forecast_home ("Forecast Home") and a dozen weather-station sensors
+    r.ha.entities.set('weather.forecast_home', {
+      entity_id: 'weather.forecast_home',
+      state: 'partlycloudy',
+      attributes: { friendly_name: 'Forecast Home', temperature: 84 },
+    });
+    for (let i = 0; i < 12; i++)
+      r.ha.entities.set(`sensor.weather_station_${i}`, {
+        entity_id: `sensor.weather_station_${i}`,
+        state: '1',
+        attributes: { friendly_name: `Weather station reading ${i}` },
+      });
+    const out = await run(r, 'ha_find', { query: 'weather' });
+    expect(out.matches[0].entity_id).toBe('weather.forecast_home');
+    // and "kitchen lights" still ranks the kitchen's lights first
+    const k = await run(r, 'ha_find', { query: 'kitchen lights' });
+    expect(k.matches[0].entity_id).toMatch(/^light\.kitchen/);
+    expect(k.matches.every((m: { entity_id: string }) => m.entity_id.startsWith('light.kitchen'))).toBe(true);
+  });
+
   it('says when nothing matches, and checks its input', async () => {
     const r = rig();
     expect((await run(r, 'ha_find', { query: 'zebra' })).matches).toEqual([]);
