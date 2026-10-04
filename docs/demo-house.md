@@ -66,7 +66,7 @@ Screenshots: every viewpoint and a plan of each storey, taken with `node tools/d
 | Bedrooms    | Bedroom 2's bed is pushed against the east wall with its headboard there; no nightstands, dressers or lamps                                        | fix    |
 | Bathroom    | One bath, upstairs; no bathroom for the second and third bedrooms, no half bath downstairs                                                         | fix    |
 | House       | Only two bedrooms; no garage, laundry or utility space; the panel is in the hall                                                                   | done   |
-| Energy      | 14 circuits on a made-up panel, a dryer circuit with no dryer in the model                                                                         | fix    |
+| Energy      | 14 circuits on a made-up panel, a dryer circuit with no dryer in the model                                                                         | done   |
 
 ## The generator: areas
 
@@ -125,8 +125,9 @@ bedroom, WC walk-in closet, PB primary bath, B2, B3 bedrooms, HB hall bath, LD l
 A 200 A service: the utility meter on the garage's east wall outside, the **main panel** (200 A main breaker, 40
 spaces) back to back with it on the inside, and an **Emporia Vue 2**-style circuit monitor in a small box beside the
 panel: two 200 A clamps on the mains (phase A and B) and sixteen 50 A clamps on branch circuits. A 240 V circuit has
-one clamp on one leg, doubled in the monitor's settings, so it reports one power figure. Rooftop solar back-feeds the
-panel through a 2-pole breaker; a battery sits in the garage.
+one clamp on one leg, doubled in the monitor's settings, so it reports one power figure. Rooftop solar (twelve panels on
+the main roof's south slope) back-feeds the panel through a 2-pole breaker from the inverter in the garage, with the
+battery beside it; the monitor's settings add the solar back, so its mains read what the house uses.
 
 In real life the Vue's readings reach Home Assistant through an integration (the Emporia Vue custom integration from
 HACS, which polls Emporia's cloud, or local ESPHome firmware flashed onto the Vue) and appear as `sensor.*` power and
@@ -140,38 +141,52 @@ makes up their values:
 | `sensor.vue2_balance_power`                | mains minus the sixteen clamps: the panel's _Other_      |
 | `sensor.vue2_<circuit>_power`              | one per clamp (W)                                        |
 | `sensor.vue2_<circuit>_energy_today`       | one per clamp, kWh since midnight (`total_daily_energy`) |
-| `sensor.vue2_total_energy_today`           | the house's kWh since midnight                           |
+| `sensor.vue2_total_energy_today`, `_month` | the house's kWh since midnight, this month               |
+
+The energy map (`tools/demo-site/energy.ts`) is the grid (the utility meter) → the main panel (the two mains clamps as
+legs A and B, the Balance as its _Other_) → a meter per clamped circuit, each feeding what the areas put on its breaker
+(registry pins, model nodes, wall plates, fixtures) and their rooms; the desk's smart plug and the pond pump's switch
+below their circuits; solar and the battery as roots of their own. Circuits without a clamp are left out of the map:
+the monitor knows them only as part of its Balance, so they show as the panel's _Other_. `?ha=mock` makes the loads up
+from each meter's label (`src/plugins/energy/mock.ts`): the fridge cycling, the heat pump and the air handler (with
+its heat strips now and then), the water heater, the dryer in the evening, the EV charging overnight, the lights from
+late afternoon.
 
 ### Panel schedule
 
 Odd spaces on the left, even on the right; a 240 V circuit takes two spaces on the same side. "CT" is the monitor's
 clamp channel; circuits without one are only in the Vue's Balance.
 
-| Breaker | Circuit                                                            | A   | V   | CT  | Energy-map id               |
-| ------- | ------------------------------------------------------------------ | --- | --- | --- | --------------------------- |
-| 1+3     | Range                                                              | 40  | 240 | 1   | `circuit.range`             |
-| 2+4     | Heat pump (outdoor unit)                                           | 40  | 240 | 2   | `circuit.heat_pump`         |
-| 5       | Living room and hall outlets                                       | 20  | 120 | 3   | `circuit.living_outlets`    |
-| 6+8     | Air handler and heat strips                                        | 60  | 240 | 4   | `circuit.air_handler`       |
-| 7       | Lighting, ground floor (living, kitchen, hall, powder room, study) | 15  | 120 | 5   | `circuit.lights_ground`     |
-| 9       | Kitchen counter outlets (GFCI)                                     | 20  | 120 | 6   | `circuit.kitchen_counter`   |
-| 10+12   | Water heater                                                       | 30  | 240 | 7   | `circuit.water_heater`      |
-| 11      | Refrigerator                                                       | 20  | 120 | 8   | `circuit.fridge`            |
-| 13      | Dishwasher and disposal                                            | 20  | 120 | 9   | `circuit.dishwasher`        |
-| 14+16   | Dryer                                                              | 30  | 240 | 10  | `circuit.dryer`             |
-| 15      | Microwave                                                          | 20  | 120 | —   | `circuit.microwave`         |
-| 17      | Study outlets (router, desk)                                       | 20  | 120 | 12  | `circuit.study`             |
-| 18+20   | EV charger                                                         | 50  | 240 | 13  | `circuit.ev_charger`        |
-| 19      | Primary suite: bedroom, closet and bath lights and outlets (AFCI)  | 20  | 120 | 14  | `circuit.primary_suite`     |
-| 21      | Bedrooms 2 and 3, hall bath, landing: lights and outlets (AFCI)    | 20  | 120 | 15  | `circuit.bedrooms`          |
-| 22      | Washer and laundry outlets                                         | 20  | 120 | 16  | `circuit.washer`            |
-| 23      | Bathroom outlets (GFCI): primary bath, hall bath, powder room      | 20  | 120 | —   | `circuit.bath_outlets`      |
-| 24      | Garage: outlets, door opener, freezer, lights                      | 20  | 120 | 11  | `circuit.garage`            |
-| 25      | Outside lights and outlets, pond pump                              | 20  | 120 | —   | `circuit.outside`           |
-| 26      | Smoke and CO alarms (interconnected)                               | 15  | 120 | —   | `circuit.alarms`            |
-| 27      | Irrigation controller, doorbell                                    | 15  | 120 | —   | `circuit.irrigation`        |
-| 28+30   | Solar PV (back-fed)                                                | 40  | 240 | —   | `pv` (a source, not a load) |
-| 32-40   | spare                                                              |     |     |     |                             |
+| Breaker          | Circuit                                                            | A   | V   | CT  | Energy-map id               |
+| ---------------- | ------------------------------------------------------------------ | --- | --- | --- | --------------------------- |
+| 1+3              | Range                                                              | 40  | 240 | 1   | `circuit.range`             |
+| 2+4              | Heat pump (outdoor unit)                                           | 40  | 240 | 2   | `circuit.heat_pump`         |
+| 5                | Living room and hall outlets                                       | 20  | 120 | 3   | `circuit.living_outlets`    |
+| 6+8              | Air handler and heat strips                                        | 60  | 240 | 4   | `circuit.air_handler`       |
+| 7                | Lighting, ground floor (living, kitchen, hall, powder room, study) | 15  | 120 | 5   | `circuit.lights_ground`     |
+| 9                | Kitchen counter outlets (GFCI)                                     | 20  | 120 | 6   | `circuit.kitchen_counter`   |
+| 10+12            | Water heater                                                       | 30  | 240 | 7   | `circuit.water_heater`      |
+| 11               | Refrigerator                                                       | 20  | 120 | 8   | `circuit.fridge`            |
+| 13               | Dishwasher and disposal                                            | 20  | 120 | 9   | `circuit.dishwasher`        |
+| 14+16            | Dryer                                                              | 30  | 240 | 10  | `circuit.dryer`             |
+| 15               | Microwave                                                          | 20  | 120 | —   | `circuit.microwave`         |
+| 17               | Study outlets (network, desk)                                      | 20  | 120 | 12  | `circuit.study`             |
+| 18+20            | EV charger                                                         | 50  | 240 | 13  | `circuit.ev_charger`        |
+| 19               | Primary suite: bedroom, closet and bath lights and outlets (AFCI)  | 20  | 120 | 14  | `circuit.primary_suite`     |
+| 21               | Bedrooms 2 and 3, hall bath, landing: lights and outlets (AFCI)    | 20  | 120 | 15  | `circuit.bedrooms`          |
+| 22               | Washer and laundry outlets                                         | 20  | 120 | —   | `circuit.washer`            |
+| 23               | Bathroom outlets (GFCI): primary bath, hall bath, powder room      | 20  | 120 | —   | `circuit.bath_outlets`      |
+| 24               | Garage: outlets, door opener, freezer, lights                      | 20  | 120 | 11  | `circuit.garage`            |
+| 25               | Outside lights and outlets, pond pump                              | 20  | 120 | 16  | `circuit.outside`           |
+| 26               | Smoke and CO alarms (interconnected)                               | 15  | 120 | —   | `circuit.alarms`            |
+| 27               | Irrigation controller, doorbell                                    | 15  | 120 | —   | `circuit.irrigation`        |
+| 28+30            | Solar PV (back-fed)                                                | 40  | 240 | —   | `pv` (a source, not a load) |
+| 32+34            | Energy monitor (its supply)                                        | 15  | 240 | —   | `circuit.monitor`           |
+| 29-39 odd, 36-40 | spare                                                              |     |     |     |                             |
+
+The outside circuit (25) has a clamp rather than the washer's (22): so the outside lights are metered, and the pond
+pump's smart plug sits under its own circuit in the map (a circuit without a clamp isn't in the map at all, so the plug
+would have to hang off the panel itself).
 
 ## Inventory, room by room
 
@@ -255,31 +270,32 @@ devices. "Breaker" ties each electrical item to the schedule.
 
 ### Garage (`garage`)
 
-| Item                                                                      | Kind      | Breaker  | Status  |
-| ------------------------------------------------------------------------- | --------- | -------- | ------- |
-| Main panel (200 A, 40 spaces), labelled; utility meter outside            | elec      |          | planned |
-| Emporia Vue 2-style monitor beside the panel, conduit nipple between them | elec      | (2-pole) | planned |
-| Water heater (50 gal) on a stand, with expansion tank                     | plumb     | 10+12    | planned |
-| EV charger (Level 2, 40 A), wall-mounted by the car                       | elec      | 18+20    | planned |
-| Home battery on the wall, PV inverter                                     | elec      | 28+30    | planned |
-| Sectional garage door (16 ft) and opener on the ceiling, wall button      | appliance | 24       | planned |
-| A car (an EV) in one bay                                                  | object    |          | planned |
-| Workbench, shelving, chest freezer, trash and recycling bins              | furniture | 24       | planned |
-| LED shop lights (two or three)                                            | light     | 24       | planned |
-| Switches at the hall door and the side door; GFCI outlets                 | S / O     | 24       | planned |
-| Door to the hall, door to the laundry                                     | door      |          | done    |
+| Item                                                                                                               | Kind      | Breaker | Status |
+| ------------------------------------------------------------------------------------------------------------------ | --------- | ------- | ------ |
+| Main panel (200 A, 40 spaces) on the east wall, door open: breaker stack, main, schedule card (`Panel_main`)       | elec      |         | done   |
+| Emporia Vue 2-style monitor beside the panel, conduit nipple, CT leads into the panel (`Energy_monitor`)           | elec      | 32+34   | done   |
+| Water heater (50 gal) on a stand, expansion tank, T&P line, supply conduit (`Water_heater`); main shut-off valve   | plumb     | 10+12   | done   |
+| EV charger (Level 2), wall-mounted by the car, cable on the holster (`EV_charger`)                                 | elec      | 18+20   | done   |
+| Home battery on the floor against the east wall, PV inverter beside it (`Home_battery`, `PV_inverter`)             | elec      | 28+30   | done   |
+| Conduit from the charger, the panel and the inverter along the east wall above the window                          | elec      |         | done   |
+| Sectional garage door (16 ft) with its tracks; opener on the ceiling with its rail; wall button by the hall door   | appliance | 24      | done   |
+| A car (an electric hatchback) nose-in in the east bay (`Furn_car`)                                                 | object    | 18+20   | done   |
+| Workbench under the north window, steel shelving with totes, trash and recycling carts; chest freezer              | furniture | 24      | done   |
+| LED shop lights (three: `garage.shop.1-3`)                                                                         | light     | 24      | done   |
+| Switches at the hall door (GA-S-A: shop lights, coach lights) and the laundry door (GA-S-B); GFCI outlets GA-O-A-C | S / O     | 24/25   | done   |
+| Door to the hall, door to the laundry                                                                              | door      |         | done   |
 
 ### Laundry (`laundry`)
 
-| Item                                          | Kind      | Breaker  | Status  |
-| --------------------------------------------- | --------- | -------- | ------- |
-| Washer (front-load)                           | appliance | 22       | planned |
-| Dryer (electric, 240 V) with its vent         | appliance | 14+16    | planned |
-| Utility sink, upper cabinets, shelf           | built-in  |          | planned |
-| Ceiling light                                 | light     | 24       | planned |
-| Switch; washer outlet; dryer 240 V receptacle | S / O     | 22/14+16 | planned |
-| Leak sensor by the washer                     | sensor    |          | planned |
-| Door to the back yard                         | door      |          | done    |
+| Item                                                                                                      | Kind      | Breaker  | Status |
+| --------------------------------------------------------------------------------------------------------- | --------- | -------- | ------ |
+| Washer (front-load), `Washer`                                                                             | appliance | 22       | done   |
+| Dryer (electric, 240 V), `Dryer`, its vent duct up to the roof                                            | appliance | 14+16    | done   |
+| Utility sink with faucet, wall cabinets, a shelf                                                          | built-in  |          | done   |
+| Ceiling light (`laundry.ceiling`, deliberately unmapped)                                                  | light     | 24       | done   |
+| Switches LA-S-A (light), LA-S-B (back flood light); LA-O-A washer, LA-O-B dryer 240 V, LA-O-C by the sink | S / O     | 22/14+16 | done   |
+| Leak sensor by the washer (a device, `demo-laundry-leak`)                                                 | sensor    |          | done   |
+| Door to the back yard                                                                                     | door      |          | done   |
 
 ### Primary bedroom (`bedroom_1`), closet (`primary_closet`), bath (`primary_bath`)
 
@@ -321,33 +337,35 @@ devices. "Breaker" ties each electrical item to the schedule.
 
 ### Outside
 
-| Item                                                                  | Kind  | Breaker | Status  |
-| --------------------------------------------------------------------- | ----- | ------- | ------- |
-| Driveway to the garage, front walk, sidewalk, mailbox                 | site  |         | planned |
-| Heat pump outdoor unit on a pad (north or west side), disconnect box  | hvac  | 2+4     | planned |
-| Utility meter on the garage's east wall                               | elec  |         | planned |
-| Porch lantern; coach lights each side of the garage door; flood light | light | 25      | planned |
-| Terrace wall lights, pergola                                          | light | 25      | exists  |
-| Weatherproof outlets front and back (GFCI)                            | O     | 25      | planned |
-| Pond and pump (smart plug), irrigation controller                     | site  | 25/27   | exists  |
-| Hose bibs                                                             | plumb |         | planned |
+| Item                                                                                       | Kind  | Breaker | Status |
+| ------------------------------------------------------------------------------------------ | ----- | ------- | ------ |
+| Driveway with an apron to the street, front walk, sidewalk, street, mailbox                | site  |         | done   |
+| Heat pump outdoor unit on a pad behind the block's north-east corner, line set, disconnect | hvac  | 2+4     | done   |
+| Utility meter on the garage's east wall, conduit down to the underground service           | elec  |         | done   |
+| Porch lantern; coach lights each side of the garage door; flood light (`exterior.flood`)   | light | 25      | done   |
+| Terrace wall lights, pergola                                                               | light | 25      | exists |
+| Weatherproof outlets front (EX-O-A) and back (EX-O-B, the pond pump's plug)                | O     | 25      | done   |
+| Pond and pump (smart plug), irrigation controller                                          | site  | 25/27   | exists |
+| Hose bibs front and back                                                                   | plumb |         | done   |
+| Rooftop solar: twelve panels on the main roof's south slope (`Roof_solar`)                 | elec  | 28+30   | done   |
 
 ## Equipment pins (registry)
 
-| Pin id                                                                                                    | What                                        | Where        | Status  |
-| --------------------------------------------------------------------------------------------------------- | ------------------------------------------- | ------------ | ------- |
-| `elec.panel`                                                                                              | Main panel, with the full schedule in specs | garage       | planned |
-| `elec.energy-monitor`                                                                                     | Emporia Vue 2-style monitor (16 CTs)        | garage       | planned |
-| `elec.meter`                                                                                              | Utility meter                               | outside      | planned |
-| `elec.ev-charger`                                                                                         | EV charger                                  | garage       | planned |
-| `elec.battery`                                                                                            | Home battery and inverter                   | garage       | planned |
-| `hvac.air-handler`                                                                                        | Air handler                                 | hall closet  | exists  |
-| `hvac.condenser`                                                                                          | Heat pump outdoor unit                      | outside      | planned |
-| `hvac.thermostat`                                                                                         | Thermostat                                  | hall         | exists  |
-| `plumb.water-heater`                                                                                      | Water heater                                | garage       | done    |
-| `plumb.stopcock`                                                                                          | Main water shut-off                         | garage       | done    |
-| `net.router`                                                                                              | Router                                      | study        | exists  |
-| `net.access-point`                                                                                        | Wi-Fi access point                          | landing      | exists  |
-| `appliance.fridge`                                                                                        | Refrigerator                                | kitchen      | exists  |
-| `appliance.range`, `appliance.dishwasher`, `appliance.washer`, `appliance.dryer`, `appliance.garage-door` | major appliances                            |              | planned |
-| `safety.smoke.*`, `safety.co.*`                                                                           | smoke and CO alarms                         | every storey | planned |
+| Pin id                                                         | What                                        | Where        | Status  |
+| -------------------------------------------------------------- | ------------------------------------------- | ------------ | ------- |
+| `elec.panel`                                                   | Main panel, with the full schedule in specs | garage       | done    |
+| `elec.energy-monitor`                                          | Emporia Vue 2-style monitor (16 CTs)        | garage       | done    |
+| `elec.meter`                                                   | Utility meter                               | outside      | done    |
+| `elec.ev-charger`                                              | EV charger                                  | garage       | done    |
+| `elec.battery`, `elec.inverter`                                | Home battery, PV inverter                   | garage       | done    |
+| `hvac.air-handler`                                             | Air handler                                 | hall closet  | exists  |
+| `hvac.condenser`                                               | Heat pump outdoor unit                      | outside      | done    |
+| `hvac.thermostat`                                              | Thermostat                                  | hall         | exists  |
+| `plumb.water-heater`                                           | Water heater                                | garage       | done    |
+| `plumb.stopcock`                                               | Main water shut-off                         | garage       | done    |
+| `net.router`                                                   | Router                                      | study        | exists  |
+| `net.access-point`                                             | Wi-Fi access point                          | landing      | exists  |
+| `appliance.fridge`                                             | Refrigerator                                | kitchen      | exists  |
+| `appliance.range`, `appliance.dishwasher`                      | major appliances                            | kitchen      | planned |
+| `appliance.washer`, `appliance.dryer`, `appliance.garage-door` | major appliances                            | garage wing  | done    |
+| `safety.smoke.*`, `safety.co.*`                                | smoke and CO alarms                         | every storey | planned |

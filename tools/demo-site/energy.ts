@@ -1,27 +1,22 @@
-import { SCHEDULE, PANEL } from './panel.ts';
+import { SCHEDULE, PANEL, breakerText, type Circuit } from './panel.ts';
 import { onCircuit } from './areas/index.ts';
 
 // ------------------------------------------------------------------ the energy plugin's map (docs/plugins/energy.md)
-// The grid feed, the main panel and a meter per circuit of the panel schedule (panel.ts; 240 V ones on two legs), a
-// smart plug and the pond pump's switch below their circuits (so there is an Other), PV and a battery. Each circuit
-// feeds what the areas put on its breaker (onCircuit: registry pins, wall plates, fixtures, model nodes) and the rooms
-// those are in. The sensors are invented: ?ha=mock makes up their values.
-const SRC = 'tools/make-demo-site.ts';
+// The house as a 16-channel circuit monitor (an Emporia Vue 2 stand-in, docs/demo-house.md#electrical-service) reports
+// it to Home Assistant: the grid (the utility meter) → the main panel, measured by the monitor's two mains clamps as
+// legs A and B, with the monitor's Balance as its Other → a meter per clamped circuit of the panel schedule (panel.ts),
+// each feeding whatever the areas put on its breaker (onCircuit: registry pins, model nodes, wall plates, fixtures)
+// and the rooms those are in; a smart plug and the pond pump's switch below their circuits; solar and the battery as
+// their own roots. The sensors are named as ESPHome names them and are invented: ?ha=mock makes up their values from
+// each meter's label (src/plugins/energy/mock.ts).
+//
+// Circuits without a clamp are left out of the map. A meter needs power of its own or children (the validator
+// rejects one with neither), and the monitor knows nothing about those circuits except that they are in its Balance:
+// so they show as the main panel's Other, the way the monitor's own app shows them, rather than as rows that would
+// always read "no data" (grey in energy mode, and the Top consumers list padded with blanks).
+const SRC = 'tools/make-demo-site.ts (panel schedule, monitor clamps)';
 
-/** rooms a circuit feeds though nothing on it is in the model yet */
-const MORE_ROOMS: Record<string, string[]> = {
-  'circuit.living_outlets': ['living_room', 'hall'],
-  'circuit.range': ['kitchen'],
-  'circuit.dishwasher': ['kitchen'],
-  'circuit.microwave': ['kitchen'],
-  'circuit.study': ['study'],
-  'circuit.ev_charger': ['garage'],
-  'circuit.garage': ['garage'],
-  'circuit.washer': ['laundry'],
-  'circuit.bath_outlets': ['primary_bath', 'hall_bath', 'powder_room'],
-  'circuit.bedrooms': ['bedroom_2', 'bedroom_3', 'hall_bath'],
-  'circuit.primary_suite': ['bedroom_1', 'primary_closet', 'primary_bath'],
-};
+const sensor = (c: Circuit) => `vue2_${c.id.replace(/^circuit\./, '').replace(/\W/g, '_')}`;
 
 /** meters below a circuit */
 const CHILDREN: Record<string, Record<string, unknown>[]> = {
@@ -33,7 +28,7 @@ const CHILDREN: Record<string, Record<string, unknown>[]> = {
       energy: { today: 'sensor.desk_plug_energy_today' },
       feeds: [{ node: 'Furn_desk' }],
       conf: 'high',
-      src: SRC,
+      src: 'the plug',
     },
   ],
   'circuit.outside': [
@@ -43,52 +38,58 @@ const CHILDREN: Record<string, Record<string, unknown>[]> = {
       power: 'sensor.pond_pump_power',
       feeds: [{ node: 'Pond' }],
       conf: 'high',
-      src: SRC,
+      src: 'the pump plug',
     },
   ],
 };
 
-/** what the map isn't sure of yet */
+/** what the map isn't sure of */
 const QUESTIONS: Record<string, string> = {
-  'circuit.dryer': 'The laundry has no dryer in the model yet: where is it, and is 14+16 really its breaker?',
+  'circuit.outside':
+    "The coach lights by the garage door switch from the garage: are they on 25 with the other outside lights, or on the garage's 24? A breaker trip test would tell.",
 };
 
 type Feed = { registry?: string; plate?: string; fixture?: string; node?: string; room?: string };
 
-function circuitMeter(c: (typeof SCHEDULE)[number]) {
+function circuitMeter(c: Circuit) {
   const on = onCircuit(c.id);
   const rooms = [
     ...new Set(
       // (not switch plates: a switch on this circuit may be in another room than what it switches)
       [...on.pins, ...on.plates.filter((p) => p.kind === 'outlet'), ...on.fixtures]
         .map((x) => x.room)
-        .concat(MORE_ROOMS[c.id] ?? [])
+        .concat(c.rooms ?? [])
         .filter((r) => r !== 'exterior'),
     ),
   ];
+  // the first feed is where the meter's rows fly to: the equipment, the appliances' nodes, then the outlets, the
+  // lights, and last the switches (a switch on this circuit may be in another room than what it switches)
   const feeds: Feed[] = [
     ...on.pins.map((p) => ({ registry: p.id })),
-    ...on.plates.map((p) => ({ plate: p.id })),
-    ...on.fixtures.map((f) => ({ fixture: f.id })),
     ...on.nodes.map((n) => ({ node: n })),
+    ...on.plates.filter((p) => p.kind === 'outlet').map((p) => ({ plate: p.id })),
+    ...on.fixtures.map((f) => ({ fixture: f.id })),
+    ...on.plates.filter((p) => p.kind !== 'outlet').map((p) => ({ plate: p.id })),
     ...rooms.map((r) => ({ room: r })),
   ];
-  const two = Array.isArray(c.breaker);
-  const sensor = c.id.replace(/^circuit\./, '').replace(/\W/g, '_');
+  const s = sensor(c);
   const question = QUESTIONS[c.id];
   return {
     id: c.id,
     label: c.label,
-    ...(two
-      ? { power: [`sensor.${sensor}_l1_power`, `sensor.${sensor}_l2_power`], legs: ['L1', 'L2'], volts: 240 }
-      : { power: `sensor.${sensor}_power` }),
-    ...(question ? {} : { energy: { today: `sensor.${sensor}_energy_today` } }),
+    power: `sensor.${s}_power`,
+    energy: { today: `sensor.${s}_energy_today` },
     panel: PANEL.name,
-    breaker: c.breaker,
+    breaker: breakerText(c),
+    volts: c.volts,
     ...(feeds.length ? { feeds } : {}),
     conf: question ? 'low' : 'high',
     src: SRC,
     ...(question ? { question } : {}),
+    note:
+      `CT ${c.ct}` +
+      (c.volts === 240 ? ' on one leg (a 240 V load: the monitor doubles it)' : '') +
+      `; ${c.amps} A breaker${c.protection ? `, ${c.protection === 'dual' ? 'AFCI/GFCI' : c.protection}` : ''}`,
     ...(CHILDREN[c.id] ? { children: CHILDREN[c.id] } : {}),
   };
 }
@@ -103,22 +104,34 @@ export function energyMap() {
         id: 'grid',
         label: 'Grid',
         kind: 'load',
-        power: 'sensor.grid_power',
+        // no power of its own: the panel's mains clamps are the house's feed, so the grid is their sum
+        feeds: [{ registry: 'elec.meter' }, { node: 'Utility_meter' }],
         conf: 'high',
         src: SRC,
         children: [
           {
             id: 'panel.main',
             label: PANEL.name,
-            power: ['sensor.main_panel_l1_power', 'sensor.main_panel_l2_power'],
-            legs: ['L1', 'L2'],
-            remainder: 'sensor.main_panel_balance_power',
-            energy: { today: 'sensor.main_panel_energy_today', month: 'sensor.main_panel_energy_month' },
+            power: ['sensor.vue2_phase_a_power', 'sensor.vue2_phase_b_power'],
+            legs: ['A', 'B'],
+            remainder: 'sensor.vue2_balance_power',
+            energy: { today: 'sensor.vue2_total_energy_today', month: 'sensor.vue2_total_energy_month' },
             volts: 240,
-            feeds: [{ registry: 'elec.panel' }],
+            feeds: [
+              { registry: 'elec.panel' },
+              { node: 'Panel_main' },
+              { registry: 'elec.energy-monitor' },
+              { node: 'Energy_monitor' },
+            ],
             conf: 'high',
             src: SRC,
-            children: SCHEDULE.filter((c) => !c.source).map(circuitMeter),
+            note:
+              "The monitor's two 200 A mains clamps (phases A and B). Its Balance (the Other) is the mains less the " +
+              '16 circuit clamps: the circuits without one (the microwave, the washer, the bathroom outlets, the ' +
+              'alarms, the irrigation and doorbell, the monitor itself) and anything a clamp misses. The solar ' +
+              "back-feeds the panel, so the monitor's settings add the inverter's output back: this is what the " +
+              'house uses, not what it draws from the grid.',
+            children: SCHEDULE.filter((c) => !c.source && c.ct).map(circuitMeter),
           },
         ],
       },
@@ -128,16 +141,21 @@ export function energyMap() {
         kind: 'source',
         power: 'sensor.solar_power',
         energy: { today: 'sensor.solar_energy_today', month: 'sensor.solar_energy_month' },
+        panel: PANEL.name,
+        breaker: '28+30',
+        volts: 240,
+        feeds: [{ registry: 'elec.inverter' }, { node: 'PV_inverter' }, { node: 'Roof_solar' }],
         conf: 'high',
-        src: SRC,
+        src: "the inverter's own integration",
       },
       {
         id: 'battery',
         label: 'Battery',
         kind: 'storage',
         power: 'sensor.battery_power',
+        feeds: [{ registry: 'elec.battery' }, { node: 'Home_battery' }],
         conf: 'high',
-        src: SRC,
+        src: "the battery's own integration",
       },
     ],
   };

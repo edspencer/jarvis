@@ -73,6 +73,36 @@
     "group": "fixture.primary_bath",
     "switch_is_light": true
   },
+  "garage.shop.1": {
+    "entity_id": "switch.garage_lights",
+    "conf": "high",
+    "group": "fixture.garage"
+  },
+  "garage.shop.2": {
+    "entity_id": "switch.garage_lights",
+    "conf": "high",
+    "group": "fixture.garage"
+  },
+  "garage.shop.3": {
+    "entity_id": "switch.garage_lights",
+    "conf": "high",
+    "group": "fixture.garage"
+  },
+  "laundry.ceiling": {
+    "entity_id": null,
+    "conf": "low",
+    "group": "fixture.laundry"
+  },
+  "garage.coach.1": {
+    "entity_id": "light.coach_lights",
+    "conf": "high",
+    "group": "fixture.coach"
+  },
+  "garage.coach.2": {
+    "entity_id": "light.coach_lights",
+    "conf": "high",
+    "group": "fixture.coach"
+  },
   "porch.lantern": {
     "entity_id": "light.porch",
     "conf": "high",
@@ -87,5 +117,10 @@
     "entity_id": "light.terrace_wall_lights",
     "conf": "high",
     "group": "fixture.terrace"
+  },
+  "exterior.flood": {
+    "entity_id": null,
+    "conf": "low",
+    "group": "fixture.flood"
   }
 }
