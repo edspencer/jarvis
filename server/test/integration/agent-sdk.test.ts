@@ -121,9 +121,14 @@ function agent(
   });
   const turn = async (text: string) => {
     const events: AgentEvent[] = [];
-    await a.run(text, { turnId: 't', clientId: 'c', surface: 'screen', text, viewer: true }, (e) => events.push(e), {
-      call: async () => ({ text: 'ok' }),
-    });
+    await a.run(
+      text,
+      { turnId: 't', clientId: 'c', user: 'u', surface: 'screen', text, viewer: true },
+      (e) => events.push(e),
+      {
+        call: async () => ({ text: 'ok' }),
+      },
+    );
     return events;
   };
   return { a, fq, dataDir, turn };
@@ -177,7 +182,7 @@ describe('sdk agent', () => {
     const o = on.fq.calls[0].options;
     const ask = (url: string) => o.canUseTool!('WebFetch', { url }, { signal: new AbortController().signal } as never);
     expect(await ask('https://example.org/manual')).toMatchObject({ behavior: 'allow' });
-    for (const url of ['https://ha.example.org/api/', 'http://192.168.1.10:8123/', 'http://homeassistant.local/'])
+    for (const url of ['https://ha.example.org/api/', 'http://10.20.30.40:8123/', 'http://homeassistant.local/'])
       expect(await ask(url)).toMatchObject({ behavior: 'deny' });
   });
 

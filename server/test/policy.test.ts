@@ -292,6 +292,15 @@ describe('tiers', () => {
     expect(ev({ entity_ids: [...lights.slice(0, 9), 'lock.front_door'], service: 'turn_off' }).tier).toBe('deny');
   });
 
+  it('scenes: named harmless ones are allowed, any other scene asks first (a scene can set anything)', () => {
+    expect(ev({ entity_ids: ['scene.evening'], service: 'turn_on' }).tier).toBe('allow');
+    expect(ev({ entity_ids: ['scene.away'], service: 'turn_on' })).toMatchObject({
+      tier: 'confirm',
+      reason: "A scene can set anything (locks, covers, the alarm); this one isn't on the harmless list",
+    });
+    expect(ev({ entity_ids: ['scene.evening', 'scene.away'], service: 'turn_on' }).tier).toBe('confirm');
+  });
+
   it('risk comes from the rule', () => {
     expect(ev({ entity_ids: ['cover.garage_door'], service: 'close_cover' }).risk).toBe('high');
     expect(ev({ entity_ids: ['lock.front_door'], service: 'lock' }).risk).toBe('normal');

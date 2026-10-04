@@ -1,7 +1,7 @@
 // Talking: record one utterance with the microphone (MediaRecorder; echo cancellation on, so open speakers don't feed
-// the assistant its own voice), then POST it to the server's /transcribe and get { text } back. The whole utterance is
-// recorded and sent at once (commands are a few seconds; no streaming STT). A level meter (Web Audio) drives the
-// panel's bar and, for click-to-talk, stops after a second of quiet.
+// the assistant its own voice), then POST it to the server's /transcribe with the socket's ticket and get { text }
+// back. The whole utterance is recorded and sent at once (commands are a few seconds; no streaming STT). A level
+// meter (Web Audio) drives the panel's bar and, for click-to-talk, stops after a second of quiet.
 import type { TranscribeReply } from '../../../server/src/core/protocol.ts';
 
 /** the recording formats tried, in order: Opus in WebM (Chrome, Firefox), Opus in Ogg, then MP4/AAC (Safari) */
@@ -148,11 +148,24 @@ export async function recordIfWanted(
   return null;
 }
 
-/** POST the audio to <server>/transcribe (multipart `file`) and return the text */
-export async function transcribe(url: string, blob: Blob, mime: string, signal?: AbortSignal): Promise<string> {
+/** POST the audio to <server>/transcribe (multipart `file`, the connection's ticket as the bearer) and return the
+ * text */
+export async function transcribe(
+  url: string,
+  blob: Blob,
+  mime: string,
+  ticket: string | null,
+  signal?: AbortSignal,
+): Promise<string> {
   const form = new FormData();
   form.append('file', blob, fileName(mime));
-  const r = await fetch(url, { method: 'POST', body: form, signal, credentials: 'same-origin' });
+  const r = await fetch(url, {
+    method: 'POST',
+    body: form,
+    signal,
+    credentials: 'same-origin',
+    headers: ticket ? { authorization: `Bearer ${ticket}` } : {},
+  });
   if (!r.ok) {
     let why = `HTTP ${r.status}`;
     try {

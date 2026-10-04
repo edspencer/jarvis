@@ -24,6 +24,7 @@
     "start": "node src/main.ts",
     "dev": "node --watch src/main.ts",
     "typecheck": "tsc -p .",
-    "test": "vitest run --root . test"
+    "test": "vitest run --root . test",
+    "new-client-secret": "node tools/new-client-secret.ts"
   }
 }

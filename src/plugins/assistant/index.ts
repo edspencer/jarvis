@@ -4,19 +4,27 @@
 // commands the agent sends (fly to a subject, highlight, toggle a layer). The agent, its tools and the Home Assistant
 // policy live on the assistant server (server/); this plugin acts on nothing itself.
 //
-// The server is the site's plugins.assistant.server: one WebSocket (<server>/ws, protocol in server/src/core/
-// protocol.ts) and POST <server>/transcribe for recorded speech. With no server reachable the plugin stays quiet: the
-// status item says "Assistant offline" and the socket retries with backoff; the rail button stays and the panel says
-// why.
+// The server is the site's plugins.assistant.server (no section, no plugin: nothing shows and nothing connects): one
+// WebSocket (<server>/ws, protocol in server/src/core/protocol.ts) and POST <server>/transcribe for recorded speech.
+// With no server reachable the plugin stays quiet: the status item says "Assistant offline" and the socket retries
+// with backoff; the rail button stays and the panel says why.
+//
+// Login (docs/assistant.md, "Authentication"): the hello carries the person's Home Assistant access token, from the
+// home-assistant plugin's `home-assistant.auth` service, or an access code from the server's clients file, typed into
+// the panel once and kept with ctx.storage (this site, this browser; "Forget code" drops it). A typed code wins over
+// the Home Assistant login (it was entered for this assistant). Without either, or when the server refuses it (4401),
+// the panel asks for a code and nothing retries until one is entered. The welcome's ticket authorises /transcribe.
 //
 // ?assistant=mock swaps the socket for an in-page scripted server (mock.ts): same protocol, no network, no audio, no
-// model, deterministic. The talk button and M then simulate a transcription ("show me the air handler") instead of
-// recording. Only in that mode, window.twin.assistant has test hooks (say, transcript, state, views, spoken).
+// model, no credentials (it takes a made-up one), deterministic. The talk button and M then simulate a transcription
+// ("show me the air handler") instead of recording. Only in that mode, window.twin.assistant has test hooks (say,
+// transcript, state, views, spoken).
 import { definePlugin, type Disposable, type Subject } from '../../plugin-api';
 import type { AssistantConfig } from '../../site';
 import type {
   ClientMsg,
   ConfirmRequestMsg,
+  HelloAuth,
   HelloMsg,
   ServerMsg,
   ViewCommandMsg,
@@ -37,13 +45,29 @@ const CLICK_MS = 400;
 /** how long a highlight pulses when the command doesn't say */
 const HIGHLIGHT_S = 4;
 
+/** the home-assistant plugin's login service (src/plugins/home-assistant/types.ts, docs/plugins.md) */
+interface HomeAssistantAuth {
+  accessToken(): Promise<string | null>;
+}
+/** where the access code is kept (ctx.storage: per site, this browser) */
+const CODE_KEY = 'accessCode';
+
 export default definePlugin<AssistantConfig>({
   id: 'assistant',
   name: 'Assistant',
+  // the Home Assistant login is under way by then (the hello may carry it)
+  after: ['home-assistant'],
   async setup(ctx) {
     const mock = ctx.url.get('assistant') === 'mock';
     const urls = endpoints(ctx.config.server || '/assistant', document.baseURI);
     let tts = ctx.storage.get<boolean>('tts', ctx.config.tts !== false);
+    /** the access code typed into the panel, if any */
+    let code = ctx.storage.get<string | null>(CODE_KEY, null);
+    /** what the last hello carried (null: nothing to carry) */
+    let used: HelloAuth['type'] | null = null;
+    /** the welcome's (or the latest renewal's) /transcribe ticket, and whom the server took us for */
+    let ticket: string | null = null;
+    let user: string | null = null;
 
     // ------------------------------------------------------------------ state
     let ts: TranscriptState = initialTranscript();
@@ -86,14 +110,29 @@ export default definePlugin<AssistantConfig>({
         storey,
       };
     };
-    const hello = (): HelloMsg => ({
-      type: 'hello',
-      clientId: clientId(),
-      surface: 'screen',
-      capabilities: tts ? ['viewer', 'tts'] : ['viewer'],
-      view: viewContext(),
-      // TODO(§2.3): the person's Home Assistant token for identity, once the protocol carries it
-    });
+    /** the credential for the next hello: the mock's made-up one, a typed access code, or the HA login */
+    const credential = async (): Promise<HelloAuth | null> => {
+      if (mock) return { type: 'secret', secret: 'mock:mock' };
+      if (code) return { type: 'secret', secret: code };
+      const token = await ctx.services
+        .get<HomeAssistantAuth>('home-assistant.auth')
+        ?.accessToken()
+        .catch(() => null);
+      return token ? { type: 'ha', token } : null;
+    };
+    // (no surface: the server knows it from the credential)
+    const hello = async (): Promise<HelloMsg | null> => {
+      const auth = await credential();
+      used = auth?.type ?? null;
+      if (!auth) return null;
+      return {
+        type: 'hello',
+        clientId: clientId(),
+        auth,
+        capabilities: tts ? ['viewer', 'tts'] : ['viewer'],
+        view: viewContext(),
+      };
+    };
 
     // ------------------------------------------------------------------ the transport
     const transport: Transport & { server?: unknown } = mock
@@ -103,6 +142,8 @@ export default definePlugin<AssistantConfig>({
     transport.onState((s) => {
       conn = s;
       if (s !== 'connected') {
+        ticket = null;
+        user = null;
         // a turn in flight is lost with the connection; the server's welcome brings the transcript back
         ts = { ...ts, turn: null, status: 'idle' };
         for (const c of confirms.values()) c.close(false);
@@ -130,6 +171,7 @@ export default definePlugin<AssistantConfig>({
     ctx.own(() => clearInterval(tick));
 
     const talkBlocked = (): string | null => {
+      if (conn === 'unauthorised') return 'Sign in to the assistant first (the Assistant panel)';
       if (conn !== 'connected') return 'The assistant is offline';
       if (!mock && !ts.transcribe) return 'The assistant server has no transcription configured: type instead';
       return null;
@@ -149,6 +191,29 @@ export default definePlugin<AssistantConfig>({
       retryIn: () => transport.retryIn(),
       get tts() {
         return tts;
+      },
+      get auth() {
+        return {
+          refused: conn === 'unauthorised' && used !== null,
+          via: used,
+          hasCode: !!code && !mock,
+          user,
+        };
+      },
+      setCode: (c) => {
+        const v = c.trim();
+        if (!v) return;
+        code = v;
+        ctx.storage.set(CODE_KEY, v);
+        transport.retry();
+        changed();
+      },
+      forgetCode: () => {
+        code = null;
+        ctx.storage.remove(CODE_KEY);
+        // a session the code opened ends with it (the next try uses the Home Assistant login, if any)
+        transport.restart();
+        changed();
       },
       mock,
       get talkBlocked() {
@@ -200,7 +265,15 @@ export default definePlugin<AssistantConfig>({
       order: 45,
       key: { code: 'KeyM', shift: true, label: 'Assistant panel: the conversation, type or talk' },
       meta: () =>
-        conn === 'connected' ? (phase() === 'idle' ? null : `${phase()}…`) : conn === 'offline' ? 'offline' : null,
+        conn === 'connected'
+          ? phase() === 'idle'
+            ? null
+            : `${phase()}…`
+          : conn === 'offline'
+            ? 'offline'
+            : conn === 'unauthorised'
+              ? 'sign in'
+              : null,
       badge: () => (confirms.size ? confirms.size : null),
       badgeTone: () => (confirms.size ? 'warn' : null),
       render: (body) => {
@@ -235,6 +308,12 @@ export default definePlugin<AssistantConfig>({
             dot: 'off',
             text: 'Assistant offline',
             title: `${urls.ws} isn't reachable; retrying. Click for the panel.`,
+          };
+        if (conn === 'unauthorised')
+          return {
+            dot: 'warn',
+            text: 'Assistant · sign in',
+            title: 'The assistant needs a login: a Home Assistant login or an access code. Click for the panel.',
           };
         if (conn === 'connecting') return { dot: 'warn', text: 'Assistant · connecting…', title: urls.ws };
         return {
@@ -277,8 +356,14 @@ export default definePlugin<AssistantConfig>({
         case 'view.command':
           runView(m);
           break;
-        case 'status':
         case 'welcome':
+          ticket = m.ticket ?? null;
+          user = m.user?.name ?? null;
+          break;
+        case 'ticket':
+          ticket = m.ticket;
+          break;
+        case 'status':
         case 'tool':
         case 'error':
           break;
@@ -383,7 +468,7 @@ export default definePlugin<AssistantConfig>({
       transcribing?.abort();
       const ac = (transcribing = new AbortController());
       try {
-        const text = await transcribe(urls.transcribe, audio.blob, audio.mime, ac.signal);
+        const text = await transcribe(urls.transcribe, audio.blob, audio.mime, ticket, ac.signal);
         if (ac.signal.aborted) return;
         local = null;
         if (text) say(text, 'voice');

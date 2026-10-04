@@ -161,6 +161,7 @@ export function createTools(deps: ToolDeps): ToolSpec[] {
   const ctx = (env: ToolEnv): ActContext => ({
     surface: env.turn.surface,
     clientId: env.turn.clientId,
+    user: env.turn.user,
     utterance: env.turn.text,
   });
 

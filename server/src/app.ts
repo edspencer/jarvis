@@ -1,9 +1,12 @@
 // The assistant assembled from its configuration: policy, Home Assistant backend (the mock unless JARVIS_HA_MODE=live),
-// gate, site knowledge, tools, agent, hub and HTTP server. main.ts runs it; the integration tests build it in-process.
+// who may log in (the clients file, the authenticator), gate, site knowledge, tools, agent, hub and HTTP server.
+// main.ts runs it; the integration tests build it in-process.
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { createAudit } from './core/audit.ts';
+import { createAuthenticator, parseClientsFile, type Authenticator, type ClientsFile } from './core/auth.ts';
+import { createRateLimiter } from './core/limits.ts';
 import { boxed, type AssistantConfig } from './core/config.ts';
 import { createGate, type Gate } from './core/gate.ts';
 import { hostOf } from './core/guard.ts';
@@ -16,7 +19,7 @@ import type { Agent, HaBackend } from './core/types.ts';
 import { createSdkAgent } from './agent-sdk.ts';
 import { createScriptedAgent } from './agent-scripted.ts';
 import { createLiveHa } from './ha-live.ts';
-import { authenticate, createAssistantServer } from './server.ts';
+import { createAssistantServer } from './server.ts';
 
 /** The policy file, or EMPTY_POLICY (everything refused, with a loud warning) when the default file is missing.
  * Throws on an invalid file: better no assistant than one with the wrong rules. */
@@ -37,6 +40,18 @@ export function loadPolicy(
   return parsePolicy(parseYaml(readFileSync(config.policyPath, 'utf8')), config.policyPath);
 }
 
+/** The clients file (YAML or JSON), validated strictly; none configured: empty. Throws on any problem. */
+export function loadClients(path: string | null): ClientsFile {
+  if (!path) return { clients: [], haUsers: [] };
+  let raw: unknown;
+  try {
+    raw = parseYaml(readFileSync(path, 'utf8'));
+  } catch (e) {
+    throw new Error(`${path}: ${(e as Error).message}`, { cause: e });
+  }
+  return parseClientsFile(raw, path);
+}
+
 export interface Assistant {
   config: AssistantConfig;
   site: SiteKnowledge;
@@ -46,6 +61,7 @@ export interface Assistant {
   hub: Hub;
   server: ReturnType<typeof createAssistantServer>;
   policy: Policy;
+  auth: Authenticator;
   /** re-read the policy file; keeps the old one (and throws) if the new one is invalid */
   reloadPolicy(): Policy;
   close(): Promise<void>;
@@ -58,11 +74,20 @@ export interface AssistantOverrides {
   log?: (m: string) => void;
 }
 
+/** what the system prompt says the agent has: no web tools when they're off, no Read/Grep/Glob without knowledge */
+export const promptOptions = (config: Pick<AssistantConfig, 'knowledgeDir' | 'web'>) => ({
+  knowledge: !!config.knowledgeDir,
+  web: config.web,
+});
+
 export function createAssistant(config: AssistantConfig, o: AssistantOverrides = {}): Assistant {
   const log = o.log ?? ((m: string) => console.error(m));
   const policy = loadPolicy(config, log);
   const site = loadSite(config.siteDir);
   for (const w of site.warnings) log(`site: ${w}`);
+  const clients = loadClients(config.clientsPath);
+  if (config.auth.includes('secret') && !clients.clients.length)
+    log(`auth: ${config.clientsPath} has no clients, so no access code works`);
 
   let ha: HaBackend;
   if (o.ha) ha = o.ha;
@@ -71,6 +96,14 @@ export function createAssistant(config: AssistantConfig, o: AssistantOverrides =
     live.ready().catch((e) => log(`home assistant: ${(e as Error).message}`));
     ha = live;
   } else ha = createMockHa();
+
+  const auth = createAuthenticator({
+    kinds: config.auth,
+    clients,
+    haSurface: config.haSurface,
+    currentUser: (token) => ha.currentUser(token),
+    log,
+  });
 
   const audit = createAudit(join(config.dataDir, 'audit.jsonl'));
   let hub: Hub | null = null;
@@ -82,6 +115,7 @@ export function createAssistant(config: AssistantConfig, o: AssistantOverrides =
     audit: (r) =>
       audit.write({
         kind: 'gate',
+        user: r.user,
         client: r.clientId,
         surface: r.surface,
         utterance: r.utterance,
@@ -103,7 +137,7 @@ export function createAssistant(config: AssistantConfig, o: AssistantOverrides =
       ? createScriptedAgent()
       : createSdkAgent({
           tools,
-          systemPrompt: buildSystemPrompt(site, { knowledge: !!config.knowledgeDir }),
+          systemPrompt: buildSystemPrompt(site, promptOptions(config)),
           model: config.model,
           effort: config.effort,
           dataDir: config.dataDir,
@@ -120,7 +154,8 @@ export function createAssistant(config: AssistantConfig, o: AssistantOverrides =
     gate,
     info: { agent: agent.name, ha: ha.kind, transcribe: !!config.stt },
     formatTurn: (turn) => formatTurn(turn, site),
-    authenticate,
+    authenticate: (hello, conn) => auth.verify(hello.auth, conn.remote ?? 'unknown'),
+    sayLimit: createRateLimiter(config.rateSay),
     audit,
     turnTimeoutMs: config.turnTimeoutMs,
     log,
@@ -134,6 +169,7 @@ export function createAssistant(config: AssistantConfig, o: AssistantOverrides =
     origins: config.origins,
     stt: config.stt,
     hub,
+    transcribeLimit: createRateLimiter(config.rateTranscribe),
     health: () => ({ agent: agent.name, ha: ha.kind, transcribe: !!config.stt }),
     fetchImpl: o.fetchImpl,
     log,
@@ -148,6 +184,7 @@ export function createAssistant(config: AssistantConfig, o: AssistantOverrides =
     hub,
     server,
     policy,
+    auth,
     reloadPolicy() {
       const p = loadPolicy(config, log);
       gate.setPolicy(p);

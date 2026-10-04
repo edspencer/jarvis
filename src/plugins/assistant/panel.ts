@@ -3,6 +3,7 @@
 // change. The rolling transcript keeps to the bottom unless the person scrolled up (then a "New messages" button);
 // tool chips carry a status pill with a glyph and a word (never colour alone) and fly to their subject on click.
 // Keys typed in the text box never reach the viewer: the core ignores key events from inputs (src/core/input.ts).
+// Not logged in (no credential, or the server refused it): a sign-in box asks for an access code instead.
 import { LitElement, css, html, nothing, type PropertyValues } from 'lit';
 import { repeat } from 'lit/directives/repeat.js';
 import { unsafeSVG } from 'lit/directives/unsafe-svg.js';
@@ -22,6 +23,12 @@ export interface PanelModel {
   level(): number;
   retryIn(): number | null;
   tts: boolean;
+  /** the login: `refused` (the server said no to `via`) or not (nothing to send: conn 'unauthorised'), whether a typed
+   * access code is kept, and whom the server took us for */
+  auth: { refused: boolean; via: 'ha' | 'secret' | null; hasCode: boolean; user: string | null };
+  /** use this access code (kept in this browser) and connect */
+  setCode(code: string): void;
+  forgetCode(): void;
   mock: boolean;
   /** why talking isn't possible (no transcription, offline), or null */
   talkBlocked: string | null;
@@ -250,6 +257,31 @@ export class AssistantPanel extends LitElement {
       .offline span {
         flex: 1;
       }
+      .signin {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        padding: 9px;
+        border-radius: 6px;
+        font-size: 12.5px;
+        background: color-mix(in srgb, var(--jv-warn) 10%, transparent);
+        border: 1px solid color-mix(in srgb, var(--jv-warn) 35%, transparent);
+      }
+      .signin form {
+        display: flex;
+        gap: 6px;
+      }
+      .signin input {
+        flex: 1;
+        min-width: 0;
+        height: 28px;
+        font: inherit;
+        color: var(--jv-text);
+        background: var(--jv-surface-sunken);
+        border: 1px solid var(--jv-border);
+        border-radius: var(--jv-radius-ctl);
+        padding: 0 8px;
+      }
       .state {
         display: flex;
         align-items: center;
@@ -431,6 +463,38 @@ export class AssistantPanel extends LitElement {
     }
   }
 
+  private useCode(e: Event): void {
+    e.preventDefault();
+    const input = this.renderRoot.querySelector<HTMLInputElement>('.signin input');
+    const v = (input?.value || '').trim();
+    if (!v) return;
+    if (input) input.value = '';
+    this.model.setCode(v);
+  }
+
+  private signin() {
+    const a = this.model.auth;
+    const why = !a.refused
+      ? 'Sign in to use the assistant: log in to Home Assistant (its status item), or enter an access code from whoever runs the assistant.'
+      : a.via === 'secret'
+        ? "The assistant didn't accept this access code. Enter another, or forget it."
+        : "The assistant didn't accept your Home Assistant login. An access code works too.";
+    return html`<div class="signin" role="status" data-auth=${a.refused ? 'refused' : 'needed'}>
+      <span>${why}</span>
+      <form @submit=${(e: Event) => this.useCode(e)}>
+        <input
+          type="password"
+          aria-label="Access code"
+          placeholder="Access code (name:secret)"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button type="submit" class="btn sm">Use code</button>
+        ${a.via === 'ha' ? html`<button type="button" class="btn sm" @click=${() => this.model.retry()}>Retry</button>` : nothing}
+      </form>
+    </div>`;
+  }
+
   private entry(e: Entry) {
     switch (e.kind) {
       case 'user': {
@@ -476,7 +540,12 @@ export class AssistantPanel extends LitElement {
     const busy = m.phase === 'thinking' || m.phase === 'speaking';
     const listening = m.phase === 'listening';
     const online = m.conn === 'connected';
-    const ph = online ? PHASE[m.phase] : { text: m.conn === 'connecting' ? 'Connecting…' : 'Offline', tone: 'off' };
+    const ph = online
+      ? PHASE[m.phase]
+      : {
+          text: m.conn === 'connecting' ? 'Connecting…' : m.conn === 'unauthorised' ? 'Not signed in' : 'Offline',
+          tone: 'off',
+        };
     const retry = m.retryIn();
     return html`
       ${
@@ -488,7 +557,9 @@ export class AssistantPanel extends LitElement {
               >
               <button type="button" class="btn sm" @click=${() => m.retry()}>Retry</button>
             </div>`
-          : nothing
+          : m.conn === 'unauthorised'
+            ? this.signin()
+            : nothing
       }
       <div class="log" role="log" aria-live="polite" aria-label="Conversation" @scroll=${() => this.onScroll()}>
         ${
@@ -530,7 +601,7 @@ export class AssistantPanel extends LitElement {
       <form class="composer" @submit=${(e: Event) => this.submit(e)}>
         <input
           type="text"
-          placeholder=${online ? 'Ask or tell the house…' : 'The assistant is offline'}
+          placeholder=${online ? 'Ask or tell the house…' : m.conn === 'unauthorised' ? 'Sign in first' : 'The assistant is offline'}
           aria-label="Message"
           autocomplete="off"
           enterkeyhint="send"
@@ -591,7 +662,26 @@ export class AssistantPanel extends LitElement {
         >
           New conversation
         </button>
-        ${m.transcript.agent ? html`<span class="agent">${m.transcript.agent}</span>` : nothing}
+        ${
+          m.auth.hasCode
+            ? html`<button
+                type="button"
+                class="btn sm"
+                data-action="forget-code"
+                title="Forget the access code kept in this browser (and sign out)"
+                @click=${() => m.forgetCode()}
+              >
+                Forget code
+              </button>`
+            : nothing
+        }
+        ${
+          m.transcript.agent
+            ? html`<span class="agent"
+                >${m.transcript.agent}${online && m.auth.user ? html` · ${m.auth.user}` : nothing}</span
+              >`
+            : nothing
+        }
       </div>
       ${
         m.mock

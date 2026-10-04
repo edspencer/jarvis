@@ -13,6 +13,8 @@
 //   "turn off the kitchen lights"     a tool chip running → done and a streamed answer
 //   anything else                     a generic streamed answer
 // The subjects are the demo house's (examples/demo-site/registry_pins.json); on another site a fly fails cleanly.
+// It takes any hello with a credential (the plugin sends a made-up one in mock mode) and welcomes it as "mock", with a
+// ticket nothing checks.
 import type {
   ClientMsg,
   ConfirmResolvedMsg,
@@ -152,6 +154,15 @@ interface Run {
   cancels: Set<() => void>;
 }
 
+const WELCOME = {
+  status: 'idle',
+  agent: 'scripted (mock)',
+  transcribe: true,
+  ha: 'mock',
+  user: { name: 'mock' },
+  ticket: 'mock-ticket',
+} as const;
+
 /** milliseconds between streamed words, a tool's work, and how long a view command is waited for */
 export const MOCK_TIMING = { word: 22, think: 120, tool: 320, view: 5000, confirm: 30_000 };
 
@@ -161,7 +172,9 @@ export interface MockServer {
 }
 
 /** a Transport whose other end is the scripted server above, in this page */
-export function createMockTransport(opts: { hello(): HelloMsg }): Transport & { server: MockServer } {
+export function createMockTransport(opts: { hello(): Promise<HelloMsg | null> | HelloMsg | null }): Transport & {
+  server: MockServer;
+} {
   let state: ConnState = 'connecting';
   const msgFns: ((m: ServerMsg) => void)[] = [];
   const stateFns: ((s: ConnState) => void)[] = [];
@@ -347,14 +360,7 @@ export function createMockTransport(opts: { hello(): HelloMsg }): Transport & { 
     server.received.push(m);
     switch (m.type) {
       case 'hello':
-        emit({
-          type: 'welcome',
-          transcript: [],
-          status: 'idle',
-          agent: 'scripted (mock)',
-          transcribe: true,
-          ha: 'mock',
-        });
+        emit({ type: 'welcome', transcript: [], ...WELCOME });
         break;
       case 'say': {
         const text = m.text.trim();
@@ -385,21 +391,19 @@ export function createMockTransport(opts: { hello(): HelloMsg }): Transport & { 
           emit({
             type: 'welcome',
             transcript: [{ kind: 'divider', text: 'New conversation', at: Date.now() }],
-            status: 'idle',
-            agent: 'scripted (mock)',
-            transcribe: true,
-            ha: 'mock',
+            ...WELCOME,
           }),
         );
         break;
     }
   }
 
-  setTimeout(() => {
+  setTimeout(async () => {
+    const hello = await opts.hello();
     if (closed) return;
-    state = 'connected';
+    state = hello?.auth ? 'connected' : 'unauthorised';
     for (const f of stateFns) f(state);
-    receive(opts.hello());
+    if (hello?.auth) receive(hello);
   }, 0);
 
   return {
@@ -416,6 +420,7 @@ export function createMockTransport(opts: { hello(): HelloMsg }): Transport & { 
     },
     retryIn: () => null,
     retry() {},
+    restart() {},
     close() {
       closed = true;
       interrupt();

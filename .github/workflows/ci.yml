@@ -67,6 +67,29 @@ jobs:
             exit 1
           fi
 
+  # The assistant server (server/): its own package, so its own install. The typecheck and every test, integration
+  # included (real HTTP and WebSocket in-process, the scripted agent, the mock Home Assistant: no model, no network).
+  # The root jobs don't need it: they run only its dependency-free core's unit tests.
+  server:
+    name: Assistant server (typecheck, tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Tests
+        run: npm test
+
   # The browser tests in shards (one Playwright project each); each uploads a blob report, and the
   # E2E job below, the one a ruleset requires, passes only if every shard did and merges the reports into one HTML
   # report on failure.

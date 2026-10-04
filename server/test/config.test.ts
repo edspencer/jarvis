@@ -13,11 +13,16 @@ import {
 } from '../src/core/config.ts';
 
 const ROOT = resolve(import.meta.dirname, '../..');
+/** the one setting without a default */
+const A = { JARVIS_ASSISTANT_AUTH: 'ha' };
 const DEMO = join(ROOT, 'examples/demo-site');
+/** a clients file (its contents are app.ts's business; the config only checks it exists) */
+const CLIENTS = join(mkdtempSync(join(tmpdir(), 'jarvis-clients-')), 'clients.yaml');
+writeFileSync(CLIENTS, 'clients: []\n');
 
 describe('loadConfig', () => {
   it('has safe defaults: loopback, mock HA, the demo site, transcription off', () => {
-    const c = loadConfig({}, ROOT);
+    const c = loadConfig({ ...A }, ROOT);
     expect(c).toMatchObject({
       host: '127.0.0.1',
       port: 8787,
@@ -36,11 +41,54 @@ describe('loadConfig', () => {
       web: true,
       turnTimeoutMs: 180_000,
       stt: null,
+      auth: ['ha'],
+      clientsPath: null,
+      haSurface: 'screen',
+      rateSay: { burst: 6, perMinute: 20 },
+      rateTranscribe: { burst: 6, perMinute: 20 },
     });
   });
 
+  it('JARVIS_ASSISTANT_AUTH is required (there is no anonymous mode) and must name ha and/or secret', () => {
+    for (const v of [undefined, '', '  ', 'none', 'ha,none', 'oauth'])
+      expect(() => loadConfig(v === undefined ? {} : { JARVIS_ASSISTANT_AUTH: v }, ROOT)).toThrow(
+        v?.trim() ? /JARVIS_ASSISTANT_AUTH: ha and\/or secret, not/ : /JARVIS_ASSISTANT_AUTH is required/,
+      );
+    expect(
+      loadConfig({ JARVIS_ASSISTANT_AUTH: ' secret , ha,secret', JARVIS_ASSISTANT_CLIENTS: CLIENTS }, ROOT).auth,
+    ).toEqual(['secret', 'ha']);
+  });
+
+  it('secret needs the clients file; JARVIS_ASSISTANT_HA_SURFACE and the rate limits', () => {
+    expect(() => loadConfig({ JARVIS_ASSISTANT_AUTH: 'secret' }, ROOT)).toThrow(/needs JARVIS_ASSISTANT_CLIENTS/);
+    expect(() => loadConfig({ ...A, JARVIS_ASSISTANT_CLIENTS: '/nonexistent.yaml' }, ROOT)).toThrow(/no such file/);
+    const c = loadConfig(
+      {
+        JARVIS_ASSISTANT_AUTH: 'secret',
+        JARVIS_ASSISTANT_CLIENTS: CLIENTS,
+        JARVIS_ASSISTANT_HA_SURFACE: 'speaker',
+        JARVIS_ASSISTANT_RATE_SAY: '3/10',
+        JARVIS_ASSISTANT_RATE_TRANSCRIBE: '2/4',
+      },
+      ROOT,
+    );
+    expect(c).toMatchObject({
+      clientsPath: CLIENTS,
+      haSurface: 'speaker',
+      rateSay: { burst: 3, perMinute: 10 },
+      rateTranscribe: { burst: 2, perMinute: 4 },
+    });
+    expect(() => loadConfig({ ...A, JARVIS_ASSISTANT_HA_SURFACE: 'tv' }, ROOT)).toThrow(
+      /HA_SURFACE: screen or speaker/,
+    );
+    for (const r of ['6', '0/5', 'lots'])
+      expect(() => loadConfig({ ...A, JARVIS_ASSISTANT_RATE_SAY: r }, ROOT)).toThrow(
+        /JARVIS_ASSISTANT_RATE_SAY: burst\/perMinute/,
+      );
+  });
+
   it('finds the demo house from any working folder (cd server && npm start)', () => {
-    const c = loadConfig({}, join(ROOT, 'server'));
+    const c = loadConfig({ ...A }, join(ROOT, 'server'));
     expect(c.siteDir).toBe(DEMO);
     expect(c.policyPath).toBe(join(ROOT, 'server/policy.example.yaml'));
     expect(c.dataDir).toBe(join(ROOT, 'server/data'));
@@ -49,27 +97,30 @@ describe('loadConfig', () => {
   it("a site of one's own: <site>/assistant-policy.yaml (missing: the deny-everything default, not the example)", () => {
     const dir = mkdtempSync(join(tmpdir(), 'jarvis-site-'));
     writeFileSync(join(dir, 'site.json'), '{}');
-    expect(loadConfig({ JARVIS_SITE_DIR: dir }, ROOT).policyPath).toBe(join(dir, 'assistant-policy.yaml'));
-    expect(loadConfig({ JARVIS_SITE_DIR: DEMO }, ROOT).policyPath).toBe(join(DEMO, 'assistant-policy.yaml'));
+    expect(loadConfig({ ...A, JARVIS_SITE_DIR: dir }, ROOT).policyPath).toBe(join(dir, 'assistant-policy.yaml'));
+    expect(loadConfig({ ...A, JARVIS_SITE_DIR: DEMO }, ROOT).policyPath).toBe(join(DEMO, 'assistant-policy.yaml'));
   });
 
   it('off loopback, JARVIS_ASSISTANT_ORIGINS is required (DNS rebinding defeats the same-host check)', () => {
     for (const host of ['127.0.0.1', '127.1.2.3', '::1', '[::1]', 'localhost'])
-      expect(loadConfig({ JARVIS_ASSISTANT_HOST: host }, ROOT).origins).toEqual([]);
-    for (const host of ['0.0.0.0', '::', '192.168.1.20', 'jarvis.lan'])
-      expect(() => loadConfig({ JARVIS_ASSISTANT_HOST: host }, ROOT)).toThrow(
+      expect(loadConfig({ ...A, JARVIS_ASSISTANT_HOST: host }, ROOT).origins).toEqual([]);
+    for (const host of ['0.0.0.0', '::', '198.51.100.20', 'jarvis.lan'])
+      expect(() => loadConfig({ ...A, JARVIS_ASSISTANT_HOST: host }, ROOT)).toThrow(
         /JARVIS_ASSISTANT_ORIGINS: required when JARVIS_ASSISTANT_HOST is not loopback/,
       );
-    const c = loadConfig({ JARVIS_ASSISTANT_HOST: '0.0.0.0', JARVIS_ASSISTANT_ORIGINS: 'https://jarvis.lan' }, ROOT);
+    const c = loadConfig(
+      { ...A, JARVIS_ASSISTANT_HOST: '0.0.0.0', JARVIS_ASSISTANT_ORIGINS: 'https://jarvis.lan' },
+      ROOT,
+    );
     expect(c.origins).toEqual(['https://jarvis.lan']);
   });
 
   it('JARVIS_ASSISTANT_WEB and JARVIS_ASSISTANT_TURN_TIMEOUT_S', () => {
-    const c = loadConfig({ JARVIS_ASSISTANT_WEB: 'off', JARVIS_ASSISTANT_TURN_TIMEOUT_S: '45' }, ROOT);
+    const c = loadConfig({ ...A, JARVIS_ASSISTANT_WEB: 'off', JARVIS_ASSISTANT_TURN_TIMEOUT_S: '45' }, ROOT);
     expect(c).toMatchObject({ web: false, turnTimeoutMs: 45_000 });
-    expect(() => loadConfig({ JARVIS_ASSISTANT_WEB: 'no' }, ROOT)).toThrow(/JARVIS_ASSISTANT_WEB: on or off/);
+    expect(() => loadConfig({ ...A, JARVIS_ASSISTANT_WEB: 'no' }, ROOT)).toThrow(/JARVIS_ASSISTANT_WEB: on or off/);
     for (const t of ['0', '-5', 'soon'])
-      expect(() => loadConfig({ JARVIS_ASSISTANT_TURN_TIMEOUT_S: t }, ROOT)).toThrow(/TURN_TIMEOUT_S/);
+      expect(() => loadConfig({ ...A, JARVIS_ASSISTANT_TURN_TIMEOUT_S: t }, ROOT)).toThrow(/TURN_TIMEOUT_S/);
   });
 
   it('reads every variable', () => {
@@ -96,6 +147,8 @@ describe('loadConfig', () => {
         JARVIS_STT_MODEL: 'Systran/faster-whisper-small',
         JARVIS_STT_KEY: 'k',
         JARVIS_STT_LANGUAGE: 'en',
+        JARVIS_ASSISTANT_AUTH: 'ha,secret',
+        JARVIS_ASSISTANT_CLIENTS: CLIENTS,
       },
       ROOT,
     );
@@ -112,6 +165,8 @@ describe('loadConfig', () => {
       effort: 'medium',
       ha: { mode: 'live', url: 'https://ha.example.org', token: 'tok' },
       stt: { url: 'http://speaches:8000/v1', model: 'Systran/faster-whisper-small', key: 'k', language: 'en' },
+      auth: ['ha', 'secret'],
+      clientsPath: CLIENTS,
     });
   });
 
@@ -122,11 +177,11 @@ describe('loadConfig', () => {
       file,
       JSON.stringify({ JARVIS_ASSISTANT_PORT: 9100, JARVIS_ASSISTANT_ORIGINS: ['https://a.example'] }),
     );
-    const c = loadConfig({ JARVIS_ASSISTANT_CONFIG: file, JARVIS_ASSISTANT_PORT: '9200' }, ROOT);
+    const c = loadConfig({ ...A, JARVIS_ASSISTANT_CONFIG: file, JARVIS_ASSISTANT_PORT: '9200' }, ROOT);
     expect(c.port).toBe(9200);
     expect(c.origins).toEqual(['https://a.example']);
     writeFileSync(file, JSON.stringify({ JARVIS_NOPE: 1 }));
-    expect(() => loadConfig({ JARVIS_ASSISTANT_CONFIG: file }, ROOT)).toThrow(/unknown key JARVIS_NOPE/);
+    expect(() => loadConfig({ ...A, JARVIS_ASSISTANT_CONFIG: file }, ROOT)).toThrow(/unknown key JARVIS_NOPE/);
   });
 
   it('lists every problem at once', () => {
@@ -141,6 +196,7 @@ describe('loadConfig', () => {
           JARVIS_ASSISTANT_EFFORT: 'extreme',
           JARVIS_HA_MODE: 'live',
           JARVIS_STT_URL: 'speaches:8000',
+          JARVIS_ASSISTANT_AUTH: 'anyone',
         },
         ROOT,
       );
@@ -158,12 +214,13 @@ describe('loadConfig', () => {
       'JARVIS_HA_URL',
       'JARVIS_HA_TOKEN',
       'JARVIS_STT_URL',
+      'JARVIS_ASSISTANT_AUTH',
     ])
       expect(all).toContain(k);
   });
 
   it('an explicit policy path must exist', () => {
-    expect(() => loadConfig({ JARVIS_ASSISTANT_POLICY: '/nonexistent.yaml' }, ROOT)).toThrow(/no such file/);
+    expect(() => loadConfig({ ...A, JARVIS_ASSISTANT_POLICY: '/nonexistent.yaml' }, ROOT)).toThrow(/no such file/);
   });
 });
 

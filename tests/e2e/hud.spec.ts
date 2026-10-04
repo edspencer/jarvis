@@ -54,6 +54,13 @@ test('every rail button opens its panel in the dock; at most two stay open', asy
   await expect(page.locator('jv-dock section[data-panel]')).toHaveCount(0);
 });
 
+test('no plugins.assistant (the demo site): no assistant at all, nothing shown, nothing connecting', async () => {
+  test.skip(await twin<boolean>(page, `!!twin.site.plugins.assistant`), 'this site has an assistant');
+  expect(await twin<boolean>(page, `twin.host.running('assistant')`)).toBe(false);
+  await expect(page.locator('jv-rail button[data-panel="assistant"]')).toHaveCount(0);
+  await expect(page.locator('jv-status [data-item="assistant"]')).toHaveCount(0);
+});
+
 test('a click in the overview inspects the object under the mouse; the Object section has its details', async () => {
   await press('Tab');
   await nextFrame();

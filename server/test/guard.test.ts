@@ -59,7 +59,7 @@ describe('guard', () => {
       'http://10.0.0.1/',
       'http://172.16.5.4/',
       'http://172.31.255.255/',
-      'http://192.168.1.90/',
+      'http://10.0.0.5/',
       'http://100.64.0.1/',
       'http://100.127.255.255/',
       'http://169.254.169.254/latest/meta-data/',
@@ -71,11 +71,11 @@ describe('guard', () => {
       'http://0x7f.1/',
       'http://017700000001/',
       'http://127.1/',
-      'http://3232235777/',
+      'http://167772165/', // 10.0.0.5
       'http://[::1]/',
       'http://[::]/',
       'http://[::ffff:127.0.0.1]/',
-      'http://[::ffff:c0a8:15a]/',
+      'http://[::ffff:a00:5]/', // 10.0.0.5
       'http://[64:ff9b::a00:1]/',
       'http://[fc00::1]/',
       'http://[fd12:3456::1]/',
@@ -102,7 +102,7 @@ describe('guard', () => {
       allow: false,
       reason: 'WebFetch: the assistant may not fetch addresses on the local network',
     });
-    expect(allowed('WebFetch', { url: 'http://192.168.1.1/' })).toBe(false);
+    expect(allowed('WebFetch', { url: 'http://172.20.0.1/' })).toBe(false);
     expect(hostOf('https://ha.example.org:8123/x')).toBe('ha.example.org');
     expect(hostOf('http://[fd00::5]:8123')).toBe('fd00::5');
     expect(hostOf(undefined)).toBeNull();

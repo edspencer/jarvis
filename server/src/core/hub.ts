@@ -1,7 +1,13 @@
 // The session hub: every connected surface, one rolling conversation (design §9). Transport-agnostic: the server
 // wraps each WebSocket in a Conn and feeds the hub raw messages; tests use fake conns.
-//   - clients: `hello` first (id, surface, capabilities), answered by `welcome` with the recent transcript; every
-//     message is shape-checked here by hand and a bad one gets an `error`, never a crash;
+//   - clients: `hello` first (id, credential, capabilities). The credential is checked (authenticate, core/auth.ts)
+//     before anything else: a connection that sends anything but a good hello first gets an `error` and is closed
+//     (4401). The surface is the credential's, from the server's configuration. `welcome` brings the recent transcript
+//     and a /transcribe ticket (renewed every half ticket life). Every message is shape-checked here by hand and a bad
+//     one gets an `error`, never a crash;
+//   - owners: a client is its user and its client id together (`<user key>/<client id>`), so a client id says nothing
+//     without the login: confirmations, view commands and their answers belong to the owner;
+//   - rate limits: `say` per user (a token bucket, limits.ts);
 //   - turns: a FIFO queue, one at a time; the stream (turn.start, text.delta, tool, turn.end) goes to every client, so
 //     a second screen follows live; the transcript is bounded and in memory;
 //   - confirmations: the gate parks confirm-tier actions; the hub shows them to the client the turn came from only, and
@@ -12,9 +18,12 @@
 //   - a watchdog: a turn running longer than turnTimeoutMs is ended with an error and the agent reset, so the queue
 //     and `reset` can't wait forever on an agent that never finishes.
 import { randomUUID } from 'node:crypto';
+import { createTicketStore, TICKET_TTL_MS, type AuthResult, type AuthUser, type TicketInfo } from './auth.ts';
+import type { RateLimiter } from './limits.ts';
 import type {
   AssistantState,
   ClientMsg,
+  HelloAuth,
   HelloMsg,
   ServerMsg,
   Surface,
@@ -30,10 +39,13 @@ import { ToolInputError } from './tools.ts';
 /** one connection (a WebSocket, or a fake in tests) */
 export interface Conn {
   send(msg: ServerMsg): void;
-  close(): void;
+  /** close it, with a WebSocket close code (4401: not authorised) */
+  close(code?: number, reason?: string): void;
+  /** the peer's address, for the failed-login limit */
+  readonly remote?: string;
 }
 
-/** the part of the gate the hub uses */
+/** the part of the gate the hub uses (its `clientId` is the hub's owner key: user and client id) */
 export interface HubGate {
   reply(id: string, clientId: string, approved: boolean): { ok: true } | { ok: false; reason: string };
   spoken(clientId: string, text: string): boolean;
@@ -49,8 +61,12 @@ export interface HubOptions {
   info: { agent: string; ha: 'mock' | 'live'; transcribe: boolean };
   /** the prompt the agent gets for a turn (the time, surface and view go in here; knowledge.formatTurn) */
   formatTurn?: (turn: TurnInfo) => string;
-  /** may this hello join? null: yes; a string: the reason it may not (the conn is closed). v1 accepts everyone. */
-  authenticate?: (hello: HelloMsg, conn: Conn) => Promise<string | null> | string | null;
+  /** who is this hello? (core/auth.ts) Refused: the conn gets an error and is closed with the result's code. */
+  authenticate: (hello: HelloMsg, conn: Conn) => Promise<AuthResult> | AuthResult;
+  /** `say` messages per user (none: unlimited) */
+  sayLimit?: RateLimiter;
+  /** how long a /transcribe ticket lives (default 10 min); a fresh one is sent every half of it */
+  ticketTtlMs?: number;
   audit?: Audit;
   /** transcript entries kept (default 200) */
   transcriptLimit?: number;
@@ -82,11 +98,18 @@ export interface Hub {
   /** resolves when no turn runs or waits (tests, shutdown) */
   idle(): Promise<void>;
   clientCount(): number;
+  /** a /transcribe ticket's user, or null (unknown, expired, or its connection closed) */
+  ticket(ticket: unknown): TicketInfo | null;
   close(): Promise<void>;
 }
 
+/** a user's client: the key the gate, the views and the confirmations know it by */
+export const ownerKey = (user: AuthUser, clientId: string) => `${user.key}/${clientId}`;
+
 interface Client {
-  clientId: string;
+  /** ownerKey(user, the hello's clientId) */
+  owner: string;
+  user: AuthUser;
   surface: Surface;
   viewer: boolean;
   tts: boolean;
@@ -120,6 +143,13 @@ function viewCtx(v: unknown): ViewContext | undefined | string {
   return out;
 }
 
+function helloAuth(a: unknown): HelloAuth | null {
+  if (!isObj(a)) return null;
+  if (a.type === 'secret' && typeof a.secret === 'string' && a.secret) return { type: 'secret', secret: a.secret };
+  if (a.type === 'ha' && typeof a.token === 'string' && a.token) return { type: 'ha', token: a.token };
+  return null;
+}
+
 /** Check a client message's shape; returns the message or what's wrong with it. */
 export function parseClientMsg(data: unknown): ClientMsg | string {
   let m = data;
@@ -134,13 +164,15 @@ export function parseClientMsg(data: unknown): ClientMsg | string {
   switch (m.type) {
     case 'hello': {
       if (!isId(m.clientId)) return 'hello: clientId must be a string of 1-128 characters';
-      if (m.surface !== 'screen' && m.surface !== 'speaker') return "hello: surface must be 'screen' or 'speaker'";
+      // (a `surface` is ignored: it comes from the credential)
+      const auth = helloAuth(m.auth);
+      if (!auth) return "hello: auth is required: { type: 'secret', secret } or { type: 'ha', token }";
       const caps = m.capabilities ?? [];
       if (!Array.isArray(caps) || caps.some((c) => c !== 'viewer' && c !== 'tts'))
         return "hello: capabilities is a list of 'viewer' / 'tts'";
       const view = viewCtx(m.view);
       if (typeof view === 'string') return `hello: ${view}`;
-      return { type: 'hello', clientId: m.clientId, surface: m.surface, capabilities: caps, view };
+      return { type: 'hello', clientId: m.clientId, auth, capabilities: caps, view };
     }
     case 'say': {
       if (typeof m.text !== 'string' || !m.text.trim()) return 'say: text must be a non-empty string';
@@ -179,6 +211,10 @@ export function createHub(opts: HubOptions): Hub {
   const viewTimeout = opts.viewTimeoutMs ?? 5000;
   const turnTimeout = opts.turnTimeoutMs ?? 180_000;
   const toolsByName = new Map(opts.tools.map((t) => [t.name, t]));
+  const ticketTtl = opts.ticketTtlMs ?? TICKET_TTL_MS;
+  const tickets = createTicketStore({ ttlMs: ticketTtl, now });
+  /** each conn's ticket renewal */
+  const renewals = new Map<Conn, ReturnType<typeof setInterval>>();
 
   const clients = new Map<Conn, Client>();
   const chains = new Map<Conn, Promise<void>>();
@@ -208,8 +244,8 @@ export function createHub(opts: HubOptions): Hub {
   const broadcast = (m: ServerMsg) => {
     for (const c of clients.keys()) safeSend(c, m);
   };
-  const connsOf = (clientId: string) => [...clients].filter(([, cl]) => cl.clientId === clientId).map(([c]) => c);
-  const toClient = (clientId: string, m: ServerMsg) => connsOf(clientId).forEach((c) => safeSend(c, m));
+  const connsOf = (owner: string) => [...clients].filter(([, cl]) => cl.owner === owner).map(([c]) => c);
+  const toClient = (owner: string, m: ServerMsg) => connsOf(owner).forEach((c) => safeSend(c, m));
 
   const setState = (s: AssistantState, detail?: string) => {
     state = s;
@@ -244,20 +280,23 @@ export function createHub(opts: HubOptions): Hub {
     }
   };
 
-  const welcome = (): ServerMsg => ({
+  const welcome = (cl: Client, ticket: string): ServerMsg => ({
     type: 'welcome',
     transcript: transcript.slice(-welcomeLimit),
     status: state,
     agent: opts.info.agent,
     transcribe: opts.info.transcribe,
     ha: opts.info.ha,
+    user: { name: cl.user.name },
+    ticket,
   });
+  const issue = (conn: Conn, cl: Client) => tickets.issue(conn, { user: cl.user, owner: cl.owner });
 
   // -------------------------------------------------------------------------------- view commands
 
   function viewFor(turn: TurnInfo) {
     return (op: ViewOp, args: Record<string, unknown>): Promise<{ ok: boolean; detail?: string }> => {
-      const conn = [...clients].reverse().find(([, cl]) => cl.clientId === turn.clientId && cl.viewer)?.[0];
+      const conn = [...clients].reverse().find(([, cl]) => cl.owner === turn.clientId && cl.viewer)?.[0];
       if (!conn) return Promise.resolve({ ok: false, detail: 'no viewer attached' });
       const id = newId();
       return new Promise((resolve) => {
@@ -293,7 +332,14 @@ export function createHub(opts: HubOptions): Hub {
       async call(name, args) {
         const spec = toolsByName.get(name);
         const callId = newId();
-        const base = { client: info.clientId, surface: info.surface, utterance: info.text, tool: name, args };
+        const base = {
+          user: info.user,
+          client: info.clientId,
+          surface: info.surface,
+          utterance: info.text,
+          tool: name,
+          args,
+        };
         if (!spec) {
           opts.audit?.write({ kind: 'tool', ...base, decision: 'unknown tool' });
           return { text: `there is no tool called ${name}`, isError: true };
@@ -416,37 +462,26 @@ export function createHub(opts: HubOptions): Hub {
 
   async function handle(conn: Conn, data: unknown) {
     const msg = parseClientMsg(data);
-    if (typeof msg === 'string') return fail(conn, msg);
     const cl = clients.get(conn);
-    if (msg.type === 'hello') {
-      if (cl && cl.clientId !== msg.clientId) return fail(conn, 'hello: this connection already has a client id');
-      const why = opts.authenticate ? await opts.authenticate(msg, conn) : null;
-      if (gone.has(conn)) return; // it closed while we were deciding
-      if (why) {
-        fail(conn, why);
-        return conn.close();
+    if (!cl) {
+      // nothing but a good hello before a successful login: anything else is refused and the socket closed
+      if (typeof msg === 'string' || msg.type !== 'hello') {
+        fail(conn, typeof msg === 'string' ? msg : 'say hello first, with a credential');
+        opts.audit?.write({ kind: 'auth', remote: conn.remote, decision: 'refused', detail: 'no hello' });
+        return conn.close(4401, 'not authorised');
       }
-      clients.set(conn, {
-        clientId: msg.clientId,
-        surface: msg.surface,
-        viewer: msg.capabilities.includes('viewer'),
-        tts: msg.capabilities.includes('tts'),
-        view: msg.view,
-      });
-      safeSend(conn, welcome());
-      // another connection of the same client id (a second socket of that tab, a quick reconnect while the old socket
-      // is still open): show it the confirmations still waiting. A plain reload usually finds none: when a client's
-      // last connection closes, its confirmations are cancelled (fail-safe: nobody is left to answer them).
-      for (const p of gate.pending(msg.clientId)) safeSend(conn, confirmRequest(p));
-      return;
+      return hello(conn, msg);
     }
-    if (!cl) return fail(conn, 'say hello first');
+    if (typeof msg === 'string') return fail(conn, msg);
+    if (msg.type === 'hello') return fail(conn, 'hello: this connection has already said hello');
     switch (msg.type) {
       case 'say': {
+        if (opts.sayLimit && !opts.sayLimit.take(cl.user.key))
+          return fail(conn, 'slow down: too many requests; try again in a moment');
         if (msg.view) cl.view = msg.view;
         // a voice-only surface answers a pending confirmation by voice: the server matches the whole utterance against
         // a fixed list (the gate's); the model never sees it and nothing it says can do the same
-        if (cl.surface === 'speaker' && gate.pending(cl.clientId).length && gate.spoken(cl.clientId, msg.text)) {
+        if (cl.surface === 'speaker' && gate.pending(cl.owner).length && gate.spoken(cl.owner, msg.text)) {
           record({
             kind: 'user',
             turnId: `answer-${newId()}`,
@@ -463,7 +498,8 @@ export function createHub(opts: HubOptions): Hub {
           source: msg.source,
           info: {
             turnId: newId(),
-            clientId: cl.clientId,
+            clientId: cl.owner,
+            user: cl.user.name,
             surface: cl.surface,
             text: msg.text,
             view: msg.view ?? cl.view,
@@ -476,9 +512,9 @@ export function createHub(opts: HubOptions): Hub {
       case 'interrupt': {
         // this client's waiting turns go, the running one stops (whoever's it is: barge-in), and the confirmations of
         // both close: the interrupter's and those of the running turn's client
-        for (let i = queue.length - 1; i >= 0; i--) if (queue[i].info.clientId === cl.clientId) queue.splice(i, 1);
-        gate.cancel(cl.clientId);
-        if (current && current.info.clientId !== cl.clientId) gate.cancel(current.info.clientId);
+        for (let i = queue.length - 1; i >= 0; i--) if (queue[i].info.clientId === cl.owner) queue.splice(i, 1);
+        gate.cancel(cl.owner);
+        if (current && current.info.clientId !== cl.owner) gate.cancel(current.info.clientId);
         if (current) {
           current.interrupted = true;
           await agent.interrupt().catch((e) => log(`interrupt failed: ${(e as Error).message}`));
@@ -498,20 +534,57 @@ export function createHub(opts: HubOptions): Hub {
         persist();
         state = 'idle';
         // everyone gets the transcript again, with the divider (the protocol has no separate message for it)
-        for (const c of clients.keys()) safeSend(c, welcome());
+        for (const [c, x] of clients) safeSend(c, welcome(x, issue(c, x)));
         return;
       }
       case 'confirm.reply': {
-        const r = gate.reply(msg.id, cl.clientId, msg.approved);
+        // only the owner (this user, this client id) may answer: gate.reply checks it
+        const r = gate.reply(msg.id, cl.owner, msg.approved);
         if (!r.ok) fail(conn, `confirm.reply: ${r.reason}`);
         return;
       }
       case 'view.result': {
         const v = views.get(msg.id);
-        if (v && v.clientId === cl.clientId) v.resolve({ ok: msg.ok, detail: msg.detail });
+        if (v && v.clientId === cl.owner) v.resolve({ ok: msg.ok, detail: msg.detail });
         return; // unknown or someone else's: ignored
       }
     }
+  }
+
+  /** the first message: check the credential, then register the client and welcome it */
+  async function hello(conn: Conn, msg: HelloMsg) {
+    let r: AuthResult;
+    try {
+      r = await opts.authenticate(msg, conn);
+    } catch (e) {
+      log(`authenticate failed: ${(e as Error).message}`);
+      r = { ok: false, reason: 'not authorised', code: 4401 };
+    }
+    if (gone.has(conn)) return; // it closed while we were deciding
+    if (!r.ok) {
+      opts.audit?.write({ kind: 'auth', remote: conn.remote, decision: 'refused', detail: r.reason });
+      fail(conn, r.reason);
+      return conn.close(r.code, r.reason);
+    }
+    const cl: Client = {
+      owner: ownerKey(r.user, msg.clientId),
+      user: r.user,
+      surface: r.user.surface,
+      viewer: msg.capabilities.includes('viewer'),
+      tts: msg.capabilities.includes('tts'),
+      view: msg.view,
+    };
+    clients.set(conn, cl);
+    opts.audit?.write({ kind: 'auth', user: r.user.name, client: cl.owner, surface: cl.surface, decision: 'ok' });
+    safeSend(conn, welcome(cl, issue(conn, cl)));
+    // a fresh ticket every half ticket life, so a long session can still talk (the old one works until it expires)
+    const t = setInterval(() => safeSend(conn, { type: 'ticket', ticket: issue(conn, cl) }), ticketTtl / 2);
+    (t as { unref?: () => void }).unref?.();
+    renewals.set(conn, t);
+    // another connection of the same owner (a second socket of that tab, a quick reconnect while the old socket is
+    // still open): show it the confirmations still waiting. A plain reload usually finds none: when an owner's last
+    // connection closes, its confirmations are cancelled (fail-safe: nobody is left to answer them).
+    for (const p of gate.pending(cl.owner)) safeSend(conn, confirmRequest(p));
   }
 
   const confirmRequest = (p: PendingAction): ServerMsg => ({
@@ -543,10 +616,13 @@ export function createHub(opts: HubOptions): Hub {
       const cl = clients.get(conn);
       clients.delete(conn);
       chains.delete(conn);
+      tickets.revoke(conn);
+      clearInterval(renewals.get(conn));
+      renewals.delete(conn);
       if (!cl) return;
-      if (!connsOf(cl.clientId).length) {
-        gate.cancel(cl.clientId);
-        dropViews(cl.clientId);
+      if (!connsOf(cl.owner).length) {
+        gate.cancel(cl.owner);
+        dropViews(cl.owner);
       }
     },
 
@@ -573,6 +649,8 @@ export function createHub(opts: HubOptions): Hub {
 
     clientCount: () => clients.size,
 
+    ticket: (t) => tickets.check(t),
+
     async close() {
       closed = true;
       queue.length = 0;
@@ -584,7 +662,10 @@ export function createHub(opts: HubOptions): Hub {
         try {
           c.close();
         } catch {}
+        tickets.revoke(c);
       }
+      for (const t of renewals.values()) clearInterval(t);
+      renewals.clear();
       clients.clear();
     },
   };

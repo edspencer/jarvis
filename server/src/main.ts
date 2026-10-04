@@ -42,7 +42,7 @@ async function main() {
   log(
     `jarvis-assistant: http://${addr.address}:${addr.port}${config.base}/ws · agent ${a.agent.name} · ` +
       `HA ${a.ha.kind} · site ${a.site.name} · policy ${a.policy.source ?? config.policyPath} ` +
-      `(${a.policy.rules.length} rules) · transcribe ${config.stt ? 'on' : 'off'}`,
+      `(${a.policy.rules.length} rules) · transcribe ${config.stt ? 'on' : 'off'} · login ${config.auth.join(', ')}`,
   );
 
   process.on('SIGHUP', () => {

@@ -1,6 +1,7 @@
 // The contracts between the server's parts: the Home Assistant backend, the policy gate, the tools and the agent.
 // Everything under src/core is plain TypeScript with no npm dependencies (Node built-ins only), so the root project's
 // unit tests can run it without installing the server; the SDK, ws and yaml are used only outside core/.
+import type { HaIdentity } from './auth.ts';
 import type { Surface, ViewContext, ViewOp } from './protocol.ts';
 
 // ------------------------------------------------------------------------------------------------ Home Assistant
@@ -27,6 +28,9 @@ export interface HaBackend {
   history(entityId: string, from: Date, to: Date): Promise<HaHistoryPoint[]>;
   /** one service call; entity_id is always a list of entities in `domain` */
   callService(domain: string, service: string, data: { entity_id: string[] } & Record<string, unknown>): Promise<void>;
+  /** who a person's own access token belongs to (the `ha` login, core/auth.ts): null if HA refuses it; throws if HA
+   * can't be asked. Never the assistant's own connection or token. */
+  currentUser(token: string): Promise<HaIdentity | null>;
   close?(): void;
 }
 
@@ -35,8 +39,11 @@ export interface HaBackend {
 /** who and where a request comes from (the turn's) */
 export interface ActContext {
   surface: Surface;
-  /** the browser tab or satellite the turn came from (confirmations go back to it alone) */
+  /** the owner key of the tab or satellite the turn came from: its user and client id (confirmations go back to it
+   * alone, and only it may answer them) */
   clientId: string;
+  /** the authenticated user's name, for the audit log */
+  user?: string;
   /** what the person said, for the audit log */
   utterance?: string;
 }
@@ -83,7 +90,10 @@ export type ParamSpec =
 /** the turn a tool call belongs to */
 export interface TurnInfo {
   turnId: string;
+  /** the owner key: `<user key>/<client id>` (hub.ts), so another user can't act as this client */
   clientId: string;
+  /** who is talking (the authenticated user's name) */
+  user: string;
   surface: Surface;
   text: string;
   view?: ViewContext;

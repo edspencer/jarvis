@@ -108,6 +108,9 @@ WebSocket keeps the protocol text-only and lets the transcription endpoint be sw
   websocket, or `GET /api/` with the bearer token) and learns **who** is talking (HA user id and name, admin or not).
   No second user database; per-person memory and per-person policy come for free (§9). The token is used only to
   identify the user and is not stored.
+  v1 does this, and adds access codes for devices without a Home Assistant login (a wall tablet, a satellite bridge);
+  either way the surface comes from the server's configuration, not the client: see
+  [the assistant's authentication](../assistant.md#authentication).
 - The server itself acts on HA with **its own long-lived token for a dedicated, non-admin HA user** (e.g.
   "JARVIS assistant"), so every action shows up in HA's logbook under that user, and revoking it is one click.
 - The model credential lives only in the server's environment (§4).

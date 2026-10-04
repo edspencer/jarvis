@@ -7,6 +7,9 @@ import { isIPv4 } from 'node:net';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { AUTH_KINDS, type AuthKind } from './auth.ts';
+import { parseRate, type Rate } from './limits.ts';
+import type { Surface } from './protocol.ts';
 
 export type AgentKind = 'sdk' | 'scripted';
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -44,6 +47,15 @@ export interface AssistantConfig {
   turnTimeoutMs: number;
   /** null: transcription is off (POST /transcribe answers 503) */
   stt: SttConfig | null;
+  /** the credentials a hello may carry (JARVIS_ASSISTANT_AUTH, required: no anonymous mode) */
+  auth: AuthKind[];
+  /** the clients file (access-code hashes and per-HA-user surfaces); required with `secret` */
+  clientsPath: string | null;
+  /** the surface of a person logged in with their Home Assistant token (unless the clients file says otherwise) */
+  haSurface: Surface;
+  /** per user: `say` messages and POST /transcribe uploads */
+  rateSay: Rate;
+  rateTranscribe: Rate;
 }
 
 // TODO(open question 1: model default for voice): a fast model at low effort with on-demand escalation, or a stronger
@@ -85,7 +97,15 @@ export const CONFIG_KEYS = [
   'JARVIS_STT_MODEL',
   'JARVIS_STT_KEY',
   'JARVIS_STT_LANGUAGE',
+  'JARVIS_ASSISTANT_AUTH',
+  'JARVIS_ASSISTANT_CLIENTS',
+  'JARVIS_ASSISTANT_HA_SURFACE',
+  'JARVIS_ASSISTANT_RATE_SAY',
+  'JARVIS_ASSISTANT_RATE_TRANSCRIBE',
 ] as const;
+
+/** `say` and /transcribe per user: 6 at once, then 20 a minute */
+export const DEFAULT_RATE: Rate = { burst: 6, perMinute: 20 };
 
 export class ConfigError extends Error {
   readonly problems: string[];
@@ -223,6 +243,40 @@ export function loadConfig(env: Env = process.env, cwd: string = process.cwd()):
       }
     : null;
 
+  // who may talk: there is no anonymous mode
+  const authRaw = get(e, 'JARVIS_ASSISTANT_AUTH');
+  const auth: AuthKind[] = [];
+  if (!authRaw)
+    problems.push(
+      'JARVIS_ASSISTANT_AUTH is required: `ha` (people log in with their Home Assistant account), `secret` (access ' +
+        'codes from JARVIS_ASSISTANT_CLIENTS) or `ha,secret`. See docs/assistant.md, "Authentication"',
+    );
+  else
+    for (const k of authRaw.split(',').map((x) => x.trim())) {
+      if (!AUTH_KINDS.includes(k as AuthKind))
+        problems.push(`JARVIS_ASSISTANT_AUTH: ha and/or secret, not ${k || '""'}`);
+      else if (!auth.includes(k as AuthKind)) auth.push(k as AuthKind);
+    }
+  const clientsRaw = get(e, 'JARVIS_ASSISTANT_CLIENTS');
+  const clientsPath = clientsRaw ? resolve(cwd, clientsRaw) : null;
+  if (clientsPath && !existsSync(clientsPath)) problems.push(`JARVIS_ASSISTANT_CLIENTS: no such file: ${clientsPath}`);
+  if (auth.includes('secret') && !clientsRaw)
+    problems.push(
+      'JARVIS_ASSISTANT_AUTH=secret needs JARVIS_ASSISTANT_CLIENTS (the clients file with the access codes)',
+    );
+  const haSurface = (get(e, 'JARVIS_ASSISTANT_HA_SURFACE') ?? 'screen') as Surface;
+  if (haSurface !== 'screen' && haSurface !== 'speaker')
+    problems.push(`JARVIS_ASSISTANT_HA_SURFACE: screen or speaker, not ${haSurface}`);
+  const rate = (k: string) => {
+    const raw = get(e, k);
+    if (!raw) return DEFAULT_RATE;
+    const r = parseRate(raw);
+    if (!r) problems.push(`${k}: burst/perMinute, two whole numbers > 0 (e.g. 6/20), not ${raw}`);
+    return r ?? DEFAULT_RATE;
+  };
+  const rateSay = rate('JARVIS_ASSISTANT_RATE_SAY');
+  const rateTranscribe = rate('JARVIS_ASSISTANT_RATE_TRANSCRIBE');
+
   if (problems.length) throw new ConfigError(problems);
   return {
     host,
@@ -241,6 +295,11 @@ export function loadConfig(env: Env = process.env, cwd: string = process.cwd()):
     web: webRaw !== 'off',
     turnTimeoutMs: timeout * 1000,
     stt,
+    auth,
+    clientsPath,
+    haSurface,
+    rateSay,
+    rateTranscribe,
   };
 }
 

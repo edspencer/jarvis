@@ -1,11 +1,14 @@
 // The session hub with fake connections and a fake agent that calls the real tools, through the real gate, against the
-// mock Home Assistant and the example policy: hello/welcome, malformed input, turn serialisation and broadcast, view
-// commands, and the confirmation flow, including that nothing the agent says can approve an action.
+// mock Home Assistant and the example policy: logins (the real authenticator with access codes), hello/welcome,
+// tickets, malformed input, turn serialisation and broadcast, view commands, the say limit, and the confirmation flow,
+// including that nothing the agent says can approve an action and that only the same user and client can.
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { memoryAudit } from '../src/core/audit.ts';
+import { createAuthenticator, sha256Hex, type AuthResult } from '../src/core/auth.ts';
+import { createRateLimiter, type RateLimiter } from '../src/core/limits.ts';
 import { createGate, type Gate } from '../src/core/gate.ts';
 import { createMockHa, type MockHa } from '../src/core/ha-mock.ts';
 import { createHub, parseClientMsg, type Conn, type Hub } from '../src/core/hub.ts';
@@ -23,18 +26,39 @@ const site = loadSite(resolve(import.meta.dirname, '../../examples/demo-site'));
 interface FakeConn extends Conn {
   sent: ServerMsg[];
   closed: boolean;
+  code?: number;
   of<T extends ServerMsg['type']>(type: T): Extract<ServerMsg, { type: T }>[];
 }
-function conn(): FakeConn {
+function conn(remote = '10.0.0.7'): FakeConn {
   const c: FakeConn = {
     sent: [],
     closed: false,
+    remote,
     send: (m) => void c.sent.push(structuredClone(m)),
-    close: () => void (c.closed = true),
+    close: (code) => void ((c.closed = true), (c.code = code)),
     of: (type) => c.sent.filter((m) => m.type === type) as never,
   };
   return c;
 }
+
+/** the access codes of the clients file the rig's authenticator knows; kitchen is a speaker */
+const CODES = { alice: 'alice:alice-secret', bob: 'bob:bob-secret', kitchen: 'kitchen:kitchen-secret' };
+const secret = (who: keyof typeof CODES) => ({ type: 'secret' as const, secret: CODES[who] });
+const authenticator = () => {
+  const a = createAuthenticator({
+    kinds: ['secret'],
+    clients: {
+      clients: [
+        { name: 'alice', secretSha256: sha256Hex(CODES.alice), surface: 'screen' },
+        { name: 'bob', secretSha256: sha256Hex(CODES.bob), surface: 'screen' },
+        { name: 'kitchen', secretSha256: sha256Hex(CODES.kitchen), surface: 'speaker' },
+      ],
+      haUsers: [],
+    },
+    haSurface: 'screen',
+  });
+  return (h: { auth: unknown }, c: Conn): Promise<AuthResult> => a.verify(h.auth, c.remote ?? '?');
+};
 
 type Script = (turn: TurnInfo, emit: (e: AgentEvent) => void, tools: ToolRunner, agent: FakeAgent) => Promise<void>;
 interface FakeAgent extends Agent {
@@ -75,7 +99,10 @@ interface Rig {
   agent: FakeAgent;
   audit: ReturnType<typeof memoryAudit>;
 }
-function rig(script?: Script, opts: { viewTimeoutMs?: number; ttlMs?: number; turnTimeoutMs?: number } = {}): Rig {
+function rig(
+  script?: Script,
+  opts: { viewTimeoutMs?: number; ttlMs?: number; turnTimeoutMs?: number; sayLimit?: RateLimiter } = {},
+): Rig {
   const ha = createMockHa();
   const agent = fakeAgent(script);
   const audit = memoryAudit();
@@ -97,6 +124,8 @@ function rig(script?: Script, opts: { viewTimeoutMs?: number; ttlMs?: number; tu
     formatTurn: (t) => `[turn] ${t.text}`,
     viewTimeoutMs: opts.viewTimeoutMs ?? 200,
     turnTimeoutMs: opts.turnTimeoutMs,
+    authenticate: authenticator(),
+    sayLimit: opts.sayLimit,
   });
   return { hub, gate, ha, agent, audit };
 }
@@ -114,13 +143,18 @@ const deferred = () => {
   return { promise, resolve };
 };
 
-const hello = (clientId: string, extra: Partial<Extract<ClientMsg, { type: 'hello' }>> = {}) => ({
+const hello = (
+  clientId: string,
+  extra: Partial<Extract<ClientMsg, { type: 'hello' }>> & { surface?: string } = {},
+) => ({
   type: 'hello',
   clientId,
-  surface: 'screen',
+  auth: secret('alice'),
   capabilities: ['viewer', 'tts'],
   ...extra,
 });
+/** the owner key of one of the rig's users' clients */
+const owner = (who: keyof typeof CODES, clientId: string) => `secret:${who}/${clientId}`;
 const say = (text: string) => ({ type: 'say', text, source: 'typed' });
 
 async function join2(r: Rig, id = 'tab-1', extra = {}) {
@@ -142,10 +176,10 @@ const actScript: Script = async (_t, emit, tools, a) => {
 
 describe('parseClientMsg', () => {
   it('accepts the protocol and rejects everything else with a reason', () => {
-    expect(parseClientMsg(JSON.stringify(hello('a')))).toEqual({
+    expect(parseClientMsg(JSON.stringify(hello('a', { surface: 'speaker' })))).toEqual({
       type: 'hello',
       clientId: 'a',
-      surface: 'screen',
+      auth: { type: 'secret', secret: CODES.alice }, // (a surface is ignored: it comes from the credential)
       capabilities: ['viewer', 'tts'],
       view: undefined,
     });
@@ -155,10 +189,14 @@ describe('parseClientMsg', () => {
       null,
       [],
       { type: 3 },
-      { type: 'hello', clientId: '', surface: 'screen' },
-      { type: 'hello', clientId: 'a', surface: 'tv' },
-      { type: 'hello', clientId: 'a', surface: 'screen', capabilities: ['root'] },
-      { type: 'hello', clientId: 'a', surface: 'screen', view: { room: 5 } },
+      { type: 'hello', clientId: '', auth: secret('alice') },
+      { type: 'hello', clientId: 'a' },
+      { type: 'hello', clientId: 'a', auth: 'alice:alice-secret' },
+      { type: 'hello', clientId: 'a', auth: { type: 'secret', secret: '' } },
+      { type: 'hello', clientId: 'a', auth: { type: 'ha' } },
+      { type: 'hello', clientId: 'a', auth: { type: 'password', password: 'x' } },
+      { type: 'hello', clientId: 'a', auth: secret('alice'), capabilities: ['root'] },
+      { type: 'hello', clientId: 'a', auth: secret('alice'), view: { room: 5 } },
       { type: 'say', text: '' },
       { type: 'say', text: 'x'.repeat(5000) },
       { type: 'say', text: 'hi', source: 'telepathy' },
@@ -171,69 +209,206 @@ describe('parseClientMsg', () => {
 });
 
 describe('hub: clients', () => {
-  it('needs hello first, answers it with welcome, and survives garbage', async () => {
+  it('nothing before a good hello: anything else is refused and the socket closed (4401)', async () => {
+    for (const first of [
+      JSON.stringify(say('hi')),
+      'not json',
+      Buffer.from([0xff, 0xfe]),
+      JSON.stringify({ type: 'hello', clientId: 'x' }),
+    ]) {
+      const r = rig();
+      const c = conn();
+      await r.hub.onMessage(c, first);
+      expect(c.of('error')).toHaveLength(1);
+      expect(c).toMatchObject({ closed: true, code: 4401 });
+      expect(r.hub.clientCount()).toBe(0);
+    }
     const r = rig();
     const c = conn();
     await r.hub.onMessage(c, JSON.stringify(say('hi')));
-    expect(c.sent).toEqual([{ type: 'error', message: 'say hello first' }]);
-    await r.hub.onMessage(c, 'not json');
-    await r.hub.onMessage(c, Buffer.from([0xff, 0xfe]));
-    await r.hub.onMessage(c, JSON.stringify({ type: 'hello', clientId: 'x', surface: 'moon' }));
-    expect(c.of('error')).toHaveLength(4);
+    expect(c.sent).toEqual([{ type: 'error', message: 'say hello first, with a credential' }]);
+  });
+
+  it('a good hello is welcomed with the user, a ticket and the transcript; garbage after it is survived', async () => {
+    const r = rig();
+    const c = conn();
     await r.hub.onMessage(c, JSON.stringify(hello('tab-1')));
-    expect(c.of('welcome')[0]).toEqual({
+    const w = c.of('welcome')[0];
+    expect(w).toEqual({
       type: 'welcome',
       transcript: [],
       status: 'idle',
       agent: 'fake',
       transcribe: false,
       ha: 'mock',
+      user: { name: 'alice' },
+      ticket: expect.stringMatching(/^[A-Za-z0-9_-]{40,}$/),
     });
+    expect(r.hub.ticket(w.ticket)).toMatchObject({
+      user: { name: 'alice', key: 'secret:alice' },
+      owner: owner('alice', 'tab-1'),
+    });
+    await r.hub.onMessage(c, 'not json');
+    await r.hub.onMessage(c, Buffer.from([0xff, 0xfe]));
+    await r.hub.onMessage(c, JSON.stringify({ type: 'nope' }));
+    expect(c.of('error')).toHaveLength(3);
+    expect(c.closed).toBe(false);
     await r.hub.onMessage(c, JSON.stringify(hello('tab-2')));
-    expect(c.sent.at(-1)).toMatchObject({ type: 'error', message: expect.stringMatching(/already has a client id/) });
+    expect(c.sent.at(-1)).toMatchObject({ type: 'error', message: expect.stringMatching(/already said hello/) });
+    expect(r.audit.records.filter((x) => x.kind === 'auth')).toMatchObject([{ user: 'alice', decision: 'ok' }]);
   });
 
-  it('welcome carries the transcript so a second screen catches up', async () => {
-    const r = rig(async (_t, emit) => {
-      emit({ type: 'text', delta: 'Hello ' });
-      emit({ type: 'text', delta: 'there.' });
+  it('a wrong access code, an unknown name, or a kind the server does not take: not authorised, closed', async () => {
+    for (const auth of [
+      { type: 'secret', secret: 'alice:wrong' },
+      { type: 'secret', secret: 'mallory:alice-secret' },
+      { type: 'secret', secret: 'alice-secret' },
+      { type: 'ha', token: 'mock-user:alice' }, // the rig takes access codes only
+    ]) {
+      const r = rig();
+      const c = conn();
+      await r.hub.onMessage(c, hello('tab-1', { auth } as never));
+      expect(c.sent).toEqual([{ type: 'error', message: 'not authorised' }]);
+      expect(c).toMatchObject({ closed: true, code: 4401 });
+      expect(r.hub.clientCount()).toBe(0);
+      expect(r.audit.records.filter((x) => x.kind === 'auth')).toMatchObject([{ decision: 'refused' }]);
+    }
+  });
+
+  it('after 5 failed logins an address is refused unchecked (4429), others are not', async () => {
+    const r = rig();
+    for (let i = 0; i < 5; i++) {
+      const c = conn('10.9.9.9');
+      await r.hub.onMessage(c, hello('t', { auth: { type: 'secret', secret: 'alice:guess' } }));
+      expect(c.code).toBe(4401);
+    }
+    const blocked = conn('10.9.9.9');
+    await r.hub.onMessage(blocked, hello('t')); // even the right code
+    expect(blocked.sent).toEqual([{ type: 'error', message: 'too many failed attempts; try again in a minute' }]);
+    expect(blocked.code).toBe(4429);
+    const other = conn('10.0.0.8');
+    await r.hub.onMessage(other, hello('t'));
+    expect(other.of('welcome')).toHaveLength(1);
+  });
+
+  it('the surface comes from the credential: a speaker stays a speaker whatever its hello says', async () => {
+    const r = rig(async (t, emit, _tools, a) => {
+      a.results.push(t.surface);
       emit({ type: 'done' });
     });
-    const a = await join2(r);
-    await r.hub.onMessage(a, JSON.stringify(say('hi')));
+    const s = await join2(r, 'kitchen', { auth: secret('kitchen'), surface: 'screen' });
+    await r.hub.onMessage(s, JSON.stringify(say('hello')));
     await r.hub.idle();
-    const b = await join2(r, 'tab-2');
-    expect(b.of('welcome')[0].transcript).toMatchObject([
-      { kind: 'user', text: 'hi', source: 'typed', surface: 'screen' },
-      { kind: 'assistant', text: 'Hello there.' },
-    ]);
+    expect(r.agent.results).toEqual(['speaker']);
+    expect(s.of('turn.start')[0].surface).toBe('speaker');
+    expect(s.of('welcome')[0].user).toEqual({ name: 'kitchen' });
   });
 
-  it('an authenticate hook can turn a client away', async () => {
+  it('tickets: one per connection, renewed, dead when the connection closes or after their time', async () => {
+    let t = 1_000_000;
+    const r = rig();
+    const hub = createHub({
+      agent: r.agent,
+      tools: [],
+      gate: r.gate,
+      info: { agent: 'fake', ha: 'mock', transcribe: true },
+      authenticate: authenticator(),
+      ticketTtlMs: 60_000,
+      now: () => t,
+    });
+    const a = conn();
+    const b = conn();
+    await hub.onMessage(a, hello('tab-1'));
+    await hub.onMessage(b, hello('tab-1', { auth: secret('bob') }));
+    const ta = a.of('welcome')[0].ticket;
+    const tb = b.of('welcome')[0].ticket;
+    expect(ta).not.toBe(tb);
+    expect(hub.ticket(ta)?.owner).toBe(owner('alice', 'tab-1'));
+    expect(hub.ticket(tb)?.owner).toBe(owner('bob', 'tab-1'));
+    for (const bad of [undefined, '', 'nope', `${ta}x`, 42]) expect(hub.ticket(bad)).toBeNull();
+    // the connection closes: its ticket dies; a reconnect gets a new one
+    hub.onClose(a);
+    expect(hub.ticket(ta)).toBeNull();
+    const a2 = conn();
+    await hub.onMessage(a2, hello('tab-1'));
+    const ta2 = a2.of('welcome')[0].ticket;
+    expect(ta2).not.toBe(ta);
+    expect(hub.ticket(ta2)?.user.name).toBe('alice');
+    // and it expires on its own
+    t += 60_000;
+    expect(hub.ticket(ta2)).toBeNull();
+    await hub.close();
+  });
+
+  it('a fresh ticket arrives every half ticket life', async () => {
+    const r = rig();
+    const hub = createHub({
+      agent: r.agent,
+      tools: [],
+      gate: r.gate,
+      info: { agent: 'fake', ha: 'mock', transcribe: true },
+      authenticate: authenticator(),
+      ticketTtlMs: 40,
+    });
+    const a = conn();
+    await hub.onMessage(a, hello('tab-1'));
+    await until(() => a.of('ticket').length >= 2);
+    const [t1, t2] = a.of('ticket').map((m) => m.ticket);
+    expect(t1).not.toBe(t2);
+    expect(hub.ticket(t2)?.user.name).toBe('alice');
+    hub.onClose(a);
+    const n = a.of('ticket').length;
+    await new Promise((res) => setTimeout(res, 60));
+    expect(a.of('ticket')).toHaveLength(n);
+    expect(hub.ticket(t2)).toBeNull();
+  });
+
+  it('say is rate-limited per user', async () => {
+    let t = 0;
+    const r = rig(undefined, { sayLimit: createRateLimiter({ burst: 2, perMinute: 6 }, () => t) });
+    const a = await join2(r);
+    const a2 = await join2(r, 'tab-2'); // alice again, another tab: the same bucket
+    const b = await join2(r, 'tab-3', { auth: secret('bob') });
+    await r.hub.onMessage(a, JSON.stringify(say('one')));
+    await r.hub.onMessage(a2, JSON.stringify(say('two')));
+    await r.hub.onMessage(a, JSON.stringify(say('three')));
+    expect(a.of('error').map((e) => e.message)).toEqual(['slow down: too many requests; try again in a moment']);
+    await r.hub.onMessage(b, JSON.stringify(say('bob')));
+    expect(b.of('error')).toEqual([]);
+    t += 10_000; // one more a minute / 6
+    await r.hub.onMessage(a, JSON.stringify(say('four')));
+    await r.hub.idle();
+    expect(r.agent.prompts).toEqual(['[turn] one', '[turn] two', '[turn] bob', '[turn] four']);
+  });
+
+  it('a refused login cannot be talked past: an authenticate that throws refuses', async () => {
     const r = rig();
     const hub = createHub({
       agent: r.agent,
       tools: [],
       gate: r.gate,
       info: { agent: 'fake', ha: 'mock', transcribe: false },
-      authenticate: (h) => (h.clientId === 'evil' ? 'not allowed' : null),
+      authenticate: () => {
+        throw new Error('boom');
+      },
     });
     const c = conn();
     await hub.onMessage(c, hello('evil'));
-    expect(c.sent).toEqual([{ type: 'error', message: 'not allowed' }]);
-    expect(c.closed).toBe(true);
+    expect(c.sent).toEqual([{ type: 'error', message: 'not authorised' }]);
+    expect(c).toMatchObject({ closed: true, code: 4401 });
     expect(hub.clientCount()).toBe(0);
   });
 
   it('a connection that closes during an async authenticate is not registered', async () => {
     const r = rig(actScript);
     const wait = deferred();
+    const verify = authenticator();
     const hub = createHub({
       agent: r.agent,
       tools: [],
       gate: r.gate,
       info: { agent: 'fake', ha: 'mock', transcribe: false },
-      authenticate: async () => (await wait.promise, null),
+      authenticate: async (h, c) => (await wait.promise, verify(h, c)),
     });
     const c = conn();
     const p = hub.onMessage(c, hello('slow'));
@@ -330,13 +505,15 @@ describe('hub: turns', () => {
     expect(r.hub.transcript().find((e) => e.kind === 'tool' && e.name === 'site_search')).toMatchObject({
       subject: 'pins:plumb.water-heater',
     });
-    expect(r.audit.records.map((x) => [x.tool, x.decision])).toEqual([
+    const tools = r.audit.records.filter((x) => x.kind === 'tool');
+    expect(tools.map((x) => [x.tool, x.decision])).toEqual([
       ['site_search', 'done'],
       ['ha_state', 'error'],
       ['shell', 'unknown tool'],
     ]);
-    expect(r.audit.records[0]).toMatchObject({
-      client: 'tab-1',
+    expect(tools[0]).toMatchObject({
+      user: 'alice',
+      client: owner('alice', 'tab-1'),
       surface: 'screen',
       utterance: 'where is the water heater',
     });
@@ -465,7 +642,7 @@ describe('hub: view commands', () => {
 
   it('no viewer: a speaker, or a screen without the capability', async () => {
     const r = rig(flyScript);
-    const s = await join2(r, 'kitchen-speaker', { surface: 'speaker', capabilities: [] });
+    const s = await join2(r, 'kitchen-speaker', { auth: secret('kitchen'), capabilities: [] });
     await r.hub.onMessage(s, JSON.stringify(say('show me')));
     await r.hub.idle();
     expect(s.of('view.command')).toEqual([]);
@@ -528,7 +705,7 @@ describe('hub: confirmations', () => {
     const { id } = a.of('confirm.request')[0];
     await r.hub.onMessage(b, JSON.stringify({ type: 'confirm.reply', id, approved: true }));
     expect(b.of('error').at(-1)!.message).toBe('confirm.reply: not your pending action');
-    expect(r.gate.pending('tab-1')).toHaveLength(1);
+    expect(r.gate.pending(owner('alice', 'tab-1'))).toHaveLength(1);
     expect(r.ha.calls).toEqual([]);
     await r.hub.onMessage(a, JSON.stringify({ type: 'confirm.reply', id, approved: false }));
     await r.hub.idle();
@@ -539,9 +716,51 @@ describe('hub: confirmations', () => {
     expect(r.ha.calls).toEqual([]);
   });
 
+  it('confirmations belong to the user AND the client: same id as another user, or same user elsewhere, cannot answer', async () => {
+    const r = rig(actScript);
+    const a = await join2(r, 'tab-1');
+    const bobSameId = await join2(r, 'tab-1', { auth: secret('bob') });
+    const aliceElsewhere = await join2(r, 'tab-9');
+    await r.hub.onMessage(a, JSON.stringify(say('set the hall to 72')));
+    await until(() => a.of('confirm.request').length);
+    const { id } = a.of('confirm.request')[0];
+    // bob's tab with alice's client id neither sees the dialog nor may answer it
+    expect(bobSameId.of('confirm.request')).toEqual([]);
+    await r.hub.onMessage(bobSameId, JSON.stringify({ type: 'confirm.reply', id, approved: true }));
+    expect(bobSameId.of('error').at(-1)!.message).toBe('confirm.reply: not your pending action');
+    // alice herself, from another tab, may not either
+    await r.hub.onMessage(aliceElsewhere, JSON.stringify({ type: 'confirm.reply', id, approved: true }));
+    expect(aliceElsewhere.of('error').at(-1)!.message).toBe('confirm.reply: not your pending action');
+    expect(r.gate.pending(owner('alice', 'tab-1'))).toHaveLength(1);
+    expect(r.ha.calls).toEqual([]);
+    // bob's tab closing (its client id is alice's too) cancels nothing of hers
+    r.hub.onClose(bobSameId);
+    expect(r.gate.pending(owner('alice', 'tab-1'))).toHaveLength(1);
+    // the right one can
+    await r.hub.onMessage(a, JSON.stringify({ type: 'confirm.reply', id, approved: true }));
+    await r.hub.idle();
+    expect(r.ha.calls).toHaveLength(1);
+    expect(r.audit.records.find((x) => x.kind === 'tool' && x.tool === 'ha_act')).toMatchObject({ user: 'alice' });
+  });
+
+  it('a spoken yes counts only from the same speaker login', async () => {
+    const r = rig(actScript, { ttlMs: 150 });
+    // two connections with the same client id: the kitchen speaker, and alice's screen pretending to be it
+    const s = await join2(r, 'kitchen-speaker', { auth: secret('kitchen'), capabilities: [] });
+    const fake = await join2(r, 'kitchen-speaker', { surface: 'speaker', capabilities: [] });
+    await r.hub.onMessage(s, JSON.stringify({ type: 'say', text: 'set the hall to 72', source: 'voice' }));
+    await until(() => s.of('confirm.request').length);
+    r.agent.script = async (_t, emit) => emit({ type: 'done' });
+    await r.hub.onMessage(fake, JSON.stringify({ type: 'say', text: 'yes', source: 'voice' }));
+    await r.hub.idle();
+    expect(r.ha.calls).toEqual([]); // alice's "yes" was a new turn (a screen), not an answer
+    expect(r.agent.prompts.at(-1)).toBe('[turn] yes');
+    expect(r.agent.results[0]).toMatch(/^nobody confirmed/);
+  });
+
   it('a spoken "yes" on a speaker approves, and does not become a turn', async () => {
     const r = rig(actScript);
-    const s = await join2(r, 'kitchen-speaker', { surface: 'speaker', capabilities: ['tts'] });
+    const s = await join2(r, 'kitchen-speaker', { auth: secret('kitchen'), capabilities: ['tts'] });
     await r.hub.onMessage(s, JSON.stringify({ type: 'say', text: 'set the hall to 72', source: 'voice' }));
     await until(() => s.of('confirm.request').length);
     await r.hub.onMessage(s, JSON.stringify({ type: 'say', text: 'Yes.', source: 'voice' }));
@@ -583,7 +802,7 @@ describe('hub: confirmations', () => {
       },
       { ttlMs: 80 },
     );
-    const s = await join2(r, 'kitchen-speaker', { surface: 'speaker', capabilities: [] });
+    const s = await join2(r, 'kitchen-speaker', { auth: secret('kitchen'), capabilities: [] });
     await r.hub.onMessage(s, JSON.stringify({ type: 'say', text: 'set the hall to 72', source: 'voice' }));
     await r.hub.idle();
     expect(r.ha.calls).toEqual([]);
@@ -642,7 +861,7 @@ describe('hub: confirmations', () => {
     expect(again.of('confirm.request')).toHaveLength(1);
     expect(again.of('confirm.request')[0].callId).toBe(a.of('confirm.request')[0].callId);
     r.hub.onClose(a); // another connection of tab-1 remains: still pending
-    expect(r.gate.pending('tab-1')).toHaveLength(1);
+    expect(r.gate.pending(owner('alice', 'tab-1'))).toHaveLength(1);
     expect(other.of('confirm.request')).toEqual([]);
     r.hub.onClose(again);
     await r.hub.idle();

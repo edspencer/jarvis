@@ -440,7 +440,7 @@
           "type": "object",
           "required": ["server"],
           "additionalProperties": false,
-          "description": "The voice assistant (a dock panel, hold M to talk) through its companion server. With no server reachable the plugin stays quiet: its status item says \"Assistant offline\".",
+          "description": "The voice assistant (a dock panel, hold M to talk) through its companion server; without this section there is no assistant. People log in to the server with their Home Assistant login or an access code (docs/assistant.md). With no server reachable the plugin stays quiet: its status item says \"Assistant offline\".",
           "properties": {
             "server": {
               "type": "string",

@@ -145,6 +145,12 @@ conf, src, meta })`. They come from the site's mapping files (the lights plugin 
 - The allow-list protects against bugs and misclicks, not hostile code: Home Assistant's login tokens are in
   `localStorage`, readable by any code on the page, plugins included. The README says how to limit the damage (a
   dedicated, non-admin Home Assistant user for the viewer).
+- **The person's Home Assistant login** is offered to other plugins as the `home-assistant.auth` service:
+  `await ctx.services.get<{ accessToken(): Promise<string | null> }>('home-assistant.auth')?.accessToken()` gives the
+  current access token (refreshed first if it has expired), or `null` with `?ha=mock` / `?ha=off` or when nobody is
+  logged in. It is for a plugin's **own server** to learn who is talking (the assistant sends it with its `hello`, and
+  its server checks it with Home Assistant, [assistant.md](assistant.md#authentication)); a plugin acts on the house
+  through the store, never with this token. Start `after: ['home-assistant']` so the login is under way when you ask.
 
 ## A worked example: irrigation zones
 

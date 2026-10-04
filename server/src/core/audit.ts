@@ -1,6 +1,6 @@
-// The audit log: one JSON line per gate decision and per tool call (who, which surface, what they said, which tool,
-// what happened), appended to <data>/audit.jsonl. Append-only and synchronous, so lines never interleave and nothing
-// is lost to a crash between a decision and its write; the volume is a few lines per turn.
+// The audit log: one JSON line per gate decision, per tool call and per login (who, which surface, what they said,
+// which tool, what happened), appended to <data>/audit.jsonl. Append-only and synchronous, so lines never interleave
+// and nothing is lost to a crash between a decision and its write; the volume is a few lines per turn.
 // TODO(open question 6: transcripts and privacy): how long to keep this file; for now it grows until someone rotates
 // it (logrotate's copytruncate works, since every write reopens the file).
 import { appendFileSync, mkdirSync } from 'node:fs';
@@ -9,6 +9,8 @@ import { dirname } from 'node:path';
 export interface AuditRecord {
   /** 'gate' (the policy decided), 'tool' (a tool ran), 'confirm' (a person answered), … */
   kind: string;
+  /** who: the authenticated user's name (a clients-file name or the Home Assistant user's) */
+  user?: string;
   client?: string;
   surface?: string;
   utterance?: string;

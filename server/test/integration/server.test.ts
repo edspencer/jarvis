@@ -1,22 +1,45 @@
 // The whole server in-process: real HTTP + WebSocket on an ephemeral port, the scripted agent (no model), the mock
-// Home Assistant, the example policy, and a fake OpenAI-compatible transcription server. Needs the server's own
-// npm install (ws, yaml): npm --prefix server test.
+// Home Assistant, the example policy, a clients file of access codes, and a fake OpenAI-compatible transcription
+// server. Logins (access codes and mock HA tokens), the Origin rule, /transcribe tickets and the rate limits end to
+// end. Needs the server's own npm install (ws, yaml): npm --prefix server test.
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
-import { createAssistant, type Assistant } from '../../src/app.ts';
+import { createAssistant, loadClients, promptOptions, type Assistant } from '../../src/app.ts';
 import { createScriptedAgent } from '../../src/agent-scripted.ts';
+import { newClientSecret } from '../../src/core/auth.ts';
 import { loadConfig } from '../../src/core/config.ts';
+import { buildSystemPrompt } from '../../src/core/knowledge.ts';
 import type { MockHa } from '../../src/core/ha-mock.ts';
 import type { ServerMsg } from '../../src/core/protocol.ts';
 import { originAllowed } from '../../src/server.ts';
 
 const SERVER_DIR = resolve(import.meta.dirname, '../..');
 const ORIGIN = 'http://jarvis.test';
+
+// the clients file: a screen tablet and a voice-only speaker
+const TABLET = newClientSecret('tablet', 'screen');
+const SPEAKER = newClientSecret('kitchen-speaker', 'speaker');
+const TMP = mkdtempSync(join(tmpdir(), 'jarvis-it-'));
+const CLIENTS = join(TMP, 'clients.yaml');
+writeFileSync(
+  CLIENTS,
+  [
+    'clients:',
+    ...[TABLET, SPEAKER].map(
+      ({ entry: e }) => `  - { name: ${e.name}, secret_sha256: ${e.secretSha256}, surface: ${e.surface} }`,
+    ),
+    'ha_users:',
+    '  - { name: Ana, surface: speaker }',
+    '',
+  ].join('\n'),
+);
+const tablet = { type: 'secret', secret: TABLET.code };
+const speaker = { type: 'secret', secret: SPEAKER.code };
 
 let app: Assistant;
 let base: string;
@@ -49,7 +72,10 @@ beforeAll(async () => {
       JARVIS_ASSISTANT_AGENT: 'scripted',
       JARVIS_ASSISTANT_ORIGINS: ORIGIN,
       JARVIS_ASSISTANT_POLICY: join(SERVER_DIR, 'policy.example.yaml'),
-      JARVIS_ASSISTANT_DATA: mkdtempSync(join(tmpdir(), 'jarvis-it-')),
+      JARVIS_ASSISTANT_DATA: join(TMP, 'data'),
+      JARVIS_ASSISTANT_AUTH: 'secret,ha',
+      JARVIS_ASSISTANT_CLIENTS: CLIENTS,
+      JARVIS_ASSISTANT_RATE_TRANSCRIBE: '100/100', // (the limits get a server of their own below)
       JARVIS_SITE_DIR: resolve(SERVER_DIR, '../examples/demo-site'),
       JARVIS_STT_URL: `http://127.0.0.1:${sttPort}/v1`,
       JARVIS_STT_KEY: 'stt-key',
@@ -68,10 +94,11 @@ afterAll(async () => {
 });
 
 /** a ws client that keeps every message and can wait for one */
-async function client(origin = ORIGIN) {
-  const ws = new WebSocket(`ws://${base}/ws`, { origin });
+async function client(origin = ORIGIN, at = base) {
+  const ws = new WebSocket(`ws://${at}/ws`, { origin });
   const got: ServerMsg[] = [];
   ws.on('message', (d) => got.push(JSON.parse(d.toString())));
+  const closed = new Promise<number>((res) => ws.once('close', (code) => res(code)));
   await new Promise<void>((res, rej) => {
     ws.once('open', () => res());
     ws.once('error', rej);
@@ -90,8 +117,24 @@ async function client(origin = ORIGIN) {
       await new Promise((r) => setTimeout(r, 5));
     }
   };
-  return { ws, got, send, wait };
+  /** hello with a credential; resolves with the welcome */
+  const login = async (auth: unknown = tablet, clientId = `it-${Math.random().toString(36).slice(2)}`, extra = {}) => {
+    send({ type: 'hello', clientId, auth, capabilities: ['viewer'], ...extra });
+    return wait('welcome');
+  };
+  return { ws, got, send, wait, closed, login };
 }
+
+/** POST /transcribe with a little audio, from ORIGIN, with a ticket */
+const upload = (ticket?: string, at = base, headers: Record<string, string> = { origin: ORIGIN }) => {
+  const form = new FormData();
+  form.append('file', new Blob([new Uint8Array(2048)], { type: 'audio/webm' }), 'a.webm');
+  return fetch(`http://${at}/transcribe`, {
+    method: 'POST',
+    body: form,
+    headers: { ...headers, ...(ticket ? { authorization: `Bearer ${ticket}` } : {}) },
+  });
+};
 
 describe('assistant server', () => {
   it('GET /health', async () => {
@@ -104,8 +147,14 @@ describe('assistant server', () => {
 
   it('hello → welcome; a light command streams a turn and switches the mock light', async () => {
     const c = await client();
-    c.send({ type: 'hello', clientId: 'it-1', surface: 'screen', capabilities: ['viewer'] });
-    expect(await c.wait('welcome')).toMatchObject({ agent: 'scripted', ha: 'mock', transcribe: true, status: 'idle' });
+    expect(await c.login(tablet, 'it-1')).toMatchObject({
+      agent: 'scripted',
+      ha: 'mock',
+      transcribe: true,
+      status: 'idle',
+      user: { name: 'tablet' },
+      ticket: expect.any(String),
+    });
 
     c.send({ type: 'say', text: 'Turn on the kitchen pendants', source: 'typed' });
     const start = await c.wait('turn.start');
@@ -125,8 +174,7 @@ describe('assistant server', () => {
 
   it('a confirm-tier command: confirm.request → approve → resolved approved, the thermostat changes', async () => {
     const c = await client();
-    c.send({ type: 'hello', clientId: 'it-2', surface: 'screen', capabilities: ['viewer'] });
-    await c.wait('welcome');
+    await c.login(tablet, 'it-2');
     c.send({ type: 'say', text: 'Set the thermostat to 72', source: 'voice' });
     const req = await c.wait('confirm.request');
     expect(req.summary).toMatch(/Hall thermostat/);
@@ -142,8 +190,7 @@ describe('assistant server', () => {
 
   it('a refused command says why and changes nothing', async () => {
     const c = await client();
-    c.send({ type: 'hello', clientId: 'it-3', surface: 'speaker', capabilities: [] });
-    await c.wait('welcome');
+    await c.login(speaker, 'it-3', { capabilities: [] });
     c.send({ type: 'say', text: 'switch off the network rack', source: 'voice' });
     await c.wait('turn.end');
     const text = c.got
@@ -157,8 +204,7 @@ describe('assistant server', () => {
 
   it('show me: a view.command round trip', async () => {
     const c = await client();
-    c.send({ type: 'hello', clientId: 'it-4', surface: 'screen', capabilities: ['viewer'] });
-    await c.wait('welcome');
+    await c.login(tablet, 'it-4');
     c.send({ type: 'say', text: 'show me the water heater', source: 'typed' });
     const cmd = await c.wait('view.command');
     expect(cmd).toMatchObject({ op: 'fly', args: { subject: 'pins:plumb.water-heater' } });
@@ -172,14 +218,61 @@ describe('assistant server', () => {
     c.ws.close();
   });
 
-  it('malformed messages get an error and the connection stays up', async () => {
+  it('malformed messages after the login get an error and the connection stays up', async () => {
     const c = await client();
+    await c.login(tablet, 'it-5');
     c.ws.send('{nope');
     c.ws.send(Buffer.from([1, 2, 3]), { binary: true });
     await c.wait('error', (m) => m.message === 'not JSON');
     await c.wait('error', (m) => m.message === 'text messages only');
-    c.send({ type: 'hello', clientId: 'it-5', surface: 'screen', capabilities: [] });
-    await c.wait('welcome');
+    c.send({ type: 'say', text: 'what do you remember', source: 'typed' });
+    await c.wait('turn.end');
+    c.ws.close();
+  });
+
+  it('a hello without a credential, or with a wrong one, is refused and the socket closed (4401)', async () => {
+    for (const hello of [
+      { type: 'hello', clientId: 'x', capabilities: [] },
+      { type: 'hello', clientId: 'x', surface: 'screen', capabilities: [] },
+      { type: 'say', text: 'turn on the kitchen pendants' },
+    ]) {
+      const c = await client();
+      c.send(hello);
+      expect(await c.closed).toBe(4401);
+      expect(c.got.map((m) => m.type)).toEqual(['error']);
+    }
+    for (const auth of [
+      { type: 'secret', secret: 'tablet:guess' },
+      { type: 'ha', token: 'not-a-mock-user' },
+    ]) {
+      const c = await client();
+      c.send({ type: 'hello', clientId: 'x', auth, capabilities: [] });
+      expect(await c.closed).toBe(4401);
+      expect(c.got).toEqual([{ type: 'error', message: 'not authorised' }]);
+    }
+    expect((app.ha as MockHa).entities.get('light.kitchen_pendant_1')).toBeTruthy();
+  });
+
+  it("a Home Assistant login (the mock's mock-user:<name>), with the surface the clients file gives that user", async () => {
+    const c = await client();
+    expect((await c.login({ type: 'ha', token: 'mock-user:Ben' })).user).toEqual({ name: 'Ben' });
+    const d = await client();
+    expect((await d.login({ type: 'ha', token: 'mock-user:Ana' }, 'ana-tab', { surface: 'screen' })).user).toEqual({
+      name: 'Ana',
+    });
+    d.send({ type: 'say', text: 'what do you remember', source: 'typed' });
+    expect((await d.wait('turn.start')).surface).toBe('speaker'); // ha_users: Ana is a speaker
+    await d.wait('turn.end');
+    c.ws.close();
+    d.ws.close();
+  });
+
+  it('the surface comes from the credential: a speaker that says it is a screen is still a speaker', async () => {
+    const c = await client();
+    await c.login(speaker, 'it-6', { surface: 'screen', capabilities: ['viewer'] });
+    c.send({ type: 'say', text: 'what do you remember', source: 'voice' });
+    expect((await c.wait('turn.start')).surface).toBe('speaker');
+    await c.wait('turn.end');
     c.ws.close();
   });
 
@@ -197,13 +290,16 @@ describe('assistant server', () => {
     expect(await status(`ws://${base}/ws`, 'http://evil.example')).toBe(403);
     expect(await status(`ws://${base}/elsewhere`, ORIGIN)).toBe(404);
     expect(await status(`ws://${base}/ws`, ORIGIN)).toBe(101);
-    expect(await status(`ws://${base}/ws`)).toBe(101); // no Origin: not a browser
+    expect(await status(`ws://${base}/ws`)).toBe(403); // no Origin: refused (a non-browser client sends an allowed one)
   });
 
   it('POST /transcribe forwards the audio to the STT server and returns its text', async () => {
+    const c = await client();
+    const { ticket } = await c.login();
+    const auth = { origin: ORIGIN, authorization: `Bearer ${ticket}` };
     const form = new FormData();
     form.append('file', new Blob([new Uint8Array(2048)], { type: 'audio/webm;codecs=opus' }), 'a.webm');
-    const r = await fetch(`http://${base}/transcribe`, { method: 'POST', body: form });
+    const r = await fetch(`http://${base}/transcribe`, { method: 'POST', body: form, headers: auth });
     expect(r.status).toBe(200);
     expect(await r.json()).toEqual({ text: 'turn on the hall light' });
     const seen = sttSeen.at(-1)!;
@@ -213,40 +309,128 @@ describe('assistant server', () => {
 
     const bad = new FormData();
     bad.append('file', new Blob(['hello'], { type: 'text/plain' }), 'a.txt');
-    expect((await fetch(`http://${base}/transcribe`, { method: 'POST', body: bad })).status).toBe(415);
-    expect((await fetch(`http://${base}/transcribe`, { method: 'POST', body: 'x' })).status).toBe(415);
+    expect((await fetch(`http://${base}/transcribe`, { method: 'POST', body: bad, headers: auth })).status).toBe(415);
+    expect((await fetch(`http://${base}/transcribe`, { method: 'POST', body: 'x', headers: auth })).status).toBe(415);
     expect((await fetch(`http://${base}/transcribe`)).status).toBe(405);
+    c.ws.close();
   });
 
-  it('POST /transcribe from another origin is refused (a web page must not spend the STT credit)', async () => {
+  it("POST /transcribe needs a live connection's ticket: none, a made-up one or a closed connection's → 401", async () => {
     const n = sttSeen.length;
-    const post = (origin: string) => {
-      const form = new FormData();
-      form.append('file', new Blob([new Uint8Array(2048)], { type: 'audio/webm' }), 'a.webm');
-      return fetch(`http://${base}/transcribe`, { method: 'POST', body: form, headers: { origin } });
-    };
-    const r = await post('http://evil.example');
+    const c = await client();
+    const { ticket } = await c.login();
+    const r = await upload();
+    expect(r.status).toBe(401);
+    expect(r.headers.get('www-authenticate')).toBe('Bearer');
+    expect(await r.json()).toEqual({ error: expect.stringMatching(/^not authorised/) });
+    expect((await upload('made-up-ticket')).status).toBe(401);
+    expect((await upload(ticket)).status).toBe(200);
+    // another connection's ticket stops working when that connection closes; a reconnect gets a new one
+    c.ws.close();
+    await c.closed;
+    await new Promise((res) => setTimeout(res, 20));
+    expect((await upload(ticket)).status).toBe(401);
+    const again = await client();
+    const w = await again.login();
+    expect(w.ticket).not.toBe(ticket);
+    expect((await upload(w.ticket)).status).toBe(200);
+    expect(sttSeen.length).toBe(n + 2);
+    again.ws.close();
+  });
+
+  it('POST /transcribe from another origin, or with none, is refused (a web page must not spend the STT credit)', async () => {
+    const n = sttSeen.length;
+    const c = await client();
+    const { ticket } = await c.login();
+    const r = await upload(ticket, base, { origin: 'http://evil.example' });
     expect(r.status).toBe(403);
     expect(await r.json()).toEqual({ error: 'this origin may not use the assistant' });
-    expect((await post('http://jarvis.test:8080')).status).toBe(403); // exact: scheme, host and port
+    expect((await upload(ticket, base, { origin: 'http://jarvis.test:8080' })).status).toBe(403); // exact
+    expect((await upload(ticket, base, {})).status).toBe(403); // no Origin at all
     expect(sttSeen.length).toBe(n);
-    expect((await post(ORIGIN)).status).toBe(200);
+    expect((await upload(ticket)).status).toBe(200);
+    c.ws.close();
   });
 
   it('an upload over the cap gets its 413 before the connection closes', async () => {
+    const c = await client();
+    const { ticket } = await c.login();
     const big = new Uint8Array(11 * 1024 * 1024);
     const form = new FormData();
     form.append('file', new Blob([big], { type: 'audio/webm' }), 'a.webm');
-    const r = await fetch(`http://${base}/transcribe`, { method: 'POST', body: form });
+    const r = await fetch(`http://${base}/transcribe`, {
+      method: 'POST',
+      body: form,
+      headers: { origin: ORIGIN, authorization: `Bearer ${ticket}` },
+    });
     expect(r.status).toBe(413);
     expect(r.headers.get('connection')).toBe('close');
     expect(((await r.json()) as { error: string }).error).toMatch(/the upload is over 10 MB/);
+    c.ws.close();
+  });
+});
+
+describe('limits (a second server with small ones)', () => {
+  let small: Assistant;
+  let at: string;
+  beforeAll(async () => {
+    const config = loadConfig(
+      {
+        JARVIS_ASSISTANT_PORT: '0',
+        JARVIS_ASSISTANT_AGENT: 'scripted',
+        JARVIS_ASSISTANT_ORIGINS: ORIGIN,
+        JARVIS_ASSISTANT_POLICY: join(SERVER_DIR, 'policy.example.yaml'),
+        JARVIS_ASSISTANT_DATA: join(TMP, 'data-small'),
+        JARVIS_SITE_DIR: resolve(SERVER_DIR, '../examples/demo-site'),
+        JARVIS_STT_URL: `http://127.0.0.1:${(stt.address() as AddressInfo).port}/v1`,
+        JARVIS_ASSISTANT_AUTH: 'secret',
+        JARVIS_ASSISTANT_CLIENTS: CLIENTS,
+        JARVIS_ASSISTANT_RATE_SAY: '2/1',
+        JARVIS_ASSISTANT_RATE_TRANSCRIBE: '2/1',
+      },
+      SERVER_DIR,
+    );
+    small = createAssistant(config, { agent: createScriptedAgent({ chunkDelayMs: 0 }), log: () => {} });
+    at = `127.0.0.1:${(await small.server.listen()).port}/assistant`;
+  });
+  afterAll(async () => {
+    await small?.close();
+  });
+
+  it('say and /transcribe per user: over the limit → "slow down" / 429; another user is not affected', async () => {
+    const a = await client(ORIGIN, at);
+    const { ticket } = await a.login(tablet);
+    for (let i = 0; i < 3; i++) a.send({ type: 'say', text: 'what do you remember', source: 'typed' });
+    expect((await a.wait('error')).message).toMatch(/^slow down/);
+    expect([(await upload(ticket, at)).status, (await upload(ticket, at)).status]).toEqual([200, 200]);
+    const r = await upload(ticket, at);
+    expect(r.status).toBe(429);
+    expect(((await r.json()) as { error: string }).error).toMatch(/^slow down/);
+    const b = await client(ORIGIN, at);
+    const wb = await b.login(speaker);
+    expect((await upload(wb.ticket, at)).status).toBe(200);
+    a.ws.close();
+    b.ws.close();
+  });
+
+  it('5 failed logins from an address, then it is refused unchecked (4429), even with the right code', async () => {
+    for (let i = 0; i < 5; i++) {
+      const c = await client(ORIGIN, at);
+      c.send({ type: 'hello', clientId: 'x', auth: { type: 'secret', secret: `tablet:guess-${i}` }, capabilities: [] });
+      expect(await c.closed).toBe(4401);
+    }
+    const c = await client(ORIGIN, at);
+    c.send({ type: 'hello', clientId: 'x', auth: tablet, capabilities: [] });
+    expect(await c.closed).toBe(4429);
+    expect(c.got).toEqual([{ type: 'error', message: 'too many failed attempts; try again in a minute' }]);
   });
 });
 
 describe('the Origin check', () => {
-  it('a list is exact; an empty list (loopback binds only) means the request’s own host', () => {
-    expect(originAllowed(undefined, 'x', ['https://a.example'])).toBe(true); // not a browser
+  it('a list is exact; an empty list (loopback binds only) means the request’s own host; none is refused', () => {
+    expect(originAllowed(undefined, 'x', ['https://a.example'])).toBe(false);
+    expect(originAllowed(undefined, '127.0.0.1:8787', [])).toBe(false);
+    expect(originAllowed('', '127.0.0.1:8787', [])).toBe(false);
     expect(originAllowed('https://a.example', 'b.example', ['https://a.example'])).toBe(true);
     expect(originAllowed('https://a.example:8443', 'a.example:8443', ['https://a.example'])).toBe(false);
     expect(originAllowed('http://a.example', 'a.example', ['https://a.example'])).toBe(false);
@@ -255,5 +439,36 @@ describe('the Origin check', () => {
     expect(originAllowed('http://localhost:8787', 'localhost:8787', [])).toBe(true);
     // DNS rebinding: evil.example resolves to 127.0.0.1, so Origin and Host agree, but neither is a loopback name
     expect(originAllowed('http://evil.example:8787', 'evil.example:8787', [])).toBe(false);
+  });
+});
+
+describe('assembly', () => {
+  it('the system prompt only offers the web tools when JARVIS_ASSISTANT_WEB is on', () => {
+    expect(promptOptions({ web: false, knowledgeDir: null })).toEqual({ web: false, knowledge: false });
+    expect(buildSystemPrompt(app.site, promptOptions({ web: false, knowledgeDir: null }))).not.toMatch(/WebSearch/);
+    expect(buildSystemPrompt(app.site, promptOptions({ web: true, knowledgeDir: '/kb' }))).toMatch(
+      /WebSearch and WebFetch.*Read, Grep and Glob/,
+    );
+  });
+
+  it('the clients file is read as YAML or JSON and checked strictly: a bad one stops the server', () => {
+    expect(loadClients(CLIENTS).clients.map((c) => [c.name, c.surface])).toEqual([
+      ['tablet', 'screen'],
+      ['kitchen-speaker', 'speaker'],
+    ]);
+    const json = join(TMP, 'clients.json');
+    writeFileSync(json, JSON.stringify({ clients: [{ name: 'a', secret_sha256: 'f'.repeat(64), surface: 'screen' }] }));
+    expect(loadClients(json).clients).toHaveLength(1);
+    expect(loadClients(null)).toEqual({ clients: [], haUsers: [] });
+    const bad = join(TMP, 'bad.yaml');
+    writeFileSync(bad, 'clients:\n  - { name: a, secret: hunter2, surface: screen }\n');
+    expect(() => loadClients(bad)).toThrow(/unknown key secret/);
+    writeFileSync(join(TMP, 'broken.yaml'), 'clients: [\n');
+    expect(() => loadClients(join(TMP, 'broken.yaml'))).toThrow(/broken\.yaml/);
+    const config = loadConfig(
+      { JARVIS_ASSISTANT_AGENT: 'scripted', JARVIS_ASSISTANT_AUTH: 'secret', JARVIS_ASSISTANT_CLIENTS: bad },
+      SERVER_DIR,
+    );
+    expect(() => createAssistant(config, { log: () => {} })).toThrow(/secret_sha256 must be 64 hex digits/);
   });
 });

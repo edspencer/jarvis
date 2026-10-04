@@ -41,7 +41,7 @@ function env(turn: Partial<TurnInfo> = {}, viewReply = { ok: true } as { ok: boo
   const chips: { summary: string; status: string; subject?: string }[] = [];
   const views: { op: string; args: Record<string, unknown> }[] = [];
   const e: ToolEnv = {
-    turn: { turnId: 't1', clientId: 'tab-1', surface: 'screen', text: 'test', viewer: true, ...turn },
+    turn: { turnId: 't1', clientId: 'tab-1', user: 'tester', surface: 'screen', text: 'test', viewer: true, ...turn },
     async view(op, args) {
       views.push({ op, args });
       return viewReply;

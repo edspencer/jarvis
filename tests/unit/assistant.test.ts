@@ -3,10 +3,16 @@
 // (driven with fake timers), and the site manifest's assistant section.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClientMsg, ServerMsg } from '../../server/src/core/protocol.ts';
-import { backoff, endpoints, parseServerMsg } from '../../src/plugins/assistant/transport';
+import {
+  backoff,
+  CLOSE_UNAUTHORISED,
+  createSocketTransport,
+  endpoints,
+  parseServerMsg,
+} from '../../src/plugins/assistant/transport';
 import { initialTranscript, reduce, MAX_ENTRIES, type TranscriptState } from '../../src/plugins/assistant/transcript';
 import { createSpeaker, speakable, takeSentences } from '../../src/plugins/assistant/speech';
-import { fileName, pickMime, recordIfWanted } from '../../src/plugins/assistant/talk';
+import { fileName, pickMime, recordIfWanted, transcribe } from '../../src/plugins/assistant/talk';
 import { createMockTransport, matchScript, MOCK_TIMING } from '../../src/plugins/assistant/mock';
 import { resolveLayer } from '../../src/plugins/assistant/layers';
 import { reservedKeys, validateManifest, type SiteManifest } from '../../src/site';
@@ -63,7 +69,10 @@ describe('the transcript reducer', () => {
         agent: 'scripted',
         transcribe: true,
         ha: 'mock',
+        user: { name: 'ed' },
+        ticket: 't',
       },
+      { type: 'ticket', ticket: 't2' }, // (not the transcript's business)
     ]);
     expect(s.entries.map((e) => e.kind)).toEqual(['user', 'assistant', 'tool', 'divider']);
     expect(s).toMatchObject({ agent: 'scripted', transcribe: true, ha: 'mock', turn: null });
@@ -319,7 +328,7 @@ describe('the mock server', () => {
   const hello = (): ClientMsg & { type: 'hello' } => ({
     type: 'hello',
     clientId: 'c1',
-    surface: 'screen',
+    auth: { type: 'secret', secret: 'mock:mock' },
     capabilities: ['viewer'],
   });
   async function start() {
@@ -334,7 +343,13 @@ describe('the mock server', () => {
   it('says hello back with a welcome, and streams a light command: tool running → done, then the text', async () => {
     const { t, got } = await start();
     expect(t.state).toBe('connected');
-    expect(got[0]).toMatchObject({ type: 'welcome', agent: 'scripted (mock)', transcribe: true });
+    expect(got[0]).toMatchObject({
+      type: 'welcome',
+      agent: 'scripted (mock)',
+      transcribe: true,
+      user: { name: 'mock' },
+      ticket: 'mock-ticket',
+    });
     t.send({ type: 'say', text: 'turn off the kitchen lights', source: 'typed' });
     await vi.advanceTimersByTimeAsync(3000);
     const tools = got.filter((m) => m.type === 'tool');
@@ -385,6 +400,16 @@ describe('the mock server', () => {
     expect(r.last).toMatchObject({ status: 'refused' });
   });
 
+  it('without a credential it stays unauthorised and says nothing', async () => {
+    const t = createMockTransport({ hello: async () => null });
+    const got: ServerMsg[] = [];
+    t.onMessage((m) => got.push(m));
+    await vi.advanceTimersByTimeAsync(1);
+    expect(t.state).toBe('unauthorised');
+    expect(got).toEqual([]);
+    expect(t.send({ type: 'say', text: 'hi', source: 'typed' })).toBe(false);
+  });
+
   it('flies the viewer and waits for its answer before it speaks', async () => {
     const { t, got } = await start();
     t.send({ type: 'say', text: 'show me the air handler', source: 'voice' });
@@ -414,6 +439,119 @@ describe('the mock server', () => {
     expect(got[0]).toMatchObject({ type: 'welcome', transcript: [{ kind: 'divider', text: 'New conversation' }] });
     t.close();
     expect(t.send({ type: 'say', text: 'hi', source: 'typed' })).toBe(false);
+  });
+});
+
+describe('the socket transport: login', () => {
+  /** a WebSocket that opens at once and records what is sent; close(code) plays the server closing it */
+  class FakeWs {
+    static OPEN = 1;
+    static all: FakeWs[] = [];
+    readyState = 0;
+    sent: unknown[] = [];
+    onopen: (() => void) | null = null;
+    onmessage: ((e: { data: string }) => void) | null = null;
+    onclose: ((e: { code: number }) => void) | null = null;
+    onerror: (() => void) | null = null;
+    readonly url: string;
+    constructor(url: string) {
+      this.url = url;
+      FakeWs.all.push(this);
+      queueMicrotask(() => {
+        this.readyState = 1;
+        this.onopen?.();
+      });
+    }
+    send(d: string) {
+      this.sent.push(JSON.parse(d));
+    }
+    close(code = 1000) {
+      this.readyState = 3;
+      this.onclose?.({ code });
+    }
+  }
+  beforeEach(() => {
+    vi.useFakeTimers();
+    FakeWs.all = [];
+    vi.stubGlobal('addEventListener', () => {});
+    vi.stubGlobal('removeEventListener', () => {});
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+  const hello = (secret: string) => ({
+    type: 'hello' as const,
+    clientId: 'c',
+    auth: { type: 'secret' as const, secret },
+    capabilities: [],
+  });
+  const make = (creds: () => Promise<ReturnType<typeof hello> | null>) =>
+    createSocketTransport({ url: 'ws://x/assistant/ws', hello: creds, WebSocket: FakeWs as never });
+
+  it('no credential: unauthorised, and no socket is opened', async () => {
+    const t = make(async () => null);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(t.state).toBe('unauthorised');
+    expect(FakeWs.all).toEqual([]);
+    expect(t.retryIn()).toBeNull();
+    t.close();
+  });
+
+  it('sends the hello with the credential first; a refusal (4401) stops the retries until retry()', async () => {
+    let secret = 'alice:wrong';
+    const t = make(async () => hello(secret));
+    await vi.advanceTimersByTimeAsync(10);
+    expect(t.state).toBe('connected');
+    expect(FakeWs.all[0].sent).toEqual([hello('alice:wrong')]);
+    FakeWs.all[0].close(CLOSE_UNAUTHORISED);
+    expect(t.state).toBe('unauthorised');
+    await vi.advanceTimersByTimeAsync(120_000);
+    expect(FakeWs.all).toHaveLength(1); // no hammering
+    secret = 'alice:right';
+    t.retry();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(FakeWs.all).toHaveLength(2);
+    expect(FakeWs.all[1].sent).toEqual([hello('alice:right')]);
+    expect(t.state).toBe('connected');
+    // any other close is "offline", with a retry scheduled
+    FakeWs.all[1].close(1006);
+    expect(t.state).toBe('offline');
+    expect(t.retryIn()).toBeGreaterThan(0);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(FakeWs.all).toHaveLength(3);
+    t.close();
+  });
+
+  it('restart() drops the connection and says hello again with the new credential', async () => {
+    let secret = 'alice:one';
+    const t = make(async () => hello(secret));
+    await vi.advanceTimersByTimeAsync(10);
+    secret = 'bob:two';
+    t.restart();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(FakeWs.all[0].readyState).toBe(3);
+    expect(FakeWs.all[1].sent).toEqual([hello('bob:two')]);
+    expect(t.state).toBe('connected');
+    t.close();
+  });
+});
+
+describe('transcribe', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("sends the connection's ticket as the bearer, and the server's error when it fails", async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    let reply = new Response(JSON.stringify({ text: ' hello ' }), { status: 200 });
+    vi.stubGlobal('fetch', async (url: string, init: RequestInit) => (calls.push({ url, init }), reply));
+    expect(await transcribe('/assistant/transcribe', new Blob(['x']), 'audio/webm', 'tkt')).toBe('hello');
+    expect(calls[0].init.headers).toEqual({ authorization: 'Bearer tkt' });
+    expect(calls[0].init.body).toBeInstanceOf(FormData);
+    reply = new Response(JSON.stringify({ error: 'not authorised' }), { status: 401 });
+    await expect(transcribe('/assistant/transcribe', new Blob(['x']), 'audio/webm', null)).rejects.toThrow(
+      'not authorised',
+    );
+    expect(calls[1].init.headers).toEqual({});
   });
 });
 

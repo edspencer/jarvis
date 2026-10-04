@@ -1,6 +1,7 @@
-// The live HA client's message framing, against a fake in-process socket (never a real Home Assistant).
+// The live HA client's message framing and the person-token check (currentUser), against fake in-process sockets
+// (never a real Home Assistant).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { createLiveHa, websocketUrl } from '../src/ha-live.ts';
+import { createHaUserCheck, createLiveHa, websocketUrl } from '../src/ha-live.ts';
 import type { SocketLike } from '../src/ha-live.ts';
 
 class FakeSocket implements SocketLike {
@@ -181,5 +182,96 @@ describe('ha-live framing', () => {
     expect(sockets[2].closed).toBe(true);
     await vi.advanceTimersByTimeAsync(10_000);
     expect(sockets).toHaveLength(3);
+  });
+});
+
+describe("currentUser: a person's own token, on a socket of its own", () => {
+  function check(o: { cacheMs?: number; now?: () => number } = {}) {
+    const sockets: FakeSocket[] = [];
+    const who = createHaUserCheck({
+      url: 'https://ha.example.org:8123',
+      ownToken: 'assistant-token',
+      timeoutMs: 1_000,
+      socket: (u) => {
+        const s = new FakeSocket(u);
+        sockets.push(s);
+        return s;
+      },
+      ...o,
+    });
+    return { who, sockets };
+  }
+  /** HA's side of a login with `token` that answers auth/current_user with `user` */
+  const answer = (s: FakeSocket, user: Record<string, unknown>) => {
+    s.recv({ type: 'auth_required' });
+    s.recv({ type: 'auth_ok' });
+    expect(s.last()).toEqual({ id: 1, type: 'auth/current_user' });
+    s.recv({ id: 1, type: 'result', success: true, result: user });
+  };
+
+  it("auth with the person's token, auth/current_user, then close; a good answer is cached a minute", async () => {
+    let t = 0;
+    const { who, sockets } = check({ now: () => t });
+    const p = who('person-token');
+    expect(sockets).toHaveLength(1);
+    sockets[0].recv({ type: 'auth_required' });
+    expect(sockets[0].sent[0]).toEqual({ type: 'auth', access_token: 'person-token' });
+    answer(sockets[0], { id: 'abc123', name: 'Ed', is_admin: true });
+    expect(await p).toEqual({ id: 'abc123', name: 'Ed', is_admin: true });
+    expect(sockets[0].closed).toBe(true);
+    expect(await who('person-token')).toEqual({ id: 'abc123', name: 'Ed', is_admin: true });
+    expect(sockets).toHaveLength(1); // from the cache
+    t += 60_001;
+    const again = who('person-token');
+    expect(sockets).toHaveLength(2);
+    answer(sockets[1], { id: 'abc123', name: 'Ed' });
+    expect(await again).toEqual({ id: 'abc123', name: 'Ed', is_admin: false });
+  });
+
+  it("a refused token is null and not cached; the assistant's own token is never accepted", async () => {
+    const { who, sockets } = check();
+    const p = who('bad');
+    sockets[0].recv({ type: 'auth_required' });
+    sockets[0].recv({ type: 'auth_invalid', message: 'Invalid access token' });
+    expect(await p).toBeNull();
+    expect(sockets[0].closed).toBe(true);
+    const p2 = who('bad');
+    expect(sockets).toHaveLength(2);
+    sockets[1].recv({ type: 'auth_invalid' });
+    expect(await p2).toBeNull();
+    expect(await who('assistant-token')).toBeNull();
+    expect(await who('')).toBeNull();
+    expect(sockets).toHaveLength(2);
+  });
+
+  it('HA failing to answer throws (no answer in time, the socket closing, a failed result)', async () => {
+    const { who, sockets } = check();
+    const slow = who('a');
+    const caught = slow.catch((e: Error) => e.message);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(await caught).toMatch(/did not answer within 1000 ms/);
+    expect(sockets[0].closed).toBe(true);
+    const dropped = who('b');
+    sockets[1].close();
+    await expect(dropped).rejects.toThrow(/closed/);
+    const failed = who('c');
+    sockets[2].recv({ type: 'auth_ok' });
+    sockets[2].recv({ id: 1, type: 'result', success: false, error: { code: 'unauthorized' } });
+    await expect(failed).rejects.toThrow(/current_user failed/);
+  });
+
+  it("createLiveHa answers currentUser on its own socket, never the assistant's connection", async () => {
+    const { ha, sockets, auth } = setup('assistant-token');
+    auth();
+    await ha.ready();
+    const p = ha.currentUser('person-token');
+    expect(sockets).toHaveLength(2);
+    expect(sockets[0].sent).toEqual([{ type: 'auth', access_token: 'assistant-token' }]);
+    sockets[1].recv({ type: 'auth_required' });
+    expect(sockets[1].sent[0]).toEqual({ type: 'auth', access_token: 'person-token' });
+    answer(sockets[1], { id: 'u1', name: 'Ana' });
+    expect(await p).toMatchObject({ id: 'u1', name: 'Ana' });
+    expect(await ha.currentUser('assistant-token')).toBeNull();
+    ha.close!();
   });
 });

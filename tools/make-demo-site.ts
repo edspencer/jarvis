@@ -1728,8 +1728,7 @@ function manifest() {
       switches: { source: 'tools/make-demo-site.ts' },
       blueprints: { index: 'blueprints/index.json', default: 'A-1' },
       energy: { map: 'energy.json' },
-      // the assistant server, same origin (none runs with the demo: the plugin says "offline"; ?assistant=mock fakes one)
-      assistant: { server: '/assistant' },
+      // (no assistant: it needs a server of its own, docs/assistant.md; the e2e test adds the section)
     },
   };
 }

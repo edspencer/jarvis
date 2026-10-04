@@ -3,11 +3,14 @@
 //
 // LAN-only stance (design §2.3): it binds 127.0.0.1 by default and is meant to sit behind the site's reverse proxy at
 // /assistant/*, same origin as the viewer (no CORS; the HTTPS the microphone needs is already there), with the proxy
-// refusing non-LAN clients. Browsers send an Origin on a WebSocket and on a cross-site POST; on the socket and on
-// /transcribe it must be on JARVIS_ASSISTANT_ORIGINS (exactly: scheme, host and port). Only a loopback bind may leave
-// that list empty, and then the request's own Host must match: off loopback a DNS-rebinding page would send a matching
-// Host itself, so config.ts insists on the list. A client with no Origin is not a browser (a satellite bridge, a
-// script) and is let through: cross-site WebSocket hijacking and spending the STT credit from a web page need one.
+// refusing non-LAN clients. On the socket and on /transcribe an `Origin` header is required and must be on
+// JARVIS_ASSISTANT_ORIGINS (exactly: scheme, host and port); a request without one is refused, so a client that isn't a
+// browser (a satellite bridge, a script) sends an allowed Origin itself. Only a loopback bind may leave that list
+// empty, and then the request's own Host must match: off loopback a DNS-rebinding page would send a matching Host
+// itself, so config.ts insists on the list.
+// The Origin only says which page is asking; who is asking is the hello's credential (core/auth.ts, checked by the hub
+// before anything else) and, for /transcribe, the ticket that hello earned (`Authorization: Bearer <ticket>`). Both
+// are rate-limited per user, and failed logins per remote address.
 // TODO(open question 4: where the server runs): next to the static site or on an agent host; the proxy config
 // examples follow from that.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -15,14 +18,15 @@ import type { AddressInfo } from 'node:net';
 import type { Duplex } from 'node:stream';
 import { WebSocketServer, type WebSocket } from 'ws';
 import type { SttConfig } from './core/config.ts';
+import { bearer } from './core/auth.ts';
 import type { Conn, Hub } from './core/hub.ts';
-import type { HelloMsg } from './core/protocol.ts';
+import type { RateLimiter } from './core/limits.ts';
 import { MAX_AUDIO_BYTES, TranscribeError, transcribe as transcribeAudio } from './core/transcribe.ts';
 
 /** the WebSocket's max message (a `say` is at most a few KB) */
 export const MAX_WS_PAYLOAD = 64 * 1024;
 
-/** a hub Conn over a WebSocket, with the upgrade request kept for authenticate() */
+/** a hub Conn over a WebSocket, with the upgrade request kept */
 export interface WsConn extends Conn {
   readonly request: IncomingMessage;
 }
@@ -34,6 +38,8 @@ export interface ServerOptions {
   origins: string[];
   stt: SttConfig | null;
   hub: Hub;
+  /** POST /transcribe per user (none: unlimited) */
+  transcribeLimit?: RateLimiter;
   health: () => Record<string, unknown>;
   /** tests: the fetch the transcription proxy uses */
   fetchImpl?: typeof fetch;
@@ -42,22 +48,13 @@ export interface ServerOptions {
   log?: (msg: string) => void;
 }
 
-/**
- * Who may join (the hub's `authenticate` hook): null = yes, a string = the reason not.
- * v1 accepts any client the Origin check let in.
- * TODO(design §2.3): validate the person's Home Assistant access token sent with `hello` (auth/current_user over HA's
- * websocket, or GET /api/ with it as bearer) and learn who is talking, for per-person memory and `who:` policy rules.
- */
-export function authenticate(_hello: HelloMsg, _conn: Conn): string | null {
-  return null;
-}
-
-/** may a browser at `origin` use the socket or /transcribe? (`allowed` empty: only on a loopback bind, config.ts) */
 /** the host names a loopback-only server's own pages may use */
 const LOOPBACK_NAME = /^(localhost|127(\.\d{1,3}){3}|\[::1\])$/;
 
+/** may a page at `origin` use the socket or /transcribe? No Origin: no. (`allowed` empty: only on a loopback bind,
+ * config.ts) */
 export function originAllowed(origin: string | undefined, host: string | undefined, allowed: string[]): boolean {
-  if (!origin) return true; // not a browser
+  if (!origin) return false; // every client sends one: browsers do, anything else must
   if (allowed.length) return allowed.includes(origin);
   // no list (loopback only, config.ts enforces that): the page must come from this machine by a loopback name, so a
   // DNS-rebinding page (evil.example resolving to 127.0.0.1: Origin and Host both say evil.example) is refused too
@@ -117,9 +114,17 @@ export function createAssistantServer(o: ServerOptions) {
 
   async function onTranscribe(req: IncomingMessage, res: ServerResponse) {
     if (!originAllowed(req.headers.origin, req.headers.host, o.origins)) {
-      log(`transcribe: refused origin ${req.headers.origin}`);
+      log(`transcribe: refused origin ${req.headers.origin ?? '(none)'}`);
       return refuseUpload(req, res, 403, 'this origin may not use the assistant');
     }
+    // the ticket a logged-in connection got in its welcome: no ticket, no transcription
+    const t = o.hub.ticket(bearer(req.headers.authorization));
+    if (!t) {
+      res.setHeader('www-authenticate', 'Bearer');
+      return refuseUpload(req, res, 401, 'not authorised: send the ticket from welcome as Authorization: Bearer');
+    }
+    if (o.transcribeLimit && !o.transcribeLimit.take(t.user.key))
+      return refuseUpload(req, res, 429, 'slow down: too many recordings; try again in a moment');
     if (!o.stt) return json(res, 503, { error: 'transcription is not configured (JARVIS_STT_URL)' });
     const type = String(req.headers['content-type'] ?? '');
     if (!type.startsWith('multipart/form-data'))
@@ -164,17 +169,18 @@ export function createAssistantServer(o: ServerOptions) {
     };
     if (url.pathname !== path('/ws')) return refuse('404 Not Found');
     if (!originAllowed(req.headers.origin, req.headers.host, o.origins)) {
-      log(`ws: refused origin ${req.headers.origin}`);
+      log(`ws: refused origin ${req.headers.origin ?? '(none)'}`);
       return refuse('403 Forbidden');
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
       const conn: WsConn = {
         request: req,
+        remote: req.socket.remoteAddress ?? 'unknown',
         send(m) {
           if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(m));
         },
-        close() {
-          ws.close(1000);
+        close(code = 1000, reason) {
+          ws.close(code, reason?.slice(0, 120));
         },
       };
       alive.set(ws, true);

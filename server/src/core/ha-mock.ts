@@ -7,6 +7,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import type { HaIdentity } from './auth.ts';
 import type { HaBackend, HaHistoryPoint, HaState } from './types.ts';
 
 export interface MockHaOptions {
@@ -39,6 +40,7 @@ export const MOCK_EXTRA_IDS: readonly string[] = [
   'sensor.pond_pump_power',
   'fan.bedroom_fan',
   'scene.evening',
+  'scene.away',
 ];
 
 export const DEMO_SITE_DIR = resolve(dirname(fileURLToPath(import.meta.url)), '../../../examples/demo-site');
@@ -121,6 +123,8 @@ function extras(): HaState[] {
     }),
     s('fan.bedroom_fan', 'off', { friendly_name: 'Bedroom fan', percentage: 0, area: 'Bedroom 1' }),
     s('scene.evening', 'scening', { friendly_name: 'Evening', area: 'Living room' }),
+    // a scene that sets more than lights (in a real house: locks, covers, the alarm), to show why scenes are named
+    s('scene.away', 'scening', { friendly_name: 'Away' }),
   ];
 }
 
@@ -141,6 +145,15 @@ const hash = (s: string) => {
   for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
   return h >>> 0;
 };
+
+/** The mock's logins (JARVIS_ASSISTANT_AUTH=ha with JARVIS_HA_MODE=mock, never live): a token `mock-user:<name>` is
+ * the user <name> (id `mock-<name, lower case>`); anything else is refused. */
+export function mockCurrentUser(token: string): HaIdentity | null {
+  const m = /^mock-user:([A-Za-z0-9._ -]{1,64})$/.exec(typeof token === 'string' ? token : '');
+  if (!m || !m[1].trim()) return null;
+  const name = m[1].trim();
+  return { id: `mock-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`, name, is_admin: false };
+}
 
 /** the most hourly history points one call returns (a month) */
 const MAX_POINTS = 24 * 31;
@@ -289,6 +302,7 @@ export function createMockHa(opts: number | MockHaOptions = {}): MockHa {
     scene: {
       turn_on: (id) => {
         if (id === 'scene.evening') for (const l of lightsInAreas(['living'])) lightOn(l, { brightness_pct: 40 });
+        if (id === 'scene.away') for (const l of lightsInAreas(['*'])) off(l);
         set(id, 'scening');
         entities.set(id, { ...entities.get(id)!, last_changed: at() });
       },
@@ -330,6 +344,9 @@ export function createMockHa(opts: number | MockHaOptions = {}): MockHa {
         out.push({ state, at: new Date(t).toISOString() });
       }
       return out;
+    },
+    async currentUser(token) {
+      return mockCurrentUser(token);
     },
     async callService(domain, service, data) {
       const handler = SERVICES[domain]?.[service];

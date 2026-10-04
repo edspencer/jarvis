@@ -1,7 +1,8 @@
 // The live Home Assistant backend: one websocket to HA's /api/websocket, authenticated with a long-lived token. It acts
 // as the assistant's OWN Home Assistant user, a dedicated non-admin user (e.g. "JARVIS assistant", design §2.3), so
 // every action shows up in HA's logbook under that user and revoking it is one click. Never give it an admin's token.
-// The person's own HA login (from the viewer) is for identifying who is talking; it is never used here.
+// The person's own HA login (from the viewer) is for identifying who is talking: currentUser() checks it on a separate,
+// one-off websocket (auth, auth/current_user, close) and never on this connection (createHaUserCheck below).
 //
 // Only the gate (core/gate.ts) may call callService. This file just speaks the protocol: auth, get_states,
 // history/history_during_period and call_service, with a timeout on every request and reconnection with exponential
@@ -9,6 +10,8 @@
 //
 // Tests: the framing is unit-tested against a fake in-process socket (server/test/ha-live.test.ts); nothing here is ever
 // exercised against a real Home Assistant in tests.
+import { createHash } from 'node:crypto';
+import type { HaIdentity } from './core/auth.ts';
 import type { HaBackend, HaHistoryPoint, HaState } from './core/types.ts';
 
 /** the part of the WHATWG WebSocket this client uses (Node 22's global WebSocket, or a fake in tests) */
@@ -44,6 +47,95 @@ export interface LiveHa extends HaBackend {
   readonly connected: boolean;
 }
 
+export interface HaUserCheckOptions {
+  url: string;
+  /** the assistant's own token: a person presenting it is refused (it would make them the assistant) */
+  ownToken?: string;
+  /** the whole check (ms, default 5 s) */
+  timeoutMs?: number;
+  /** how long a good answer is remembered, by the token's hash (ms, default 60 s); refusals never are */
+  cacheMs?: number;
+  socket?: (url: string) => SocketLike;
+  now?: () => number;
+  setTimeout?: (fn: () => void, ms: number) => unknown;
+  clearTimeout?: (handle: unknown) => void;
+}
+
+/**
+ * Who a person's Home Assistant access token belongs to (the `ha` login, core/auth.ts): a fresh websocket with THAT
+ * token (auth, then auth/current_user, then close). null: HA refused the token. Throws: HA couldn't be asked (no
+ * answer in time, the socket failed), which the authenticator treats as "not authorised" too. The token is not kept;
+ * a good answer is cached for a minute under the token's SHA-256, so a reconnecting tab doesn't ask HA every time.
+ */
+export function createHaUserCheck(o: HaUserCheckOptions): (token: string) => Promise<HaIdentity | null> {
+  const url = websocketUrl(o.url);
+  const timeoutMs = o.timeoutMs ?? 5_000;
+  const cacheMs = o.cacheMs ?? 60_000;
+  const now = o.now ?? Date.now;
+  const setT = o.setTimeout ?? ((fn: () => void, ms: number) => globalThis.setTimeout(fn, ms));
+  const clearT = o.clearTimeout ?? ((h: unknown) => globalThis.clearTimeout(h as ReturnType<typeof setTimeout>));
+  const makeSocket = o.socket ?? defaultSocket;
+  const cache = new Map<string, { who: HaIdentity; until: number }>();
+
+  return async (token) => {
+    if (typeof token !== 'string' || !token) return null;
+    if (o.ownToken && token === o.ownToken) return null;
+    const key = createHash('sha256').update(token).digest('hex');
+    const hit = cache.get(key);
+    if (hit && hit.until > now()) return hit.who;
+    cache.delete(key);
+    for (const [k, v] of cache) if (v.until <= now()) cache.delete(k);
+
+    const who = await new Promise<HaIdentity | null>((resolve, reject) => {
+      let sock: SocketLike;
+      let done = false;
+      const finish = (err: Error | null, v: HaIdentity | null = null) => {
+        if (done) return;
+        done = true;
+        clearT(timer);
+        try {
+          sock?.close();
+        } catch {}
+        if (err) reject(err);
+        else resolve(v);
+      };
+      const timer = setT(() => finish(new Error(`Home Assistant did not answer within ${timeoutMs} ms`)), timeoutMs);
+      try {
+        sock = makeSocket(url);
+      } catch (e) {
+        return finish(e instanceof Error ? e : new Error(String(e)));
+      }
+      sock.onerror = () => {}; // onclose follows
+      sock.onclose = () => finish(new Error('the Home Assistant connection closed'));
+      sock.onmessage = (ev) => {
+        let m: Record<string, unknown>;
+        try {
+          m = JSON.parse(String(ev.data));
+        } catch {
+          return;
+        }
+        if (m.type === 'auth_required') sock.send(JSON.stringify({ type: 'auth', access_token: token }));
+        else if (m.type === 'auth_invalid') finish(null, null);
+        else if (m.type === 'auth_ok') sock.send(JSON.stringify({ id: 1, type: 'auth/current_user' }));
+        else if (m.type === 'result' && m.id === 1) {
+          const r = (m.result ?? {}) as Record<string, unknown>;
+          if (!m.success || typeof r.id !== 'string') return finish(new Error('auth/current_user failed'));
+          const name = typeof r.name === 'string' && r.name ? r.name : r.id;
+          finish(null, { id: r.id, name, is_admin: r.is_admin === true });
+        }
+      };
+    });
+    if (who) cache.set(key, { who, until: now() + cacheMs });
+    return who;
+  };
+}
+
+function defaultSocket(u: string): SocketLike {
+  const WS = (globalThis as { WebSocket?: new (u: string) => SocketLike }).WebSocket;
+  if (!WS) throw new Error('no global WebSocket (Node 22 or later needed)');
+  return new WS(u);
+}
+
 /** https://host:8123 → wss://host:8123/api/websocket */
 export function websocketUrl(url: string): string {
   const u = new URL(url);
@@ -66,13 +158,14 @@ export function createLiveHa(opts: LiveHaOptions): LiveHa {
   const log = opts.log ?? (() => {});
   const setT = opts.setTimeout ?? ((fn: () => void, ms: number) => globalThis.setTimeout(fn, ms));
   const clearT = opts.clearTimeout ?? ((h: unknown) => globalThis.clearTimeout(h as ReturnType<typeof setTimeout>));
-  const makeSocket =
-    opts.socket ??
-    ((u: string) => {
-      const WS = (globalThis as { WebSocket?: new (u: string) => SocketLike }).WebSocket;
-      if (!WS) throw new Error('no global WebSocket (Node 22 or later needed)');
-      return new WS(u);
-    });
+  const makeSocket = opts.socket ?? defaultSocket;
+  const userCheck = createHaUserCheck({
+    url: opts.url,
+    ownToken: opts.token,
+    socket: opts.socket,
+    setTimeout: opts.setTimeout,
+    clearTimeout: opts.clearTimeout,
+  });
 
   let ws: SocketLike | null = null;
   let authed = false;
@@ -242,6 +335,7 @@ export function createLiveHa(opts: LiveHaOptions): LiveHa {
         .filter((r) => typeof r.s === 'string')
         .map((r): HaHistoryPoint => ({ state: r.s!, at: new Date((r.lc ?? r.lu ?? 0) * 1000).toISOString() }));
     },
+    currentUser: (token) => userCheck(token),
     async callService(domain, service, data) {
       const { entity_id, ...serviceData } = data;
       await request({ type: 'call_service', domain, service, service_data: serviceData, target: { entity_id } });

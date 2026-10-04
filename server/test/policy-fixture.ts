@@ -34,13 +34,17 @@ export const EXAMPLE_POLICY = {
       bounds: { brightness_pct: [1, 100], color_temp_kelvin: [2000, 6500] },
     },
     { allow: { entity: 'switch.bathroom_vanity', service: ['turn_on', 'turn_off', 'toggle'] } },
-    { allow: { domain: 'scene', service: 'turn_on' } },
+    { allow: { entity: 'scene.evening', service: 'turn_on' } },
     { allow: { entity: 'script.film_night', service: 'turn_on' } },
     { allow: { domain: 'fan', service: ['turn_on', 'turn_off', 'set_percentage'] }, bounds: { percentage: [0, 100] } },
     { allow: { entity: 'switch.pond_pump', service: ['turn_on', 'turn_off'] }, max_minutes: 60 },
     {
       confirm: { domain: 'script', service: 'turn_on' },
       reason: "Scripts can do anything; this one isn't on the harmless list",
+    },
+    {
+      confirm: { domain: 'scene', service: 'turn_on' },
+      reason: "A scene can set anything (locks, covers, the alarm); this one isn't on the harmless list",
     },
   ],
 };

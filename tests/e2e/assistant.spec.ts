@@ -2,11 +2,25 @@
 // protocol; src/plugins/assistant/mock.ts) on the demo house with mock Home Assistant: Shift-M opens the panel, a typed
 // message streams a reply with a tool chip (and the typing doesn't reach the viewer's keys), a confirmation is
 // approved and another denied, "where is …" flies there and opens the inspector, a chip with a subject flies there,
-// holding M talks (the mock "hears" a fixed phrase), and New conversation starts over.
+// holding M talks (the mock "hears" a fixed phrase), and New conversation starts over. Then the login, against a routed
+// WebSocket standing in for the server: no credential asks for an access code, a refused one says so (and doesn't
+// retry), the right one connects, Forget code signs out.
+// The demo site has no assistant section (the assistant needs a server of its own, and the Pages site must not try
+// to reach one), so each page here gets site.json with one added.
 import { expect, test, type Page } from '@playwright/test';
 import { openViewer, twin, waitForLayers, watchErrors } from './helpers';
 
 test.describe.configure({ mode: 'serial' });
+
+/** serve the demo's site.json with plugins.assistant added */
+async function withAssistant(p: Page): Promise<void> {
+  await p.route('**/site.json', async (route) => {
+    const response = await route.fetch();
+    const site = await response.json();
+    site.plugins.assistant = { server: '/assistant' };
+    await route.fulfill({ response, json: site });
+  });
+}
 
 let page: Page;
 let errors: string[];
@@ -14,6 +28,7 @@ let errors: string[];
 test.beforeAll(async ({ browser }) => {
   page = await browser.newPage();
   errors = watchErrors(page);
+  await withAssistant(page);
   await openViewer(page, 'ha=mock&hamock=static&assistant=mock&noextra');
   await waitForLayers(page);
   await page.waitForFunction(
@@ -39,7 +54,7 @@ const send = async (text: string) => {
 const idle = () => expect(panel().locator('.state')).toHaveAttribute('data-phase', 'idle');
 
 test('the status item shows the mock assistant, and Shift-M opens the panel', async () => {
-  test.skip(!(await twin<boolean>(page, `twin.host.running('assistant')`)), 'the site has no assistant');
+  expect(await twin<boolean>(page, `twin.host.running('assistant')`)).toBe(true);
   await expect(page.locator('jv-status [data-item="assistant"]')).toContainText('Assistant · mock');
   await page.keyboard.press('Shift+KeyM');
   await expect(panel()).toBeVisible();
@@ -164,4 +179,71 @@ test('New conversation starts over', async () => {
 
 test('no console errors', () => {
   expect(errors).toEqual([]);
+});
+
+test('the login: an access code is asked for, a wrong one refused without retrying, the right one connects', async ({
+  browser,
+}) => {
+  const p = await browser.newPage();
+  const errs = watchErrors(p);
+  await withAssistant(p);
+  // the server: a welcome for one access code, 4401 for anything else
+  const hellos: { auth?: { type: string; secret?: string } }[] = [];
+  await p.routeWebSocket('**/assistant/ws', (ws) => {
+    ws.onMessage((raw) => {
+      const m = JSON.parse(String(raw));
+      if (m.type !== 'hello') return;
+      hellos.push(m);
+      if (m.auth?.type === 'secret' && m.auth.secret === 'tablet:right')
+        ws.send(
+          JSON.stringify({
+            type: 'welcome',
+            transcript: [],
+            status: 'idle',
+            agent: 'routed',
+            transcribe: false,
+            ha: 'mock',
+            user: { name: 'tablet' },
+            ticket: 't1',
+          }),
+        );
+      else {
+        ws.send(JSON.stringify({ type: 'error', message: 'not authorised' }));
+        ws.close({ code: 4401, reason: 'not authorised' });
+      }
+    });
+  });
+  // mock Home Assistant has no login to offer, so there is no credential at first
+  await openViewer(p, 'ha=mock&hamock=static&noextra');
+  await waitForLayers(p);
+  const status = p.locator('jv-status [data-item="assistant"]');
+  const box = p.locator('jv-dock section[data-panel="assistant"]');
+  const signin = box.locator('.signin');
+  const code = signin.locator('input[aria-label="Access code"]');
+  await expect(status).toContainText('Assistant · sign in');
+  await p.keyboard.press('Shift+KeyM');
+  await expect(signin).toHaveAttribute('data-auth', 'needed');
+  expect(hellos).toEqual([]); // nothing to send, so nothing was sent
+
+  await code.fill('tablet:wrong');
+  await signin.getByRole('button', { name: 'Use code' }).click();
+  await expect(signin).toHaveAttribute('data-auth', 'refused');
+  await expect(signin).toContainText("didn't accept this access code");
+  await p.waitForTimeout(1500);
+  expect(hellos.map((h) => h.auth)).toEqual([{ type: 'secret', secret: 'tablet:wrong' }]); // and no retry
+
+  await code.fill('tablet:right');
+  await code.press('Enter');
+  await expect(status).toHaveText('Assistant'); // ready: no "· sign in"
+  await expect(signin).toHaveCount(0);
+  await expect(box.locator('.agent')).toHaveText('routed · tablet');
+  expect(hellos.at(-1)).toMatchObject({ auth: { type: 'secret', secret: 'tablet:right' } });
+  expect(hellos.at(-1)).not.toHaveProperty('surface');
+
+  await box.getByRole('button', { name: 'Forget code' }).click();
+  await expect(signin).toHaveAttribute('data-auth', 'needed');
+  await expect(status).toContainText('Assistant · sign in');
+  await expect(box.getByRole('button', { name: 'Forget code' })).toHaveCount(0);
+  expect(errs).toEqual([]);
+  await p.close();
 });

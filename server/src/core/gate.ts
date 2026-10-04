@@ -27,6 +27,8 @@ export interface AuditRecord {
   /** ISO time */
   at: string;
   clientId: string;
+  /** the authenticated user's name */
+  user?: string;
   surface: Surface;
   utterance?: string;
   request: ActRequest;
@@ -126,7 +128,12 @@ export function createGate(opts: GateOptions): Gate {
     e.value.resolve(o);
   }
 
-  const who = (ctx: ActContext) => ({ clientId: ctx.clientId, surface: ctx.surface, utterance: ctx.utterance });
+  const who = (ctx: ActContext) => ({
+    clientId: ctx.clientId,
+    ...(ctx.user ? { user: ctx.user } : {}),
+    surface: ctx.surface,
+    utterance: ctx.utterance,
+  });
 
   /** read fresh states and ask the current policy */
   async function decide(

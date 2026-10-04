@@ -51,7 +51,9 @@ rules:
   - allow: { domain: light, service: [turn_on, turn_off, toggle] }
     bounds: { brightness_pct: [1, 100], color_temp_kelvin: [2000, 6500] }
   - allow: { entity: switch.bathroom_vanity, service: [turn_on, turn_off, toggle] }
-  - allow: { domain: scene, service: turn_on }
+  # a scene can set anything Home Assistant can set (locks, covers, the alarm, …), so "turn on a scene" is as broad as
+  # the scene: only named, harmless ones (every other scene asks first: below)
+  - allow: { entity: scene.evening, service: turn_on }
   # a script can do anything, so only harmless ones, by name (every other script asks first: the last rule)
   - allow: { entity: script.film_night, service: turn_on }
   - allow: { domain: fan, service: [turn_on, turn_off, set_percentage] }
@@ -60,6 +62,8 @@ rules:
   - allow: { entity: 'switch.pond_pump', service: [turn_on, turn_off] }
     max_minutes: 60
 
-  # ---------------------------------------------------------------- any other script: ask first
+  # ---------------------------------------------------------------- any other script or scene: ask first
   - confirm: { domain: script, service: turn_on }
     reason: Scripts can do anything; this one isn't on the harmless list
+  - confirm: { domain: scene, service: turn_on }
+    reason: A scene can set anything (locks, covers, the alarm); this one isn't on the harmless list

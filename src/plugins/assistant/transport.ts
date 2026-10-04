@@ -4,10 +4,15 @@
 //
 // The socket reconnects with backoff (1 s doubling to a minute, with jitter) and stays quiet about it: no toasts, only
 // the state, which the status item shows ("Assistant offline"). On every (re)connect it sends `hello` first, with a
-// per-tab client id (sessionStorage, so a reload keeps it and the server can re-offer a pending confirmation).
+// per-tab client id (sessionStorage, so a reload keeps it and the server can re-offer a pending confirmation) and the
+// credential the plugin finds (the Home Assistant login or an access code). No credential, or the server refusing it
+// (close code 4401), is the 'unauthorised' state: no more tries until retry() (a new code was entered, say).
 import type { ClientMsg, HelloMsg, ServerMsg } from '../../../server/src/core/protocol.ts';
 
-export type ConnState = 'connecting' | 'connected' | 'offline';
+export type ConnState = 'connecting' | 'connected' | 'offline' | 'unauthorised';
+
+/** the server's close code for a refused credential (don't come back with the same one) */
+export const CLOSE_UNAUTHORISED = 4401;
 
 export interface Transport {
   /** false if it couldn't be sent (not connected) */
@@ -17,8 +22,10 @@ export interface Transport {
   readonly state: ConnState;
   /** ms until the next reconnect attempt, or null */
   retryIn(): number | null;
-  /** try again now (the panel's Retry) */
+  /** try again now (the panel's Retry, or a new access code) */
   retry(): void;
+  /** drop the connection and start again with a fresh hello (the credential changed) */
+  restart(): void;
   close(): void;
 }
 
@@ -67,9 +74,13 @@ const CONNECT_TIMEOUT = 8000;
 
 export function createSocketTransport(opts: {
   url: string;
-  /** the hello to send on each connect (the view context changes) */
-  hello(): HelloMsg;
+  /** the hello to send on each connect (the view context and the credential change); null: no credential, so don't
+   * connect ('unauthorised') */
+  hello(): Promise<HelloMsg | null>;
+  /** a WebSocket constructor (tests) */
+  WebSocket?: typeof WebSocket;
 }): Transport {
+  const WS = opts.WebSocket ?? WebSocket;
   let ws: WebSocket | null = null;
   let state: ConnState = 'connecting';
   let attempt = 0;
@@ -91,13 +102,30 @@ export function createSocketTransport(opts: {
     timer = setTimeout(connect, ms);
   };
 
-  function connect(): void {
+  /** a connect() is finding its credential */
+  let starting = false;
+  /** bumped by restart(): a connect() from before it gives up */
+  let gen = 0;
+
+  async function connect(): Promise<void> {
     clearTimeout(timer);
     retryAt = null;
+    if (closed || starting) return;
+    starting = true;
+    const g = gen;
+    let hello: HelloMsg | null;
+    try {
+      hello = await opts.hello();
+    } catch {
+      hello = null;
+    }
+    if (g !== gen) return; // restarted meanwhile (with another credential)
+    starting = false;
     if (closed) return;
+    if (!hello) return set('unauthorised');
     let sock: WebSocket;
     try {
-      sock = new WebSocket(opts.url);
+      sock = new WS(opts.url);
     } catch {
       set('offline');
       return schedule();
@@ -107,17 +135,19 @@ export function createSocketTransport(opts: {
     sock.onopen = () => {
       clearTimeout(giveUp);
       attempt = 0;
-      sock.send(JSON.stringify(opts.hello()));
+      sock.send(JSON.stringify(hello));
       set('connected');
     };
     sock.onmessage = (e) => {
       const m = parseServerMsg(e.data);
       if (m) for (const f of msgFns) f(m);
     };
-    sock.onclose = () => {
+    sock.onclose = (e) => {
       clearTimeout(giveUp);
       if (ws !== sock) return;
       ws = null;
+      // refused: trying again with the same credential would only count as more failed logins
+      if (e.code === CLOSE_UNAUTHORISED) return set('unauthorised');
       // a lost connection and every failed try are "offline": the retries don't flicker "connecting"
       set('offline');
       schedule();
@@ -126,14 +156,14 @@ export function createSocketTransport(opts: {
   }
 
   const online = () => {
-    if (state === 'offline' && !ws) connect();
+    if (state === 'offline' && !ws) void connect();
   };
   addEventListener('online', online);
-  connect();
+  void connect();
 
   return {
     send(m) {
-      if (!ws || ws.readyState !== WebSocket.OPEN) return false;
+      if (!ws || ws.readyState !== WS.OPEN) return false;
       ws.send(JSON.stringify(m));
       return true;
     },
@@ -144,9 +174,22 @@ export function createSocketTransport(opts: {
     },
     retryIn: () => (retryAt == null ? null : Math.max(0, retryAt - Date.now())),
     retry() {
-      if (state !== 'offline' || ws) return; // (a retry already under way)
+      if ((state !== 'offline' && state !== 'unauthorised') || ws || starting) return; // (a try already under way)
       attempt = 0;
-      connect();
+      if (state === 'unauthorised') set('connecting');
+      void connect();
+    },
+    restart() {
+      if (closed) return;
+      gen++;
+      starting = false;
+      clearTimeout(timer);
+      const s = ws;
+      ws = null;
+      s?.close();
+      attempt = 0;
+      set('connecting');
+      void connect();
     },
     close() {
       closed = true;

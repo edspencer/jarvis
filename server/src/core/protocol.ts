@@ -18,11 +18,17 @@ export interface ViewContext {
 
 // ------------------------------------------------------------------------------------------------ client → server
 
+/** the credential a hello carries (docs/assistant.md, "Authentication"): an access code from the server's clients file
+ * (`<name>:<secret>`), or the person's own Home Assistant access token */
+export type HelloAuth = { type: 'secret'; secret: string } | { type: 'ha'; token: string };
+
 export interface HelloMsg {
   type: 'hello';
   /** a stable id for this browser tab (so a reconnect keeps its pending confirmations) */
   clientId: string;
-  surface: Surface;
+  /** checked before anything else; a hello without a good one is answered with an error and the socket closed (4401).
+   * The surface (screen / speaker) comes from the server's configuration for this credential, never from the client. */
+  auth: HelloAuth;
   /** `viewer`: can run view.command; `tts`: will speak replies */
   capabilities: ('viewer' | 'tts')[];
   view?: ViewContext;
@@ -92,6 +98,17 @@ export interface WelcomeMsg {
   transcribe: boolean;
   /** 'mock' or 'live' Home Assistant */
   ha: 'mock' | 'live';
+  /** who the server took this connection for */
+  user: { name: string };
+  /** for `Authorization: Bearer <ticket>` on POST /transcribe: bound to this user and connection, dies with the
+   * connection or after 10 minutes; a fresh one comes in a `ticket` message before then */
+  ticket: string;
+}
+
+/** a fresh /transcribe ticket (the last one keeps working until it expires) */
+export interface TicketMsg {
+  type: 'ticket';
+  ticket: string;
 }
 
 export type AssistantState = 'idle' | 'thinking' | 'error';
@@ -178,6 +195,7 @@ export interface ErrorMsg {
 
 export type ServerMsg =
   | WelcomeMsg
+  | TicketMsg
   | StatusMsg
   | TurnStartMsg
   | TextDeltaMsg
@@ -187,6 +205,10 @@ export type ServerMsg =
   | ViewCommandMsg
   | TurnEndMsg
   | ErrorMsg;
+
+/** WebSocket close codes the server uses: 4401 the credential was refused (don't retry with it), 4429 too many failed
+ * logins from this address (retry later) */
+export type CloseCode = 4401 | 4429;
 
 /** the reply of POST /assistant/transcribe */
 export interface TranscribeReply {

@@ -45,3 +45,9 @@ export interface TogglePolicy {
 
 export type Status = 'disconnected' | 'connecting' | 'live' | 'error' | 'mock';
 export type ConnectorStatusLabel = Record<Status, string>;
+
+/** the `home-assistant.auth` service: the person's Home Assistant login, for plugins whose own server checks it (the
+ * assistant). null in mock or off mode, or when nobody is logged in; an expired token is refreshed first. */
+export interface HomeAssistantAuth {
+  accessToken(): Promise<string | null>;
+}
