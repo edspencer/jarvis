@@ -179,32 +179,55 @@ function stair(m: Model): void {
       extras: { rise_m: +(UP / RISERS).toFixed(4), going_m: TREAD },
     });
   }
+  // the rail's height: 0.9 m above the nosings' line
+  const railZ = (y: number) => 0.9 + UP / RISERS + ((y - STAIR_Y0) * (UP - UP / RISERS)) / (STAIR_Y1 - STAIR_Y0);
+  const X = STAIR_X[0];
+  // the stair's west side is open to the hall up to the study's south wall (its east end at y 5.54), then against the
+  // study / stair wall (its face at x 10.66): a balustrade on the open side, a wall rail on brackets beyond
+  const OPEN_Y1 = 5.6 - 0.06;
+  const rail = (x0: number, y0: number, y1: number, w: number, h = 0.05): [V3[], V3] => [
+    [
+      [x0, y0, railZ(y0)],
+      [x0, y1, railZ(y1)],
+      [x0, y1, railZ(y1) + h],
+      [x0, y0, railZ(y0) + h],
+    ],
+    [w, 0, 0],
+  ];
   treads.push({
-    name: 'Stair handrail',
+    name: 'Stair balustrade',
     material: 'rail',
-    // newel posts at the foot and the head, a baluster on every other tread, and one sloped rail 0.9 m above the
-    // nosings (a prism: its section in the plan's Y-Z plane, swept 4 cm across)
+    // a newel post at the foot and one against the wall's end, a baluster on every other tread, and one sloped rail
+    // (a prism: its section in the plan's Y-Z plane, swept 4 cm across)
     boxes: [
-      [STAIR_X[0] - 0.04, STAIR_Y0 - 0.04, 0, STAIR_X[0] + 0.04, STAIR_Y0 + 0.04, 1.05],
-      [STAIR_X[0] - 0.04, STAIR_Y1 - 0.04, UP, STAIR_X[0] + 0.04, STAIR_Y1 + 0.04, UP + 1.05],
-      ...Array.from({ length: Math.floor((RISERS - 2) / 2) }, (_, k) => {
-        const i = 2 * k + 1,
-          y = STAIR_Y0 + (i + 0.5) * TREAD,
-          z = ((i + 1) * UP) / RISERS;
-        return [STAIR_X[0] - 0.012, y - 0.012, z, STAIR_X[0] + 0.012, y + 0.012, z + 0.9];
-      }),
+      [X - 0.04, STAIR_Y0 - 0.04, 0, X + 0.04, STAIR_Y0 + 0.04, 1.05],
+      [X - 0.04, OPEN_Y1 - 0.08, 1.6, X + 0.04, OPEN_Y1, railZ(OPEN_Y1 - 0.04) + 0.1],
+      ...Array.from({ length: RISERS }, (_, i) => i)
+        .filter((i) => i % 2 === 1 && STAIR_Y0 + (i + 0.5) * TREAD + 0.012 < OPEN_Y1 - 0.08)
+        .map((i) => {
+          const y = STAIR_Y0 + (i + 0.5) * TREAD,
+            z = ((i + 1) * UP) / RISERS;
+          return [X - 0.012, y - 0.012, z, X + 0.012, y + 0.012, railZ(y)];
+        }),
     ],
-    prisms: [
-      [
-        [
-          [STAIR_X[0] - 0.02, STAIR_Y0, 0.9 + UP / RISERS],
-          [STAIR_X[0] - 0.02, STAIR_Y1, 0.9 + UP],
-          [STAIR_X[0] - 0.02, STAIR_Y1, 0.95 + UP],
-          [STAIR_X[0] - 0.02, STAIR_Y0, 0.95 + UP / RISERS],
-        ],
-        [0.04, 0, 0],
-      ],
-    ],
+    prisms: [rail(X - 0.02, STAIR_Y0, OPEN_Y1 - 0.04, 0.04)],
+    extras: { kind: 'balustrade' },
+  });
+  const WALL_Y0 = 5.6 + 0.06 + 0.1,
+    WALL_Y1 = STAIR_Y1 - 0.05;
+  treads.push({
+    name: 'Stair wall rail',
+    material: 'rail',
+    // 4 cm off the wall's face, on brackets every ~0.8 m
+    boxes: [WALL_Y0 + 0.15, (WALL_Y0 + WALL_Y1) / 2, WALL_Y1 - 0.15].map((y) => [
+      X,
+      y - 0.015,
+      railZ(y) - 0.06,
+      X + 0.06,
+      y + 0.015,
+      railZ(y),
+    ]),
+    prisms: [rail(X + 0.04, WALL_Y0, WALL_Y1, 0.045, 0.045)],
     extras: { kind: 'handrail' },
   });
   merged(m, 'Stair', 'stair', treads, { room: 'hall' });

@@ -584,6 +584,11 @@ describe('energy mock', () => {
     expect(profileOf('Dishwasher and disposal')).toBe(profileOf('dishwasher'));
     expect(profileOf('Dishwasher and disposal')).not.toBe(profileOf('Washer'));
     expect(profileOf('Air handler and heat strips')).not.toBe(profileOf('Heat pump (outdoor unit)'));
+    // a compressor named with an air handler is still a compressor; an air handler alone is not
+    expect(profileOf('Heat pump and air handler')).toBe(profileOf('Heat pump (outdoor unit)'));
+    expect(profileOf('Condenser / AHU')).toBe(profileOf('Heat pump (outdoor unit)'));
+    expect(profileOf('HVAC air handler')).toBe(profileOf('Air handler and heat strips'));
+    expect(profileOf('HVAC')).toBe(profileOf('Heat pump (outdoor unit)'));
     expect(profileOf('Pond pump')).not.toBe(profileOf('Pool pump'));
   });
 

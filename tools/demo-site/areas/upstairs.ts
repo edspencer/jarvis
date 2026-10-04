@@ -10,6 +10,7 @@
 import { Shape, type V3 } from '../geometry.ts';
 import { CEIL1, UP } from '../dims.ts';
 import { hex, item, type MaterialDef, type Model } from '../model.ts';
+import { room, roomCentre } from '../layout.ts';
 import { place, type Area, type Fixture, type Pin, type PlateSpec } from '../area.ts';
 import {
   E,
@@ -18,7 +19,6 @@ import {
   N,
   S,
   Wst,
-  accessPoint,
   armchair,
   art,
   atticHatch,
@@ -311,14 +311,16 @@ const smokeBed = [
   alarm('safety.smoke.bedroom_3', 'Smoke alarm (bedroom 3)', 'bedroom_3', 4.3, 5.85, 'binary_sensor.smoke_bedroom_3'),
 ];
 
+const LANDING_C = roomCentre(room('landing'));
 const pins: Pin[] = [
   {
-    // the demo's one pin with an approximate place: the device is drawn on the ceiling by the stair (Wifi_access_point)
+    // the demo's one pin with an approximate place: at the landing's centroid (its room_centre), as a registry whose
+    // item is known only by its room has it; so the device isn't drawn
     id: 'net.access-point',
     name: 'Wi-Fi access point (upstairs)',
     category: 'net',
     room: 'landing',
-    at: [10.0, 4.6, UP + 2.2],
+    at: [LANDING_C[0], LANDING_C[1], LANDING_C[2] + 1.2],
     approx: 'room-centroid',
     note: 'On the landing ceiling; exactly where is not recorded.',
     breaker: '21',
@@ -570,7 +572,6 @@ function ceilingKit(m: Model) {
     draw(l);
     m.node(name, l.s, { room: 'landing', ...extras });
   };
-  one('Wifi_access_point', [7.9, 4.6, CEIL1], accessPoint, { kind: 'Wi-Fi access point', pin: 'net.access-point' });
   one('Attic_hatch', [9.95, 3.75, CEIL1], (l) => atticHatch(l, 0.56, 0.76), { kind: 'attic hatch' });
 }
 

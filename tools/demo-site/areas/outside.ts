@@ -57,7 +57,17 @@ const plates: PlateSpec[] = [
     kind: 'outlet',
     at: [3.8, D + EXT, 0.45],
     normal: [0, 1],
-    positions: [{ pos: 1, role: 'weatherproof GFCI receptacle (terrace; the pond pump plug)', breaker: '25' }],
+    positions: [{ pos: 1, role: 'weatherproof GFCI receptacle (terrace)', breaker: '25' }],
+    notes: 'In-use cover.',
+  },
+  // on the west wall by the south-west corner, 3 m from the pond: the pond pump's smart plug is in it
+  {
+    id: 'EX-O-C',
+    room: 'exterior',
+    kind: 'outlet',
+    at: [-EXT, 0.6, 0.45],
+    normal: [-1, 0],
+    positions: [{ pos: 1, role: 'weatherproof GFCI receptacle (the pond pump plug)', breaker: '25' }],
     notes: 'In-use cover.',
   },
 ];
@@ -146,7 +156,7 @@ export const outside: Area = {
       make: 'Example Plugs',
       model: 'SP-1',
       area: 'Garden',
-      place: place('area', 'garden', 'exterior', [-4.5, -3.3, 0.2], true),
+      place: place('plate', 'EX-O-C', 'exterior', [-EXT, 0.6, 0.45]),
       health: { avail: ['switch.pond_pump'], signal: [{ entity: 'sensor.pond_pump_rssi', kind: 'rssi' }] },
     },
   ],

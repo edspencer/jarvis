@@ -55,7 +55,8 @@ export const SCHEDULE: Circuit[] = [
     id: 'circuit.air_handler',
     label: 'Air handler and heat strips',
     breaker: [6, 8],
-    amps: 60,
+    // 4.8 kW of heat strips (20 A at 240 V) and the blower, a continuous load: × 1.25
+    amps: 30,
     volts: 240,
     ct: 4,
     rooms: ['hall'],
@@ -130,7 +131,7 @@ export const SCHEDULE: Circuit[] = [
   },
   {
     id: 'circuit.primary_suite',
-    label: 'Primary suite lights and outlets',
+    label: 'Primary suite: bedroom, closet, bath',
     breaker: 19,
     amps: 20,
     volts: 120,
@@ -140,7 +141,7 @@ export const SCHEDULE: Circuit[] = [
   },
   {
     id: 'circuit.bedrooms',
-    label: 'Bedrooms 2 and 3, hall bath, landing: lights and outlets',
+    label: 'Bedrooms 2 and 3, hall bath, landing',
     breaker: 21,
     amps: 20,
     volts: 120,

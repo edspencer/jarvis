@@ -170,12 +170,15 @@
                   "registry": "hvac.air-handler"
                 },
                 {
+                  "node": "Air_handler"
+                },
+                {
                   "room": "hall"
                 }
               ],
               "conf": "high",
               "src": "tools/make-demo-site.ts (panel schedule, monitor clamps)",
-              "note": "CT 4 on one leg (a 240 V load: the monitor doubles it); 60 A breaker"
+              "note": "CT 4 on one leg (a 240 V load: the monitor doubles it); 30 A breaker"
             },
             {
               "id": "circuit.lights_ground",
@@ -301,7 +304,19 @@
                   "plate": "KT-O-B"
                 },
                 {
+                  "plate": "KT-O-I"
+                },
+                {
+                  "plate": "KT-O-J"
+                },
+                {
                   "plate": "KT-O-C"
+                },
+                {
+                  "plate": "KT-O-K"
+                },
+                {
+                  "plate": "KT-O-L"
                 },
                 {
                   "plate": "KT-O-D"
@@ -510,7 +525,7 @@
             },
             {
               "id": "circuit.primary_suite",
-              "label": "Primary suite lights and outlets",
+              "label": "Primary suite: bedroom, closet, bath",
               "power": "sensor.vue2_primary_suite_power",
               "energy": {
                 "today": "sensor.vue2_primary_suite_energy_today"
@@ -580,7 +595,7 @@
             },
             {
               "id": "circuit.bedrooms",
-              "label": "Bedrooms 2 and 3, hall bath, landing: lights and outlets",
+              "label": "Bedrooms 2 and 3, hall bath, landing",
               "power": "sensor.vue2_bedrooms_power",
               "energy": {
                 "today": "sensor.vue2_bedrooms_energy_today"
@@ -752,6 +767,9 @@
                 },
                 {
                   "plate": "EX-O-B"
+                },
+                {
+                  "plate": "EX-O-C"
                 },
                 {
                   "fixture": "garage.coach.1"

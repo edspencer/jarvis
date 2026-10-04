@@ -511,19 +511,6 @@ export function coAlarm(l: Local) {
   l.box('plate_white', -0.065, -0.065, -0.04, 0.065, 0.065, 0);
   for (let i = -1; i <= 1; i++) l.box('plate_white', -0.04, i * 0.018 - 0.004, -0.046, 0.04, i * 0.018 + 0.004, -0.04);
 }
-export function accessPoint(l: Local) {
-  l.lathe(
-    'plate_white',
-    0,
-    0,
-    [
-      [-0.035, 0.1],
-      [-0.025, 0.11],
-      [0, 0.11],
-    ],
-    10,
-  );
-}
 export function atticHatch(l: Local, w: number, d: number) {
   const t = 0.05;
   l.box('window_frame', -w / 2 - t, -d / 2 - t, -0.006, w / 2 + t, d / 2 + t, 0); // the casing

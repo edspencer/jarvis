@@ -1,5 +1,5 @@
-// The hall (hall, with the stair and the air-handler closet under the landing), the powder room (powder_room) and the
-// study (study): docs/demo-house.md#hall-hall
+// The hall (hall, with the stair and the air-handler closet under the landing, its door from the laundry), the powder
+// room (powder_room) and the study (study): docs/demo-house.md#hall-hall
 //
 // Hall: a console table and mirror on the west wall facing the front door, a bench with coat hooks over it left of the
 // front door, a doormat; the thermostat on the powder room's wall; a video doorbell outside, its chime inside.
@@ -8,8 +8,8 @@
 // window, its chair facing the window; a filing cabinet with the router on it, a bookcase on the west wall, a reading
 // chair in the south-west corner turned to the room; the door (east end of the south wall) swings clear of all of it.
 import { Shape, type V3 } from '../geometry.ts';
-import { CEIL0, EXT, INT } from '../dims.ts';
-import { hex } from '../model.ts';
+import { CEIL0, D, EXT, INT, SLAB, STAIR_X, STAIR_Y1 } from '../dims.ts';
+import { hex, type Model } from '../model.ts';
 import { place, type Area, type Fixture, type Pin, type PlateSpec } from '../area.ts';
 import {
   alarm,
@@ -180,6 +180,26 @@ const plates: PlateSpec[] = [
   ),
 ];
 
+// the air handler: in the closet under the landing (x 10.66-12, y 7.6-9), its door from the laundry (layout.ts:
+// door air_handler). An upright cabinet on a return-air stand against the study wall, facing the door; the supply
+// plenum up to the landing's slab; the line set in through the north wall from the heat pump outside.
+const AH = { x0: 10.7, x1: 11.3, y0: 7.795, y1: 8.345, stand: 0.5, top: 2.0 };
+const airHandler: Pin = {
+  id: 'hvac.air-handler',
+  name: 'Air handler',
+  category: 'hvac',
+  room: 'hall',
+  at: [AH.x1 + 0.02, (AH.y0 + AH.y1) / 2, 1.25],
+  make: 'Example Air',
+  model: 'AH-36',
+  specs: [
+    ['capacity', '3 ton'],
+    ['heat strips', '4.8 kW'],
+    ['filter', '20 × 25 × 4 in, behind the grille in its stand'],
+  ],
+  note: 'In the closet under the landing; its door is in the laundry.',
+  breaker: '6+8',
+};
 const thermostat: Pin = {
   id: 'hvac.thermostat',
   name: 'Thermostat',
@@ -249,37 +269,52 @@ const doorbell: Pin = {
   breaker: '27',
 };
 
+/** the air handler (one node: its circuit feeds it), and the closet's south wall (plaster over the stair's end) */
+function airHandlerCloset(m: Model): void {
+  const { x0, x1, y0, y1, stand, top } = AH;
+  const yc = (y0 + y1) / 2;
+  const ah: Box[] = [
+    // the stand (the return plenum), its filter grille facing the door, louvres
+    ['ah_cabinet', [x0 - 0.02, y0 - 0.05, 0, x1 + 0.02, y1 + 0.05, stand]],
+    ['ah_grille', [x1 + 0.02, y0, 0.07, x1 + 0.03, y1, 0.43], 'x+'],
+    ...[0.13, 0.2, 0.27, 0.34].map((z): Box => [
+      'ah_cabinet',
+      [x1 + 0.03, y0 + 0.02, z, x1 + 0.035, y1 - 0.02, z + 0.02],
+    ]),
+    // the cabinet: the coil below, the blower above (a seam between their panels), a rating plate
+    ['ah_cabinet', [x0, y0, stand, x1, y1, top]],
+    ['ah_grille', [x1, y0 + 0.01, 1.2, x1 + 0.004, y1 - 0.01, 1.21], 'x+'],
+    ['plate_white', [x1, yc + 0.08, 1.55, x1 + 0.004, yc + 0.22, 1.65], 'x+'],
+    // the supply plenum up to the landing's slab, taped at its collar
+    ['ga_duct', [x0 + 0.02, y0 + 0.015, top, x1 - 0.02, y1 - 0.015, SLAB]],
+    ['black_steel', [x0 + 0.015, y0 + 0.01, top, x1 - 0.015, y1 - 0.01, top + 0.04]],
+    // the line set from the heat pump (in through the north wall): copper and the insulated suction line
+    ['ga_copper', [10.94, y1, 1.0, 10.96, D, 1.02]],
+    ['black_steel', [11.02, y1, 0.98, 11.07, D, 1.03]],
+    // the condensate drain: down the cabinet's front corner to the floor drain
+    ['sanitary', [x1 + 0.005, y1 - 0.04, 0.02, x1 + 0.03, y1 - 0.015, 0.62]],
+    // its disconnect on the north wall
+    ['ah_grille', [11.5, D - 0.09, 1.35, 11.72, D, 1.65]],
+  ];
+  m.node('Air_handler', boxes(ah), { room: 'hall', pin: airHandler.id, kind: 'air handler' });
+  // the closet's south wall: plaster over the stair's top end
+  m.node('Closet_air_handler', boxes([['plaster', [STAIR_X[0], STAIR_Y1, 0, STAIR_X[1], STAIR_Y1 + 0.015, SLAB]]]), {
+    room: 'hall',
+    kind: 'closet wall',
+  });
+}
+
 export const hall: Area = {
   id: 'hall',
   materials: {
     mirror_ground: { c: hex('#cad5d9'), rough: 0.05, metal: 0.85 },
+    ah_cabinet: { c: hex('#d9d7d0'), rough: 0.45, metal: 0.3 },
+    ah_grille: { c: hex('#5d6063'), rough: 0.6, metal: 0.4 },
   },
   fixtureShapes: { lantern_pendant: lanternPendant, sconce_bar: sconceBar, desk_lamp: deskLampShape },
   fixtures: [hallPendant, ...hallCans, vanity, studyCeiling, deskLamp],
   plates,
-  pins: [
-    {
-      id: 'hvac.air-handler',
-      name: 'Air handler',
-      category: 'hvac',
-      room: 'hall',
-      at: [11.3, 8.4, 1.0],
-      make: 'Example Air',
-      model: 'AH-36',
-      specs: [
-        ['capacity', '3 ton'],
-        ['filter', '20 × 25 × 4 in'],
-      ],
-      note: 'In the closet under the landing.',
-      breaker: '6+8',
-    },
-    thermostat,
-    router,
-    smokeHall,
-    coHall,
-    smokeStudy,
-    doorbell,
-  ],
+  pins: [airHandler, thermostat, router, smokeHall, coHall, smokeStudy, doorbell],
   devices: [
     {
       id: 'demo-thermostat',
@@ -350,6 +385,7 @@ export const hall: Area = {
     [deskLamp.id]: { entity_id: null, conf: 'low', group: deskLamp.group },
   },
   nodeFeeds: [
+    ['Air_handler', '6+8'],
     ['Powder_room_fan', '7'],
     ['Doorbell', '27'],
     ['Furn_desk', '17'],
@@ -388,6 +424,7 @@ export const hall: Area = {
       room: 'hall',
       kind: 'doorbell chime',
     });
+    airHandlerCloset(m);
     // the powder room: WC (on the west wall, facing east), pedestal sink and mirror (north wall), the exhaust fan
     const wc = boxes([
       ['sanitary', [7.08, 4.56, 0.4, 7.28, 5.04, 0.8]],

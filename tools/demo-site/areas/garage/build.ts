@@ -283,11 +283,11 @@ function laundry(m: Model): void {
           [13.83, wy, z(0.44), 13.97, wy + 0.1, WING.ceil],
         ],
       },
-      { name: 'Wall cabinets', material: 'cabinet', boxes: [[12.3, wy, z(1.55), 13.85, wy + 0.33, z(2.3)]] },
+      { name: 'Wall cabinets', material: 'cabinet', boxes: [[12.3, wy, z(1.55), 13.79, wy + 0.33, z(2.3)]] },
       {
         name: 'Shelf over the washer and dryer',
         material: 'cabinet',
-        boxes: [[12.3, wy, z(1.3), 13.85, wy + 0.3, z(1.32)]],
+        boxes: [[12.3, wy, z(1.3), 13.79, wy + 0.3, z(1.32)]],
       },
       {
         name: 'Utility sink',

@@ -1,4 +1,4 @@
-import { SCHEDULE, PANEL, breakerText, type Circuit } from './panel.ts';
+import { SCHEDULE, PANEL, breakerText, circuit, type Circuit } from './panel.ts';
 import { onCircuit } from './areas/index.ts';
 
 // ------------------------------------------------------------------ the energy plugin's map (docs/plugins/energy.md)
@@ -144,7 +144,7 @@ export function energyMap() {
         power: 'sensor.solar_power',
         energy: { today: 'sensor.solar_energy_today', month: 'sensor.solar_energy_month' },
         panel: PANEL.name,
-        breaker: '28+30',
+        breaker: breakerText(circuit('pv')),
         volts: 240,
         feeds: [{ registry: 'elec.inverter' }, { node: 'PV_inverter' }, { node: 'Roof_solar' }],
         conf: 'high',

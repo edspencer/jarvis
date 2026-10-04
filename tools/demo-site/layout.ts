@@ -24,7 +24,7 @@ export const ROOMS: Room[] = [
     name: 'Hall',
     storey: 0,
     // the foyer, the nook to the powder room and the study, and the stair (x 10.66-12, y 3-7.6) with the air-handler
-    // closet under the landing
+    // closet under the landing (x 10.66-12, y 7.6-9: its door is in the east wall, from the laundry)
     rects: [
       [7, 0, 12, 4],
       [8.7, 4, 12, 5.6],
@@ -228,14 +228,21 @@ export const WALLS: Wall[] = [
     win('hall_s', 10.8, 11.6, 1.0),
   ]),
   ext('North wall (ground)', 0, 'N', [
-    win('kitchen_n', 1.2, 3.2, 1.05),
+    win('kitchen_n', 1.2, 3.2, 1.1), // sills 0.18 m over the counter: room for the counter outlets under them
     { ...win('patio', 4.4, 6.4, 0, 2.2), kind: 'glazed' },
     win('study_n', 8.0, 9.6),
   ]),
-  ext('West wall (ground)', 0, 'W', [win('living_w', 1.8, 3.4), win('kitchen_w', 6.0, 7.4, 1.05)]),
+  ext('West wall (ground)', 0, 'W', [win('living_w', 1.8, 3.4), win('kitchen_w', 6.0, 7.4, 1.1)]),
   // now the hall / garage wall: down to the garage's slab (and the lawn under it), with the door to the garage
-  // (self-closing, painted) and a step down under it
-  { ...ext('East wall (ground)', 0, 'E', [door('garage_hall', 1.5, 2.4, 'door_paint')]), z0: G.lawn },
+  // (self-closing, painted) and a step down under it, and the air-handler closet's door (under the landing) from the
+  // laundry
+  {
+    ...ext('East wall (ground)', 0, 'E', [
+      door('garage_hall', 1.5, 2.4, 'door_paint'),
+      door('air_handler', 7.68, 8.43, 'door_paint'),
+    ]),
+    z0: G.lawn,
+  },
   int('Living / hall wall', 0, 'y', 7, 0, 5, [open(2.6, 3.8)]),
   int('Kitchen / study wall', 0, 'y', 7, 5, 9),
   int('Living / kitchen wall', 0, 'x', 5, 0, 6.94, [open(2.4, 4.4)]),

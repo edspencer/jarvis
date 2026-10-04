@@ -54,7 +54,7 @@ const ROOMS: Readonly<Record<string, string>> = {
   kitchen: 'Kitchen',
   hall: 'Hall',
   study: 'Study',
-  bedroom_1: 'Bedroom 1',
+  bedroom_1: 'Primary bedroom',
   bedroom_2: 'Bedroom 2',
   bedroom_3: 'Bedroom 3',
   landing: 'Landing',
@@ -100,7 +100,7 @@ function extras(): HaState[] {
       unit_of_measurement: '°F',
     }),
     s('lock.front_door', 'locked', { friendly_name: 'Front door lock', area: 'Hall' }),
-    s('cover.garage_door', 'closed', { friendly_name: 'Garage door', device_class: 'garage', area: 'Porch' }),
+    s('cover.garage_door', 'closed', { friendly_name: 'Garage door', device_class: 'garage', area: 'Garage' }),
     s('valve.garden_zone_1', 'closed', { friendly_name: 'Garden zone 1', device_class: 'water', area: 'Garden' }),
     s('switch.pond_pump', 'off', { friendly_name: 'Pond pump', area: 'Garden' }),
     s('sensor.pond_pump_power', '0', {
@@ -127,7 +127,7 @@ function extras(): HaState[] {
       unit_of_measurement: '°F',
       area: 'Terrace',
     }),
-    s('fan.bedroom_fan', 'off', { friendly_name: 'Bedroom fan', percentage: 0, area: 'Bedroom 1' }),
+    s('fan.bedroom_fan', 'off', { friendly_name: 'Bedroom fan', percentage: 0, area: 'Primary bedroom' }),
     s('scene.evening', 'scening', { friendly_name: 'Evening', area: 'Living room' }),
     // a scene that sets more than lights (in a real house: locks, covers, the alarm), to show why scenes are named
     s('scene.away', 'scening', { friendly_name: 'Away' }),

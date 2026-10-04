@@ -131,7 +131,7 @@ const plates: PlateSpec[] = [
     id: 'LA-S-B',
     room: 'laundry',
     kind: 'switch',
-    at: [Wx, 8.45, z(1.2)],
+    at: [Wx, 8.62, z(1.2)],
     normal: [1, 0],
     positions: [
       { pos: 1, role: 'back flood light', breaker: '25', fixture_ids: ['exterior.flood'], ha_entity: 'light.flood' },
@@ -415,6 +415,17 @@ export const garage: Area = {
       area: 'Garage',
       place: place('registry', 'appliance.garage-door', 'garage', [15.5, 3.85, CEIL - 0.32]),
       health: { avail: ['cover.garage_door'] },
+    },
+    // deliberately not placed (no HA area, no hint): the faults plugin lists it as "not placed"
+    {
+      id: 'demo-freezer-plug',
+      name: 'Freezer smart plug',
+      integration: 'zha',
+      make: 'Example Plugs',
+      model: 'SP-15',
+      area: null,
+      place: null,
+      health: { avail: ['switch.freezer_plug'], seen: ['sensor.freezer_plug_power'] },
     },
     {
       id: 'demo-laundry-leak',

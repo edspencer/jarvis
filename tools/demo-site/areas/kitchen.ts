@@ -93,6 +93,8 @@ function undercabShape(): Shape {
 }
 
 const T = 0.01; // the backsplash tile's thickness: plates on the backsplash sit on its face
+const SILL = 1.1; // the windows over the counters (layout.ts: kitchen_n, kitchen_w)
+const SILL_OUTLET = (0.92 + SILL) / 2; // a counter outlet under a window: centred between the worktop and the sill
 const plate = (
   id: string,
   kind: 'switch' | 'outlet',
@@ -149,11 +151,17 @@ const plates: PlateSpec[] = [
       },
     ],
   ),
-  // counter outlets (GFCI): either side of the window, the corner by the range, the island's end
-  plate('KT-O-A', 'outlet', [T, 8.62, 1.15], [1, 0], [{ pos: 1, role: 'counter (GFCI)', breaker: '9' }]),
-  plate('KT-O-B', 'outlet', [0.95, D - T, 1.15], [0, -1], [{ pos: 1, role: 'counter (GFCI)', breaker: '9' }]),
-  plate('KT-O-C', 'outlet', [3.45, D - T, 1.15], [0, -1], [{ pos: 1, role: 'counter (load side)', breaker: '9' }]),
-  plate('KT-O-D', 'outlet', [3.5, 7.0, 0.6], [1, 0], [{ pos: 1, role: 'island (GFCI)', breaker: '9' }]),
+  // counter outlets (their breaker is a dual AFCI/GFCI): no point along the counters' wall line more than 0.6 m
+  // (24 in) from one, so two under each window (in the backsplash under the sill), one each side of the corner and one
+  // right of the north window; one on the island's end
+  plate('KT-O-A', 'outlet', [T, 8.72, 1.15], [1, 0], [{ pos: 1, role: 'counter', breaker: '9' }]),
+  plate('KT-O-B', 'outlet', [0.9, D - T, 1.15], [0, -1], [{ pos: 1, role: 'counter', breaker: '9' }]),
+  plate('KT-O-I', 'outlet', [1.6, D - T, SILL_OUTLET], [0, -1], [{ pos: 1, role: 'counter', breaker: '9' }]),
+  plate('KT-O-J', 'outlet', [2.8, D - T, SILL_OUTLET], [0, -1], [{ pos: 1, role: 'counter', breaker: '9' }]),
+  plate('KT-O-C', 'outlet', [3.6, D - T, 1.15], [0, -1], [{ pos: 1, role: 'counter', breaker: '9' }]),
+  plate('KT-O-K', 'outlet', [T, 6.3, SILL_OUTLET], [1, 0], [{ pos: 1, role: 'counter', breaker: '9' }]),
+  plate('KT-O-L', 'outlet', [T, 7.1, SILL_OUTLET], [1, 0], [{ pos: 1, role: 'counter', breaker: '9' }]),
+  plate('KT-O-D', 'outlet', [3.5, 7.0, 0.6], [1, 0], [{ pos: 1, role: 'island', breaker: '9' }]),
   // the appliances' own circuits, behind or inside the cabinets
   plate('KT-O-E', 'outlet', [0, 5.55, 1.0], [1, 0], [{ pos: 1, role: 'refrigerator', breaker: '11' }]),
   plate('KT-O-F', 'outlet', [2.2, D, 0.35], [0, -1], [{ pos: 1, role: 'dishwasher and disposal', breaker: '13' }]),
@@ -307,9 +315,9 @@ function units(m: Model): void {
   piece('Backsplash', [
     // under the windows to their sills; up to the wall cabinets elsewhere; behind the range to the hood
     ['backsplash', [0, D - T, 0.92, 1.2, D, 1.45]],
-    ['backsplash', [1.2, D - T, 0.92, 3.2, D, 1.05]],
+    ['backsplash', [1.2, D - T, 0.92, 3.2, D, SILL]],
     ['backsplash', [3.2, D - T, 0.92, 4.2, D, 1.45]],
-    ['backsplash', [0, 6.0, 0.92, T, 7.4, 1.05]],
+    ['backsplash', [0, 6.0, 0.92, T, 7.4, SILL]],
     ['backsplash', [0, 7.4, 0.92, T, 8.21, 1.62]],
     ['backsplash', [0, 8.21, 0.92, T, D - T, 1.45]],
   ]);

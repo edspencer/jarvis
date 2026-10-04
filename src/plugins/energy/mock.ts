@@ -25,15 +25,20 @@ interface Profile {
   extra?: { run: number; duty: number; period: number };
 }
 
-// First match wins, so the more specific words come first (a "Dishwasher" is not a washer, an air handler's fan is
-// not the heat pump's compressor, a pond pump is not a pool pump).
+/** a heat pump's or an AC's compressor */
+const COMPRESSOR: Profile = { base: 8, run: 3200, duty: 0.45, period: 25, peak: 16 };
+
+// First match wins, so the more specific words come first (a "Dishwasher" is not a washer, a pond pump is not a pool
+// pump). A label naming a compressor (heat pump, condenser, AC) gets the compressor even if it names an air handler
+// too ("Heat pump and air handler"); one naming only an air handler gets its fan and heat strips ("HVAC air handler").
 const PROFILES: [RegExp, Profile][] = [
   [/fridge|refrig|freezer/i, { base: 4, run: 140, duty: 0.4, period: 50, peak: 18 }],
+  [/\b(a\/?c|heat ?pump|condens|mini.?split)/i, COMPRESSOR],
   [
     /air ?handler|\bahu\b|furnace|fan ?coil/i,
     { base: 6, run: 520, duty: 0.5, period: 25, peak: 16, extra: { run: 4800, duty: 0.12, period: 90 } },
   ],
-  [/\b(a\/?c|hvac|heat ?pump|condens|mini.?split)/i, { base: 8, run: 3200, duty: 0.45, period: 25, peak: 16 }],
+  [/\bhvac/i, COMPRESSOR],
   [/dryer/i, { base: 1, run: 4800, duty: 0.3, period: 70, peak: 19, hours: [17, 23] }],
   [/dish/i, { base: 2, run: 1200, duty: 0.07, period: 90, peak: 21 }],
   [/washer|washing/i, { base: 2, run: 450, duty: 0.08, period: 50, peak: 18 }],

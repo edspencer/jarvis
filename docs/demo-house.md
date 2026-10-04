@@ -31,15 +31,15 @@ sectional garage door (`Door_garage`, four panels) in the wing's south wall, lau
 
 **Ground floor**
 
-| Room id       | Name        | Plan rectangles [x0, y0, x1, y1]                     | Notes                                                                                        |
-| ------------- | ----------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| `living_room` | Living room | [0, 0, 7, 5]                                         | family room: sofa facing one TV                                                              |
-| `kitchen`     | Kitchen     | [0, 5, 7, 9]                                         | kitchen and dining (eat-in), patio door to the terrace                                       |
-| `hall`        | Hall        | [7, 0, 12, 4], [8.7, 4, 12, 5.6], [10.6, 5.6, 12, 9] | foyer, the stair (x 10.66-12, y 3-7.6), a door to the garage, the air-handler closet         |
-| `powder_room` | Powder room | [7, 4, 8.7, 5.6]                                     | half bath off the hall                                                                       |
-| `study`       | Study       | [7, 5.6, 10.6, 9]                                    | home office; a fourth bedroom in a pinch                                                     |
-| `garage`      | Garage      | [12.25, 0, 18.75, 6.6], [15.4, 6.6, 18.75, 9]        | two-car, slab one step down; the main panel and the energy monitor, water heater, EV charger |
-| `laundry`     | Laundry     | [12.25, 6.6, 15.4, 9]                                | washer, dryer, utility sink; a door to the back yard                                         |
+| Room id       | Name        | Plan rectangles [x0, y0, x1, y1]                     | Notes                                                                                                            |
+| ------------- | ----------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `living_room` | Living room | [0, 0, 7, 5]                                         | family room: sofa facing one TV                                                                                  |
+| `kitchen`     | Kitchen     | [0, 5, 7, 9]                                         | kitchen and dining (eat-in), patio door to the terrace                                                           |
+| `hall`        | Hall        | [7, 0, 12, 4], [8.7, 4, 12, 5.6], [10.6, 5.6, 12, 9] | foyer, the stair (x 10.66-12, y 3-7.6), a door to the garage, the air-handler closet (its door from the laundry) |
+| `powder_room` | Powder room | [7, 4, 8.7, 5.6]                                     | half bath off the hall                                                                                           |
+| `study`       | Study       | [7, 5.6, 10.6, 9]                                    | home office; a fourth bedroom in a pinch                                                                         |
+| `garage`      | Garage      | [12.25, 0, 18.75, 6.6], [15.4, 6.6, 18.75, 9]        | two-car, slab one step down; the main panel and the energy monitor, water heater, EV charger                     |
+| `laundry`     | Laundry     | [12.25, 6.6, 15.4, 9]                                | washer, dryer, utility sink; a door to the back yard                                                             |
 
 **First floor**
 
@@ -162,9 +162,9 @@ clamp channel; circuits without one are only in the Vue's Balance.
 | 1+3              | Range                                                              | 40  | 240 | 1   | `circuit.range`             |
 | 2+4              | Heat pump (outdoor unit)                                           | 40  | 240 | 2   | `circuit.heat_pump`         |
 | 5                | Living room and hall outlets                                       | 20  | 120 | 3   | `circuit.living_outlets`    |
-| 6+8              | Air handler and heat strips                                        | 60  | 240 | 4   | `circuit.air_handler`       |
+| 6+8              | Air handler and heat strips                                        | 30  | 240 | 4   | `circuit.air_handler`       |
 | 7                | Lighting, ground floor (living, kitchen, hall, powder room, study) | 15  | 120 | 5   | `circuit.lights_ground`     |
-| 9                | Kitchen counter outlets (GFCI)                                     | 20  | 120 | 6   | `circuit.kitchen_counter`   |
+| 9                | Kitchen counter outlets (dual AFCI/GFCI)                           | 20  | 120 | 6   | `circuit.kitchen_counter`   |
 | 10+12            | Water heater                                                       | 30  | 240 | 7   | `circuit.water_heater`      |
 | 11               | Refrigerator                                                       | 20  | 120 | 8   | `circuit.fridge`            |
 | 13               | Dishwasher and disposal                                            | 20  | 120 | 9   | `circuit.dishwasher`        |
@@ -172,8 +172,8 @@ clamp channel; circuits without one are only in the Vue's Balance.
 | 15               | Microwave                                                          | 20  | 120 | —   | `circuit.microwave`         |
 | 17               | Study outlets (network, desk)                                      | 20  | 120 | 12  | `circuit.study`             |
 | 18+20            | EV charger                                                         | 50  | 240 | 13  | `circuit.ev_charger`        |
-| 19               | Primary suite: bedroom, closet and bath lights and outlets (AFCI)  | 20  | 120 | 14  | `circuit.primary_suite`     |
-| 21               | Bedrooms 2 and 3, hall bath, landing: lights and outlets (AFCI)    | 20  | 120 | 15  | `circuit.bedrooms`          |
+| 19               | Primary suite: bedroom, closet, bath (AFCI)                        | 20  | 120 | 14  | `circuit.primary_suite`     |
+| 21               | Bedrooms 2 and 3, hall bath, landing (AFCI)                        | 20  | 120 | 15  | `circuit.bedrooms`          |
 | 22               | Washer and laundry outlets                                         | 20  | 120 | —   | `circuit.washer`            |
 | 23               | Bathroom outlets (GFCI): primary bath, hall bath, powder room      | 20  | 120 | —   | `circuit.bath_outlets`      |
 | 24               | Garage: outlets, door opener, freezer, lights                      | 20  | 120 | 11  | `circuit.garage`            |
@@ -226,38 +226,38 @@ wall cabinet right of the window. Nodes: `Kitchen_units` (merged: cabinets, work
 (11), `Kitchen_range` (1+3), `Kitchen_hood` and `Kitchen_microwave` (15), `Kitchen_dishwasher` and `Kitchen_sink`
 (13); `Furn_dining` (merged: stools, table, chairs).
 
-| Item                                                                           | Kind      | Breaker  | Status |
-| ------------------------------------------------------------------------------ | --------- | -------- | ------ |
-| Base and wall cabinets, counters (L-shaped run), an island with stools         | built-in  |          | done   |
-| Refrigerator (French door, stainless)                                          | appliance | 11       | done   |
-| Electric range with a hood above                                               | appliance | 1+3      | done   |
-| Dishwasher next to the sink                                                    | appliance | 13       | done   |
-| Sink with faucet; disposal under it                                            | appliance | 13       | done   |
-| Over-the-range or built-in microwave (built-in, in a wall cabinet)             | appliance | 15       | done   |
-| Dining table and four chairs                                                   | furniture |          | done   |
-| Three pendants over the island (and a chandelier over the table)               | light     | 7        | done   |
-| Recessed cans; under-cabinet LED strips                                        | light     | 7        | done   |
-| Switches by the openings (KT-S-A, KT-S-B) and on the backsplash (KT-S-C)       | S         | 7        | done   |
-| Counter outlets (GFCI) every ~1.2 m along the counters, one on the island      | O         | 9        | done   |
-| Fridge, dishwasher, microwave outlets (behind or inside cabinets)              | O         | 11/13/15 | done   |
-| Leak sensor under the sink                                                     | sensor    |          | done   |
-| CO alarm (with the smoke alarm, near the stair): in the hall, `safety.co.hall` | safety    | 26       | done   |
+| Item                                                                                                                                             | Kind      | Breaker  | Status |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | --------- | -------- | ------ |
+| Base and wall cabinets, counters (L-shaped run), an island with stools                                                                           | built-in  |          | done   |
+| Refrigerator (French door, stainless)                                                                                                            | appliance | 11       | done   |
+| Electric range with a hood above                                                                                                                 | appliance | 1+3      | done   |
+| Dishwasher next to the sink                                                                                                                      | appliance | 13       | done   |
+| Sink with faucet; disposal under it                                                                                                              | appliance | 13       | done   |
+| Over-the-range or built-in microwave (built-in, in a wall cabinet)                                                                               | appliance | 15       | done   |
+| Dining table and four chairs                                                                                                                     | furniture |          | done   |
+| Three pendants over the island (and a chandelier over the table)                                                                                 | light     | 7        | done   |
+| Recessed cans; under-cabinet LED strips                                                                                                          | light     | 7        | done   |
+| Switches by the openings (KT-S-A, KT-S-B) and on the backsplash (KT-S-C)                                                                         | S         | 7        | done   |
+| Counter outlets (dual AFCI/GFCI breaker): none more than 0.6 m (24 in) from any point of the counters (two under each window), one on the island | O         | 9        | done   |
+| Fridge, dishwasher, microwave outlets (behind or inside cabinets)                                                                                | O         | 11/13/15 | done   |
+| Leak sensor under the sink                                                                                                                       | sensor    |          | done   |
+| CO alarm (with the smoke alarm, near the stair): in the hall, `safety.co.hall`                                                                   | safety    | 26       | done   |
 
 ### Hall (`hall`)
 
-| Item                                                                | Kind      | Breaker | Status |
-| ------------------------------------------------------------------- | --------- | ------- | ------ |
-| Front door, porch lantern outside                                   | light     | 25      | exists |
-| Pendant (three-way with the living room), now a short lantern       | light     | 7       | done   |
-| Console table, mirror, coat hooks or bench                          | furniture |         | done   |
-| Door to the garage (self-closing)                                   | door      |         | done   |
-| Thermostat (moved to the powder room's wall, facing the foyer)      | hvac      |         | done   |
-| Air handler in the closet under the landing (filter, return grille) | hvac      | 6+8     | exists |
-| Switches at the front door (porch, hall), at the garage door        | S         | 7/25    | done   |
-| Outlets                                                             | O         | 5       | done   |
-| Smoke alarm, CO alarm                                               | safety    | 26      | done   |
-| Doorbell (video) by the front door, chime                           | device    | 27      | done   |
-| Motion sensor                                                       | sensor    |         | exists |
+| Item                                                                                                                                                                              | Kind      | Breaker | Status |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------- | ------- | ------ |
+| Front door, porch lantern outside                                                                                                                                                 | light     | 25      | exists |
+| Pendant (three-way with the living room), now a short lantern                                                                                                                     | light     | 7       | done   |
+| Console table, mirror, coat hooks or bench                                                                                                                                        | furniture |         | done   |
+| Door to the garage (self-closing)                                                                                                                                                 | door      |         | done   |
+| Thermostat (moved to the powder room's wall, facing the foyer)                                                                                                                    | hvac      |         | done   |
+| Air handler (`Air_handler`) in the closet under the landing, its door from the laundry: on a stand with the return filter grille, supply plenum to the slab, line set, disconnect | hvac      | 6+8     | done   |
+| Switches at the front door (porch, hall), at the garage door                                                                                                                      | S         | 7/25    | done   |
+| Outlets                                                                                                                                                                           | O         | 5       | done   |
+| Smoke alarm, CO alarm                                                                                                                                                             | safety    | 26      | done   |
+| Doorbell (video) by the front door, chime                                                                                                                                         | device    | 27      | done   |
+| Motion sensor                                                                                                                                                                     | sensor    |         | exists |
 
 ### Powder room (`powder_room`)
 
@@ -310,6 +310,7 @@ wall cabinet right of the window. Nodes: `Kitchen_units` (merged: cabinets, work
 | Switches LA-S-A (light), LA-S-B (back flood light); LA-O-A washer, LA-O-B dryer 240 V, LA-O-C by the sink | S / O     | 22/14+16 | done   |
 | Leak sensor by the washer (a device, `demo-laundry-leak`)                                                 | sensor    |          | done   |
 | Door to the back yard                                                                                     | door      |          | done   |
+| Door to the air-handler closet (under the landing, in the hall's plan)                                    | door      |          | done   |
 
 ### Primary bedroom (`bedroom_1`), closet (`primary_closet`), bath (`primary_bath`)
 
@@ -338,30 +339,30 @@ wall cabinet right of the window. Nodes: `Kitchen_units` (merged: cabinets, work
 
 ### Hall bath (`hall_bath`) and landing (`landing`)
 
-| Item                                          | Kind     | Breaker | Status |
-| --------------------------------------------- | -------- | ------- | ------ |
-| Tub-shower, vanity, WC, mirror                | built-in |         | done   |
-| Vanity light, exhaust fan                     | light    | 21      | done   |
-| GFCI outlet                                   | O        | 23      | done   |
-| Landing ceiling lights, switches at both ends | light    | 21      | done   |
-| Linen closet (optional)                       | built-in |         | done   |
-| Smoke alarm outside the bedrooms, CO alarm    | safety   | 26      | done   |
-| Wi-Fi access point on the ceiling             | network  | 21      | done   |
-| Attic hatch                                   | built-in |         | done   |
+| Item                                                                                                                               | Kind     | Breaker | Status |
+| ---------------------------------------------------------------------------------------------------------------------------------- | -------- | ------- | ------ |
+| Tub-shower, vanity, WC, mirror                                                                                                     | built-in |         | done   |
+| Vanity light, exhaust fan                                                                                                          | light    | 21      | done   |
+| GFCI outlet                                                                                                                        | O        | 23      | done   |
+| Landing ceiling lights, switches at both ends                                                                                      | light    | 21      | done   |
+| Linen closet (optional)                                                                                                            | built-in |         | done   |
+| Smoke alarm outside the bedrooms, CO alarm                                                                                         | safety   | 26      | done   |
+| Wi-Fi access point (`net.access-point`: placed by its room only, so drawn as a hollow pin at the landing's centroid, not modelled) | network  | 21      | done   |
+| Attic hatch                                                                                                                        | built-in |         | done   |
 
 ### Outside
 
-| Item                                                                                       | Kind  | Breaker | Status |
-| ------------------------------------------------------------------------------------------ | ----- | ------- | ------ |
-| Driveway with an apron to the street, front walk, sidewalk, street, mailbox                | site  |         | done   |
-| Heat pump outdoor unit on a pad behind the block's north-east corner, line set, disconnect | hvac  | 2+4     | done   |
-| Utility meter on the garage's east wall, conduit down to the underground service           | elec  |         | done   |
-| Porch lantern; coach lights each side of the garage door; flood light (`exterior.flood`)   | light | 25      | done   |
-| Terrace wall lights, pergola                                                               | light | 25      | exists |
-| Weatherproof outlets front (EX-O-A) and back (EX-O-B, the pond pump's plug)                | O     | 25      | done   |
-| Pond and pump (smart plug), irrigation controller                                          | site  | 25/27   | exists |
-| Hose bibs front and back                                                                   | plumb |         | done   |
-| Rooftop solar: twelve panels on the main roof's south slope (`Roof_solar`)                 | elec  | 28+30   | done   |
+| Item                                                                                                                            | Kind  | Breaker | Status |
+| ------------------------------------------------------------------------------------------------------------------------------- | ----- | ------- | ------ |
+| Driveway with an apron to the street, front walk, sidewalk, street, mailbox                                                     | site  |         | done   |
+| Heat pump outdoor unit on a pad behind the block's north-east corner, line set, disconnect                                      | hvac  | 2+4     | done   |
+| Utility meter on the garage's east wall, conduit down to the underground service                                                | elec  |         | done   |
+| Porch lantern; coach lights each side of the garage door; flood light (`exterior.flood`)                                        | light | 25      | done   |
+| Terrace wall lights, pergola                                                                                                    | light | 25      | exists |
+| Weatherproof outlets front (EX-O-A), back (EX-O-B, the terrace) and on the west wall by the pond (EX-O-C, the pond pump's plug) | O     | 25      | done   |
+| Pond and pump (smart plug), irrigation controller                                                                               | site  | 25/27   | exists |
+| Hose bibs front and back                                                                                                        | plumb |         | done   |
+| Rooftop solar: twelve panels on the main roof's south slope (`Roof_solar`)                                                      | elec  | 28+30   | done   |
 
 ## Equipment pins (registry)
 
@@ -372,7 +373,7 @@ wall cabinet right of the window. Nodes: `Kitchen_units` (merged: cabinets, work
 | `elec.meter`                                                   | Utility meter                               | outside      | done   |
 | `elec.ev-charger`                                              | EV charger                                  | garage       | done   |
 | `elec.battery`, `elec.inverter`                                | Home battery, PV inverter                   | garage       | done   |
-| `hvac.air-handler`                                             | Air handler                                 | hall closet  | exists |
+| `hvac.air-handler`                                             | Air handler                                 | hall closet  | done   |
 | `hvac.condenser`                                               | Heat pump outdoor unit                      | outside      | done   |
 | `hvac.thermostat`                                              | Thermostat                                  | hall         | exists |
 | `plumb.water-heater`                                           | Water heater                                | garage       | done   |
