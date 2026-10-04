@@ -27,7 +27,7 @@ test.afterAll(async () => {
 });
 
 const { insp, closeInspector } = viewerHelpers(() => page);
-const stick = () => page.locator('jv-stick [role="application"]');
+const stick = () => page.locator('jv-stick .stick');
 
 type Pt = { x: number; y: number; id: number };
 const touch = (type: 'touchStart' | 'touchMove' | 'touchEnd' | 'touchCancel', points: Pt[]) =>
@@ -57,7 +57,8 @@ test('a phone starts in the overview; the strip switches to walk, which shows th
   await walk.tap();
   await expect.poll(() => twin<string>(page, 'twin.state.mode')).toBe('walk');
   await expect(stick()).toBeVisible();
-  await expect(stick()).toHaveAttribute('aria-label', /Move/);
+  await expect(stick()).toHaveAttribute('aria-hidden', 'true'); // (W A S D are the keyboard's way to move)
+  await expect(page.locator('#cross')).toBeHidden(); // a tap picks at the finger, not the centre
   // clear of the tab bar
   const [s, rail] = await Promise.all([stick().boundingBox(), page.locator('jv-rail .rail').boundingBox()]);
   expect(s!.y + s!.height).toBeLessThanOrEqual(rail!.y);
@@ -91,8 +92,19 @@ test('a drag on the view looks around, with the stick held at the same time; no 
   await touch('touchEnd', [thumb]);
   await touch('touchEnd', []);
   await expect.poll(() => twin<number>(page, 'Math.hypot(twin.analog.x, twin.analog.y)')).toBe(0);
-  await page.waitForTimeout(300);
-  await expect(insp()).toHaveCount(0);
+  expect(await twin<unknown>(page, 'twin.hud.subject')).toBeNull(); // (a tap inspects synchronously at pointerup)
+});
+
+test('a look drag that began walking stops turning when the mode changes', async () => {
+  await touch('touchStart', [{ x: 320, y: 420, id: 3 }]);
+  await touch('touchMove', [{ x: 300, y: 420, id: 3 }]);
+  await twin(page, "twin.setMode('orbit')");
+  const y0 = await yaw();
+  for (let x = 280; x >= 200; x -= 20) await touch('touchMove', [{ x, y: 420, id: 3 }]);
+  await touch('touchEnd', []);
+  expect(await yaw()).toBe(y0);
+  await twin(page, "twin.setMode('walk')");
+  await expect(stick()).toBeVisible();
 });
 
 test('a tap inspects what is under the finger (no pointer lock)', async () => {
@@ -113,9 +125,18 @@ test('a tap inspects what is under the finger (no pointer lock)', async () => {
   await expect(insp().locator('h2')).not.toBeEmpty();
   expect(await page.evaluate(() => document.pointerLockElement)).toBeNull();
   // a peek sheet: the stick stays, above it
+  expect(await twin<string>(page, 'twin.hud.sheet')).toBe('peek');
   await expect(stick()).toBeVisible();
   const [s, sheet] = await Promise.all([stick().boundingBox(), insp().boundingBox()]);
   expect(s!.y + s!.height).toBeLessThanOrEqual(sheet!.y);
+});
+
+test('a toast sits above the stick, not on it', async () => {
+  await twin(page, "twin.hud.toast({ text: 'A toast over the walk view' })");
+  const t = page.locator('jv-toasts .toast').filter({ hasText: 'A toast over the walk view' });
+  await expect(t).toBeVisible();
+  const [s, box] = await Promise.all([stick().boundingBox(), t.boundingBox()]);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(s!.y);
 });
 
 test('axe: the walk layout on a phone, with the inspector peeking and without', async () => {
@@ -124,6 +145,50 @@ test('axe: the walk layout on a phone, with the inspector peeking and without', 
   await closeInspector();
   await expect(stick()).toBeVisible();
   await scan('phone walk');
+  // the sheet's height from before the tap-inspect is back (a dock panel opens as it did)
+  expect(await twin<string>(page, 'twin.hud.sheet')).toBe('half');
+});
+
+test('a modal lets go of the stick and hides it; closed, the stick is back', async () => {
+  const c = await centreOf();
+  await drag(1, c, { x: c.x, y: c.y - 50 });
+  await expect.poll(() => twin<number>(page, 'twin.analog.y')).toBeGreaterThan(0.9);
+  await twin(page, 'twin.hud.help()');
+  await expect(page.locator('jv-modal [role="dialog"]')).toBeVisible();
+  await expect(stick()).toHaveCount(0);
+  await expect.poll(() => twin<number>(page, 'Math.hypot(twin.analog.x, twin.analog.y)')).toBe(0);
+  await touch('touchEnd', []);
+  await page.keyboard.press('Escape');
+  await expect(page.locator('jv-modal [role="dialog"]')).toHaveCount(0);
+  await expect(stick()).toBeVisible();
+});
+
+test('a landscape phone (844 × 390, not small): the stick keeps clear of an open dock panel, and hides when the inspector leaves no room', async () => {
+  await page.setViewportSize({ width: 844, height: 390 });
+  await expect.poll(() => twin<boolean>(page, 'twin.hud.small')).toBe(false);
+  await expect(stick()).toBeVisible();
+  const rail = (await page.locator('jv-rail .rail').boundingBox())!;
+  expect((await stick().boundingBox())!.x).toBeGreaterThanOrEqual(rail.x + rail.width);
+  const id = await page
+    .locator('jv-rail [role="toolbar"] > button[data-panel]')
+    .evaluateAll((bs) => bs.map((b) => (b as HTMLElement).dataset.panel!).find((x) => x !== 'search' && x !== 'help'));
+  await page.locator(`jv-rail button[data-panel="${id}"]`).click();
+  const panel = page.locator(`jv-dock section[data-panel="${id}"]`);
+  await expect(panel).toBeVisible();
+  await expect
+    .poll(async () => {
+      const [s, d] = await Promise.all([stick().boundingBox(), panel.boundingBox()]);
+      return s!.x - (d!.x + d!.width);
+    })
+    .toBeGreaterThanOrEqual(0);
+  // and the inspector too: no room between them at this width
+  await twin(page, 'twin.hud.inspect(twin.hud.history.at(-1))');
+  await expect(insp()).toBeVisible();
+  await expect(stick()).toHaveCount(0);
+  await closeInspector();
+  await panel.locator('button[aria-label^="Close"]').click();
+  await expect(stick()).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
 });
 
 test('the overview again: the stick goes', async () => {

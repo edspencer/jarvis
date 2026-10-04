@@ -9,7 +9,7 @@ import type { ToggleSpec } from '../core/plugin/types';
 import { base, blockStyles } from './styles';
 import { button, dot, glyph, icon, renderBlocks } from './blocks';
 import { iconSvg } from './icons';
-import type { Hud, PanelRec, Region } from './hud';
+import { STICK, type Hud, type PanelRec, type Region } from './hud';
 import { setElementEnv } from './elements';
 
 abstract class RegionElement extends LitElement {
@@ -975,10 +975,17 @@ export class JvStatus extends RegionElement {
           left: var(--jv-gap);
           right: var(--jv-gap);
         }
-        /* the mode switch stays (walking on a touch screen has the thumb-stick), as tall as the strip allows */
+        /* the mode switch stays (walking on a touch screen has the thumb-stick): 28 px buttons in the strip, with a
+           40 px tall hit area */
         .seg button {
+          position: relative;
           min-height: 28px;
           padding: 2px 12px;
+        }
+        .seg button::after {
+          content: '';
+          position: absolute;
+          inset: -6px 0;
         }
         .chips,
         .sep,
@@ -1398,7 +1405,9 @@ export class JvToasts extends RegionElement {
             </button>
           </div>`,
       );
-    return html`<div class="toasts">
+    // above the touch thumb-stick while it's shown
+    const st = h.stickAt();
+    return html`<div class="toasts" style=${st ? `bottom:${st.bottom + STICK + 8}px` : ''}>
       <div role="status" aria-live="polite">${list(false)}</div>
       <div role="alert" aria-live="assertive">${list(true)}</div>
     </div>`;
@@ -1731,9 +1740,10 @@ export class JvHover extends RegionElement {
 
 // ------------------------------------------------------------------ touch thumb-stick
 const TRAVEL = 36; // px: the knob's reach from the stick's centre
-/** Walking on a touch screen: an analog stick bottom left (direction and how far it's pushed), above the tab bar and
- * any peek sheet; hidden behind a taller sheet. Pointer Events with capture, so it works alongside a second finger
- * looking around on the view (core/touch.ts). Not focusable: the keys (W A S D) are the keyboard's way to move. */
+/** Walking on a touch screen: an analog stick (direction and how far it's pushed) bottom left, clear of the tab bar, a
+ * peek sheet, the dock and the inspector (Hud.stickAt places it, or hides it). Pointer Events with capture, so it
+ * works alongside a second finger looking around on the view (core/touch.ts). Hidden from assistive technology and
+ * not focusable: the keyboard's way to move is W A S D. */
 export class JvStick extends RegionElement {
   readonly region = 'stick';
   private finger: number | null = null;
@@ -1744,10 +1754,8 @@ export class JvStick extends RegionElement {
     css`
       .stick {
         position: fixed;
-        left: calc(var(--jv-gap) * 2 + var(--jv-rail) + 16px);
-        bottom: 24px;
-        width: 120px;
-        height: 120px;
+        width: ${STICK}px;
+        height: ${STICK}px;
         border-radius: 50%;
         background: rgba(18, 21, 27, 0.45);
         border: 1px solid rgba(255, 255, 255, 0.35);
@@ -1773,25 +1781,8 @@ export class JvStick extends RegionElement {
       .stick.held .knob {
         transition: none;
       }
-      @media (max-width: 719px) {
-        .stick {
-          left: calc(var(--jv-gap) + 12px);
-          /* above the tab bar (52 px) */
-          bottom: calc(52px + var(--jv-gap) * 2 + 12px);
-        }
-        .stick.peek {
-          /* above a peek sheet (64 + 96 px) */
-          bottom: 172px;
-        }
-      }
     `,
   ];
-  /** shown: walking, on a touch screen, and no sheet taller than a peek */
-  private shown(): boolean {
-    const h = this.hud;
-    const up = h.sheetUp();
-    return h.touch && h.deps.mode() === 'walk' && (up === null || up === 'peek');
-  }
   private send(x: number, y: number): void {
     this.x = x;
     this.y = y;
@@ -1831,20 +1822,27 @@ export class JvStick extends RegionElement {
   private onUp = (e: PointerEvent) => {
     if (e.pointerId === this.finger) this.release();
   };
-  protected override updated(): void {
-    if (!this.shown() && (this.finger !== null || this.x || this.y)) this.release();
+  private onResize = () => this.hud.update('stick');
+  override connectedCallback(): void {
+    super.connectedCallback();
+    addEventListener('resize', this.onResize);
   }
   override disconnectedCallback(): void {
     super.disconnectedCallback();
+    removeEventListener('resize', this.onResize);
     this.release();
   }
+  protected override updated(): void {
+    // hidden (a modal, a tall sheet, the overview): let go, so the walker doesn't keep walking behind it
+    if (!this.hud.stickAt() && (this.finger !== null || this.x || this.y)) this.release();
+  }
   override render() {
-    if (!this.shown()) return nothing;
+    const at = this.hud.stickAt();
+    if (!at) return nothing;
     return html`<div
-      class="stick ${this.hud.sheetUp() === 'peek' ? 'peek' : ''}"
-      role="application"
-      aria-roledescription="thumb-stick"
-      aria-label="Move: drag the thumb-stick (keys: W A S D)"
+      class="stick"
+      aria-hidden="true"
+      style="left:${at.left}px;bottom:${at.bottom}px"
       @pointerdown=${this.onDown}
       @pointermove=${this.onMove}
       @pointerup=${this.onUp}

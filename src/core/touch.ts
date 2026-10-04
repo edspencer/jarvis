@@ -27,15 +27,21 @@ export function bindTouch({
   hud: Hud;
   picker: Picker;
   bus: Bus;
-}): void {
+}): { lastWasTouch(): boolean } {
   canvas.style.touchAction = 'none'; // no browser panning or zooming on the view (the overview's controls set it too)
   const coarse = typeof matchMedia === 'function' ? matchMedia('(pointer: coarse)') : null;
-  // the stick shows for a finger, and goes for a mouse (unless the screen's main pointer is a finger)
+  // the stick shows for a finger, and goes for a mouse (unless the screen's main pointer is a finger); no crosshair on
+  // touch (a tap picks at the finger, not the centre)
+  let lastTouch = false;
+  const sync = () => document.body.classList.toggle('touch', hud.touch);
+  sync();
   addEventListener(
     'pointerdown',
     (e) => {
-      if (e.pointerType === 'touch') hud.setTouch(true);
+      lastTouch = e.pointerType === 'touch';
+      if (lastTouch) hud.setTouch(true);
       else if (e.pointerType === 'mouse' && !coarse?.matches) hud.setTouch(false);
+      sync();
     },
     true,
   );
@@ -48,6 +54,7 @@ export function bindTouch({
   });
   canvas.addEventListener('pointermove', (e) => {
     if (!look || e.pointerId !== look.id) return;
+    if (state.mode !== 'walk') return void (look = null);
     if (!look.moved) {
       if (Math.hypot(e.clientX - look.x0, e.clientY - look.y0) <= TAP_SLOP) return;
       look.moved = true; // from here on a drag: turn from this point (no jump by the slop)
@@ -71,6 +78,8 @@ export function bindTouch({
   };
   canvas.addEventListener('pointerup', (e) => end(e, false));
   canvas.addEventListener('pointercancel', (e) => end(e, true));
+  canvas.addEventListener('lostpointercapture', (e) => end(e, true));
+  bus.on('mode', () => (look = null)); // a drag that began walking doesn't turn the overview's camera
 
   const ndc = new THREE.Vector2();
   /** a tap picks at the finger, as a click does at the mouse in the overview */
@@ -81,8 +90,8 @@ export function bindTouch({
     bus.emit('click', ev);
     if (ev.handled) return;
     if (!subject) return hud.closeInspector();
-    // a phone: the inspector opens as a peek sheet, so the view (and the stick) stay usable; drag it up to read
-    if (hud.small && !hud.subject) hud.sheet = 'peek';
-    hud.inspect(subject);
+    hud.peekInspect(subject); // (a phone: as a peek sheet, so the view and the stick stay usable)
   }
+
+  return { lastWasTouch: () => lastTouch };
 }

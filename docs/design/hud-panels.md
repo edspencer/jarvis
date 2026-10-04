@@ -553,17 +553,20 @@ Screenshots, before → after (taken on a private building, so not in the reposi
 - **Touch walk controls** (`<jv-stick>` in `ui/shell.ts`, `core/touch.ts`): on a touch screen (a coarse pointer, or
   the last pointer down was a finger: a mouse on a laptop's touch screen brings the pointer lock back), walk mode shows
   an analog **thumb-stick** bottom left: direction and how far it's pushed (36 px is full speed, a 12 % dead zone),
-  fed to the walker as an analog input next to W A S D. It sits above the tab bar, above a peek sheet, and hides behind
-  a half or full one. **Drag on the view** to look (one finger, anywhere on the canvas, in practice the right thumb;
-  drag right turns right, up looks up; the screen's width is half a turn), at the same time as the stick (Pointer
-  Events with capture, one pointer each). A **tap** (under 10 px and 500 ms) picks at the finger like a click in the
-  overview, through the plugins' `click` event; a drag or a cancelled touch never inspects, and touch never asks for
-  the pointer lock. A tap-inspect while walking on a phone opens the inspector as a peek sheet, so the view and the
-  stick stay usable. The canvas and the stick are `touch-action: none`. The stick is `role="application"` with a
-  label, and not focusable (the keyboard moves with W A S D, so it traps nothing); its knob springs back over
-  `--jv-motion`, which reduced motion sets to 0. Help lists the touch controls on a touch screen. Not yet on touch:
-  jump and crouch (ghost, on at start, is in the strip's ⋯), running, pinch-to-zoom in walk mode, long-press for
-  hover.
+  fed to the walker as an analog input next to W A S D. `Hud.stickAt()` places it: on a phone above the tab bar or a
+  peek sheet (hidden behind a half or full one); wider, right of the rail, or right of the dock while a panel is open,
+  hidden when that leaves no room before the inspector. A modal hides it and lets go (no walking behind a dialog);
+  toasts move up above it. **Drag on the view** to look (one finger, anywhere on the canvas, in practice the right
+  thumb; drag right turns right, up looks up; the screen's width is half a turn), at the same time as the stick
+  (Pointer Events with capture, one pointer each; a mode change or a lost capture ends the drag). A **tap** (under
+  10 px and 500 ms) picks at the finger like a click in the overview, through the plugins' `click` event; a drag or a
+  cancelled touch never inspects, and touch never asks for the pointer lock. A tap-inspect while walking on a phone
+  opens the inspector as a peek sheet, so the view and the stick stay usable; the sheet's height comes back when the
+  inspector closes. No crosshair on touch. The canvas and the stick are `touch-action: none`. The stick is
+  `aria-hidden` and not focusable (the keyboard moves with W A S D, so it traps nothing); its knob springs back over
+  `--jv-motion`, which reduced motion sets to 0. The strip's mode switch has a 40 px tall hit area on small screens.
+  Help lists the touch controls on a touch screen. Not yet on touch: jump and crouch (ghost, on at start, is in the
+  strip's ⋯), running, pinch-to-zoom in walk mode, long-press for hover.
 - **The blink test** (§8) is a confirm modal, then a sticky toast that steps through the bulbs ("Which fixture
   blinked? Aim at it and press T"), then a results modal, rather than one modal flow: the test needs the view, where you
   aim at the fixture that blinked, and a modal would cover it.

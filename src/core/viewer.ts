@@ -337,8 +337,21 @@ function startSite(site: Site, loading: Loading): void {
     here: () => here,
   });
 
-  bindInput({ canvas: renderer.domElement, state, keys, player, keyReg, hud, hudEl, picker, bus, orbit, pointer });
-  bindTouch({ canvas: renderer.domElement, state, player, hud, picker, bus });
+  const touch = bindTouch({ canvas: renderer.domElement, state, player, hud, picker, bus });
+  bindInput({
+    canvas: renderer.domElement,
+    state,
+    keys,
+    player,
+    keyReg,
+    hud,
+    hudEl,
+    picker,
+    bus,
+    orbit,
+    pointer,
+    lastWasTouch: touch.lastWasTouch,
+  });
   addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
