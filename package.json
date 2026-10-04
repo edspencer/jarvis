@@ -26,6 +26,7 @@
     "demo-site": "node tools/make-demo-site.ts",
     "screenshots": "node tools/screenshots.ts",
     "notices": "node tools/third-party-notices.ts",
+    "bundle-size": "node tools/bundle-size.ts",
     "changeset": "changeset",
     "changeset:version": "changeset version && npm install --package-lock-only --ignore-scripts"
   },
@@ -39,6 +40,7 @@
     "three-mesh-bvh": "0.9.15"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@changesets/changelog-github": "1.0.1",
     "@changesets/cli": "3.0.3",
     "@eslint/js": "10.0.1",

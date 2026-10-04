@@ -32,7 +32,7 @@ export class JvRail extends RegionElement {
   static override styles = [
     base,
     css`
-      nav {
+      .rail {
         position: fixed;
         left: var(--jv-gap);
         top: var(--jv-gap);
@@ -178,7 +178,7 @@ export class JvRail extends RegionElement {
 
   private onKey(e: KeyboardEvent): void {
     if (!['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
-    const bs = [...this.renderRoot.querySelectorAll<HTMLButtonElement>('nav > button')];
+    const bs = [...this.renderRoot.querySelectorAll<HTMLButtonElement>('.rail > button')];
     const i = bs.indexOf(this.renderRoot.querySelector<HTMLButtonElement>('button:focus')!);
     if (i < 0) return;
     e.preventDefault();
@@ -198,53 +198,49 @@ export class JvRail extends RegionElement {
     const phone = h.small;
     const main = phone ? shown.slice(0, 4) : shown;
     const rest = phone ? shown.slice(4) : [];
-    return html`<nav
-        class="surface"
-        role="toolbar"
-        aria-label="Panels"
-        aria-orientation="vertical"
-        @keydown=${this.onKey}
-      >
-        <button
-          type="button"
-          class="rb"
-          data-panel="search"
-          title="Search ( / )"
-          aria-label="Search"
-          @click=${() => h.openSearch()}
-        >
-          ${unsafeSVG(iconSvg('search'))}
-        </button>
-        <hr />
-        ${repeat(
-          main,
-          (p) => p.spec.id,
-          (p) => this.btn(p),
-        )}
-        <div class="sp"></div>
-        ${
-          phone
-            ? html`<button
-                type="button"
-                class="rb"
-                title="More"
-                aria-label="More"
-                @click=${() => ((this.more = !this.more), this.requestUpdate())}
-              >
-                ${unsafeSVG(iconSvg('more'))}
-              </button>`
-            : nothing
-        }
-        <button
-          type="button"
-          class="rb desk"
-          data-panel="help"
-          title="Keys and help (H)"
-          aria-label="Help"
-          @click=${() => h.help()}
-        >
-          ${unsafeSVG(iconSvg('help'))}
-        </button>
+    return html`<nav aria-label="HUD">
+        <div class="surface rail" role="toolbar" aria-label="Panels" aria-orientation="vertical" @keydown=${this.onKey}>
+          <button
+            type="button"
+            class="rb"
+            data-panel="search"
+            title="Search ( / )"
+            aria-label="Search"
+            @click=${() => h.openSearch()}
+          >
+            ${unsafeSVG(iconSvg('search'))}
+          </button>
+          <hr />
+          ${repeat(
+            main,
+            (p) => p.spec.id,
+            (p) => this.btn(p),
+          )}
+          <div class="sp"></div>
+          ${
+            phone
+              ? html`<button
+                  type="button"
+                  class="rb"
+                  title="More"
+                  aria-label="More"
+                  @click=${() => ((this.more = !this.more), this.requestUpdate())}
+                >
+                  ${unsafeSVG(iconSvg('more'))}
+                </button>`
+              : nothing
+          }
+          <button
+            type="button"
+            class="rb desk"
+            data-panel="help"
+            title="Keys and help (H)"
+            aria-label="Help"
+            @click=${() => h.help()}
+          >
+            ${unsafeSVG(iconSvg('help'))}
+          </button>
+        </div>
       </nav>
       ${
         this.more && phone
@@ -878,6 +874,7 @@ export class JvStatus extends RegionElement {
       .chipwrap .chip.var {
         border-radius: 0 999px 999px 0;
         padding: 0 5px;
+        min-width: 24px;
         border-left: 0;
       }
       .chip.var svg {
@@ -1471,7 +1468,7 @@ export class JvModal extends RegionElement {
       const ms = this.renderRoot.querySelectorAll<HTMLElement>('.modal');
       const f = [
         ...(ms[ms.length - 1]?.querySelectorAll<HTMLElement>(
-          'button, input, select, textarea, a[href], jv-custom [tabindex]:not([tabindex="-1"])',
+          '.mb, button, input, select, textarea, a[href], jv-custom [tabindex]:not([tabindex="-1"])',
         ) ?? []),
       ].filter((x) => !(x as HTMLButtonElement).disabled);
       if (!f.length) return;
@@ -1546,7 +1543,7 @@ export class JvModal extends RegionElement {
                 ${unsafeSVG(iconSvg('close'))}
               </button>
             </div>
-            <div class="mb">${body}</div>
+            <div class="mb" tabindex="0">${body}</div>
             ${acts.length ? html`<div class="mf">${acts.map((a) => button(a, env))}</div>` : nothing}
           </div>
         </div>`;
