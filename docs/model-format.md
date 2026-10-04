@@ -30,8 +30,9 @@ other detail that isn't needed to move around into an extra model.
 
 The viewer loads, without any further set-up:
 
-- **meshopt** geometry (`EXT_meshopt_compression`) and quantised attributes (`KHR_mesh_quantization`): what
-  `gltfpack -cc` writes. Recommended: much smaller files and quick to decode.
+- **meshopt** geometry (`EXT_meshopt_compression`, or `KHR_meshopt_compression` from `gltfpack -ce khr`) and quantised
+  attributes (`KHR_mesh_quantization`): what `gltfpack -cc` writes. Recommended: much smaller files and quick to
+  decode.
 - **KTX2 / Basis Universal** textures (`KHR_texture_basisu`), e.g. `gltfpack -tc`; also WebP (`EXT_texture_webp`), PNG
   and JPEG.
 - `KHR_texture_transform`, `KHR_materials_emissive_strength`, `KHR_materials_ior`, `KHR_materials_specular`,

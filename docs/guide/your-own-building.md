@@ -168,8 +168,8 @@ gltfpack -i house-export.glb -o house.glb -cc -tc -kn -ke -km
 
 Use a native build from the [meshoptimizer releases](https://github.com/zeux/meshoptimizer/releases). The npm package
 (`npx gltfpack`) compresses geometry but was built without BasisU and WebP, so `-tc` and `-tw` fail with
-`gltfpack was built without BasisU support`. Don't pass `-ce khr`: validate-site accepts `EXT_meshopt_compression`
-(the default), not `KHR_meshopt_compression`. `-si 0.5` simplifies meshes (half the triangles), useful for scans.
+`gltfpack was built without BasisU support`. Either meshopt extension loads: `EXT_meshopt_compression` (the default)
+or `KHR_meshopt_compression` (`-ce khr`). `-si 0.5` simplifies meshes (half the triangles), useful for scans.
 
 **gltf-transform** ([CLI](https://gltf-transform.dev/cli)): use the single steps, not `optimize`.
 
@@ -578,7 +578,6 @@ authentication ([SECURITY.md](../../SECURITY.md)).
 - `models.extra[i].layer: no layer "x" in layers`: declare the layer.
 - `storeys[i].z: storeys go from the bottom up`: order them, lowest first, each `from` above the one below's.
 - `requires KHR_draco_mesh_compression`: re-export without Draco and compress with meshopt.
-- `requires KHR_meshopt_compression`: gltfpack was run with `-ce khr`; leave it at the default.
 - `blueprints index: 1 sheet image not found`: a `file` in the index is relative to the index, not the manifest.
 
 **The model is sideways, upside down or mirrored.** It wasn't exported +Y up, or something on the way read a Z-up file

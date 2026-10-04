@@ -46,12 +46,16 @@ export function siteFolder(dir: string): Plugin {
 
 /** Ships LICENSE and THIRD_PARTY_NOTICES.md in dist/, so the tarball, the container image and the live demo carry them. */
 export function licenceFiles(): Plugin {
+  let root = process.cwd();
   return {
     name: 'jarvis:licence-files',
     apply: 'build',
+    configResolved(config) {
+      root = config.root; // the project root, wherever vite was started from
+    },
     generateBundle() {
       for (const fileName of ['LICENSE', 'THIRD_PARTY_NOTICES.md'])
-        this.emitFile({ type: 'asset', fileName, source: readFileSync(fileName, 'utf8') });
+        this.emitFile({ type: 'asset', fileName, source: readFileSync(join(root, fileName), 'utf8') });
     },
   };
 }

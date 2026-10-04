@@ -9,6 +9,7 @@ export const MODEL_FORMAT = 'jarvis-model/1';
 export const SUPPORTED_REQUIRED = new Set([
   'KHR_mesh_quantization',
   'EXT_meshopt_compression',
+  'KHR_meshopt_compression', // gltfpack -ce khr; three's GLTFLoader reads both with the same decoder
   'KHR_texture_basisu',
   'KHR_texture_transform',
   'EXT_texture_webp',
