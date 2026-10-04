@@ -130,7 +130,7 @@ export class JvRail extends RegionElement {
         background: var(--jv-surface-raised);
       }
       @media (max-width: 719px) {
-        nav {
+        .rail {
           top: auto;
           left: var(--jv-gap);
           right: var(--jv-gap);
