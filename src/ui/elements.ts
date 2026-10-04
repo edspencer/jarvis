@@ -11,13 +11,16 @@ import { renderBlocks, type BlockEnv } from './blocks';
 import { base, blockStyles } from './styles';
 
 let env: BlockEnv | null = null;
-const open = new Set<string>();
-const closedGroups: Record<string, boolean> = {};
+// expanded rows and closed groups belong to each element: two <jv-blocks> with the same keys don't share them
+const uiState = new WeakMap<LitElement, { open: Set<string>; closedGroups: Record<string, boolean> }>();
 /** the HUD hands its environment over at mount (opening subjects, the confirm modal) */
 export function setElementEnv(e: BlockEnv): void {
   env = e;
 }
 function currentEnv(el: LitElement): BlockEnv {
+  let ui = uiState.get(el);
+  if (!ui) uiState.set(el, (ui = { open: new Set(), closedGroups: {} }));
+  const { open, closedGroups } = ui;
   return {
     open: (s) => env?.open(s),
     describe: (s) => env?.describe(s) ?? null,

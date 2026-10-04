@@ -164,11 +164,11 @@ export function createStore(): Store & { scoped(owner: string, collect: (d: Disp
 
   async function call(ids: string | string[], action: StoreAction, data?: Record<string, unknown>): Promise<void> {
     const all = list(ids);
-    if (!all.length) throw new Error('no entity to call');
-    const parts = split(all);
-    const unknown = parts.get('');
-    if (unknown) throw new Error(`${unknown.join(', ')}: no connector has ${unknown.length > 1 ? 'these' : 'this'}`);
-    for (const [o, part] of parts) await conns.get(o)!.spec.call(part, action, data);
+    // every part is checked (unknown entities, each connector's refusal) before any part is sent, so a call across
+    // connectors is never left half done by a refusal
+    const r = refusal(all, action);
+    if (r) throw new Error(r);
+    for (const [o, part] of split(all)) await conns.get(o)!.spec.call(part, action, data);
   }
 
   // ------------------------------------------------------------------ bindings

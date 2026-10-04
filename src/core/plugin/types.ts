@@ -100,7 +100,8 @@ export interface Disposable {
   dispose(): void;
 }
 
-/** a core icon name ('pin', 'sun', 'bolt', …: src/ui/icons.ts) or an SVG string ('<svg …>') */
+/** a core icon name ('pin', 'sun', 'bolt', …: src/ui/icons.ts) or an SVG string ('<svg …>'), kept to drawing elements and
+ * presentation attributes (no scripts, styles, links, <use> or animation) */
 export type IconRef = string;
 
 /** the shared status colours (hud-panels.md §5): one meaning each, always with a glyph or text */

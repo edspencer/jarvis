@@ -49,8 +49,112 @@ export const ICONS: Record<string, string> = {
 /** the SVG for an icon reference (a name or an SVG string) */
 export function iconSvg(ref: string | undefined): string {
   if (!ref) return '';
-  // a plugin's own SVG: drawing elements only (no scripts, event handlers, external images or embedded HTML)
-  if (ref.trimStart().startsWith('<svg'))
-    return /<\s*(script|foreignObject|image|iframe|a)\b|\son\w+\s*=|javascript:/i.test(ref) ? ICONS.cube : ref;
+  // a plugin's own SVG, rebuilt from an allowlist (it goes into the page as markup)
+  if (ref.trimStart().startsWith('<')) return sanitizeSvg(ref) ?? ICONS.cube;
   return ICONS[ref] || ICONS.cube;
+}
+
+// A plugin's SVG icon is parsed as XML and written out again with only drawing elements and presentation attributes:
+// no scripts, event handlers, styles, links, <use>, animation, external references or embedded HTML. Anything outside
+// the lists is dropped (an element with its children); a string that doesn't parse, or isn't an <svg>, gives null.
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const ELEMENTS = new Set([
+  'svg',
+  'g',
+  'path',
+  'circle',
+  'ellipse',
+  'line',
+  'polyline',
+  'polygon',
+  'rect',
+  'title',
+  'desc',
+  'defs',
+  'linearGradient',
+  'radialGradient',
+  'stop',
+  'clipPath',
+]);
+const ATTRIBUTES = new Set([
+  'viewBox',
+  'width',
+  'height',
+  'preserveAspectRatio',
+  'd',
+  'x',
+  'y',
+  'x1',
+  'y1',
+  'x2',
+  'y2',
+  'cx',
+  'cy',
+  'r',
+  'rx',
+  'ry',
+  'fx',
+  'fy',
+  'points',
+  'pathLength',
+  'transform',
+  'id',
+  'fill',
+  'fill-opacity',
+  'fill-rule',
+  'stroke',
+  'stroke-width',
+  'stroke-linecap',
+  'stroke-linejoin',
+  'stroke-miterlimit',
+  'stroke-dasharray',
+  'stroke-dashoffset',
+  'stroke-opacity',
+  'opacity',
+  'vector-effect',
+  'clip-path',
+  'clip-rule',
+  'offset',
+  'stop-color',
+  'stop-opacity',
+  'gradientUnits',
+  'gradientTransform',
+  'spreadMethod',
+  'clipPathUnits',
+]);
+// url() only to something inside the icon (a gradient, a clip path)
+const URL_REF = /url\(\s*#[\w.-]+\s*\)/g;
+const safeValue = (v: string) => !/[\\<>]|url\(|javascript:|data:/i.test(v.replace(URL_REF, ''));
+const esc = (v: string) => v.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+const sanitized = new Map<string, string | null>();
+
+/** an SVG string rebuilt from the allowlist, or null if it isn't one */
+export function sanitizeSvg(src: string): string | null {
+  if (sanitized.has(src)) return sanitized.get(src)!;
+  let out: string | null = null;
+  try {
+    const doc = new DOMParser().parseFromString(src, 'image/svg+xml');
+    const root = doc.documentElement;
+    if (!doc.getElementsByTagName('parsererror').length && root.localName === 'svg') out = write(root, true);
+  } catch {
+    out = null;
+  }
+  if (sanitized.size > 500) sanitized.clear();
+  sanitized.set(src, out);
+  return out;
+}
+
+function write(el: Element, root = false): string {
+  const name = el.localName;
+  if (!ELEMENTS.has(name) || (el.namespaceURI !== null && el.namespaceURI !== SVG_NS)) return '';
+  let attrs = root ? ` xmlns="${SVG_NS}" aria-hidden="true"` : '';
+  for (const a of Array.from(el.attributes))
+    if (!a.prefix && ATTRIBUTES.has(a.localName) && safeValue(a.value)) attrs += ` ${a.localName}="${esc(a.value)}"`;
+  let body = '';
+  for (const n of Array.from(el.childNodes)) {
+    if (n.nodeType === 1) body += write(n as Element);
+    else if (n.nodeType === 3 && (name === 'title' || name === 'desc')) body += esc(n.textContent ?? '');
+  }
+  return `<${name}${attrs}>${body}</${name}>`;
 }
