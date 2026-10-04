@@ -484,7 +484,8 @@ export function createTools(deps: ToolDeps): ToolSpec[] {
     },
     {
       name: 'view_layer',
-      description: `Show or hide a layer in the 3D view (the site's: ${site.layers.map((l) => l.id).join(', ') || 'none'}; and the viewer's own, e.g. pins).`,
+      // the viewer refuses anything that isn't a view layer or one of its view toggles (plugin chips can act on the house)
+      description: `Show or hide a layer in the 3D view: ${[...new Set(['roof', 'ceiling', 'door', ...site.layers.map((l) => l.id)])].join(', ')}; or the view toggles cutaway and upper (the upper storey). Nothing else is a layer.`,
       params: {
         layer: p('string', 'the layer id'),
         on: p('boolean', 'true: show, false: hide (default: toggle)', { optional: true }),

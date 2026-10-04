@@ -1,10 +1,12 @@
 // The assistant's configuration: environment variables, optionally under a JSON file (JARVIS_ASSISTANT_CONFIG) whose
 // keys are the same variable names, so there is one vocabulary. The environment wins over the file. Everything is
 // validated here, once, so the rest of the server can trust it; nothing is hard-coded beyond these defaults.
-// See server/README.md and docs/assistant.md for the table.
+// See docs/assistant.md for the table.
 import { existsSync, readFileSync } from 'node:fs';
+import { isIPv4 } from 'node:net';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export type AgentKind = 'sdk' | 'scripted';
 export type Effort = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
@@ -22,7 +24,7 @@ export interface AssistantConfig {
   port: number;
   /** URL prefix, no trailing slash: '/assistant' */
   base: string;
-  /** allowed WebSocket Origins; empty: same host as the request only */
+  /** allowed browser Origins (WebSocket and /transcribe); empty (loopback binds only): the request's own host */
   origins: string[];
   siteDir: string;
   policyPath: string;
@@ -36,6 +38,10 @@ export interface AssistantConfig {
   model: string;
   effort: Effort;
   ha: { mode: 'mock' | 'live'; url?: string; token?: string };
+  /** WebSearch / WebFetch for the agent */
+  web: boolean;
+  /** a turn that runs longer is ended with an error and the agent reset */
+  turnTimeoutMs: number;
   /** null: transcription is off (POST /transcribe answers 503) */
   stt: SttConfig | null;
 }
@@ -43,6 +49,17 @@ export interface AssistantConfig {
 // TODO(open question 1: model default for voice): a fast model at low effort with on-demand escalation, or a stronger
 // model always? Until that's settled the default is the strong model at low effort.
 export const DEFAULT_MODEL = 'claude-opus-5';
+
+/** the demo house, found from this file (so the defaults work from the repo root and from server/ alike) */
+export const DEMO_SITE = fileURLToPath(new URL('../../../examples/demo-site', import.meta.url));
+/** the example policy, written for the demo house: its default when the demo house is the default site */
+export const EXAMPLE_POLICY_FILE = fileURLToPath(new URL('../../policy.example.yaml', import.meta.url));
+
+/** 127.0.0.0/8, ::1 and localhost: only this machine can reach the server */
+export function isLoopbackHost(host: string): boolean {
+  const h = host.toLowerCase().replace(/^\[(.*)\]$/, '$1');
+  return h === 'localhost' || h === '::1' || (isIPv4(h) && h.startsWith('127.'));
+}
 
 const EFFORTS: readonly Effort[] = ['low', 'medium', 'high', 'xhigh', 'max'];
 
@@ -59,6 +76,8 @@ export const CONFIG_KEYS = [
   'JARVIS_ASSISTANT_AGENT',
   'JARVIS_ASSISTANT_MODEL',
   'JARVIS_ASSISTANT_EFFORT',
+  'JARVIS_ASSISTANT_WEB',
+  'JARVIS_ASSISTANT_TURN_TIMEOUT_S',
   'JARVIS_HA_MODE',
   'JARVIS_HA_URL',
   'JARVIS_HA_TOKEN',
@@ -139,12 +158,25 @@ export function loadConfig(env: Env = process.env, cwd: string = process.cwd()):
       problems.push(`JARVIS_ASSISTANT_ORIGINS: not an origin (scheme://host[:port]): ${o}`);
     else origins.push(u.origin);
   }
+  // DNS rebinding: a page on any name that resolves here sends a matching Host, so off loopback only a list will do
+  if (!isLoopbackHost(host) && !origins.length && !problems.some((p) => p.startsWith('JARVIS_ASSISTANT_ORIGINS')))
+    problems.push(
+      `JARVIS_ASSISTANT_ORIGINS: required when JARVIS_ASSISTANT_HOST is not loopback (${host}): the origin(s) of the ` +
+        'page(s) that use the assistant, e.g. https://jarvis.example.org',
+    );
 
-  const siteDir = path('JARVIS_SITE_DIR', 'examples/demo-site');
+  const siteDir = path('JARVIS_SITE_DIR', DEMO_SITE);
   if (!existsSync(join(siteDir, 'site.json'))) problems.push(`JARVIS_SITE_DIR: no site.json in ${siteDir}`);
 
+  // <site>/assistant-policy.yaml; the demo house (as the default site) has the example policy written for it
   const policyExplicit = !!get(e, 'JARVIS_ASSISTANT_POLICY');
-  const policyPath = policyExplicit ? path('JARVIS_ASSISTANT_POLICY', '') : join(siteDir, 'assistant-policy.yaml');
+  const sitePolicy = join(siteDir, 'assistant-policy.yaml');
+  const demoDefault = !get(e, 'JARVIS_SITE_DIR') && !existsSync(sitePolicy) && existsSync(EXAMPLE_POLICY_FILE);
+  const policyPath = policyExplicit
+    ? path('JARVIS_ASSISTANT_POLICY', '')
+    : demoDefault
+      ? EXAMPLE_POLICY_FILE
+      : sitePolicy;
   if (policyExplicit && !existsSync(policyPath)) problems.push(`JARVIS_ASSISTANT_POLICY: no such file: ${policyPath}`);
 
   const dataDir = path('JARVIS_ASSISTANT_DATA', 'data');
@@ -172,6 +204,14 @@ export function loadConfig(env: Env = process.env, cwd: string = process.cwd()):
       problems.push('JARVIS_HA_MODE=live needs JARVIS_HA_TOKEN (a long-lived token of a non-admin HA user)');
   }
 
+  const webRaw = get(e, 'JARVIS_ASSISTANT_WEB') ?? 'on';
+  if (webRaw !== 'on' && webRaw !== 'off') problems.push(`JARVIS_ASSISTANT_WEB: on or off, not ${webRaw}`);
+
+  const timeoutRaw = get(e, 'JARVIS_ASSISTANT_TURN_TIMEOUT_S') ?? '180';
+  const timeout = Number(timeoutRaw);
+  if (!/^\d+(\.\d+)?$/.test(timeoutRaw) || !(timeout > 0))
+    problems.push(`JARVIS_ASSISTANT_TURN_TIMEOUT_S: a number of seconds > 0, not ${timeoutRaw}`);
+
   const sttUrl = get(e, 'JARVIS_STT_URL');
   if (sttUrl && !/^https?:\/\//.test(sttUrl)) problems.push(`JARVIS_STT_URL: not an http(s) URL: ${sttUrl}`);
   const stt: SttConfig | null = sttUrl
@@ -198,6 +238,8 @@ export function loadConfig(env: Env = process.env, cwd: string = process.cwd()):
     model,
     effort,
     ha: { mode, url: haUrl, token: haToken },
+    web: webRaw !== 'off',
+    turnTimeoutMs: timeout * 1000,
     stt,
   };
 }

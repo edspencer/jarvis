@@ -6,7 +6,8 @@
 #   - every entity of a call is matched against the rules in order; the FIRST matching rule wins;
 #   - nothing matches → denied. `default` can only be deny (and may be left out);
 #   - a rule has exactly one of allow / confirm / deny, holding its matcher. Matcher keys (all must match; a list means
-#     any of): domain, entity (globs with *), service ('*' for any), device_class, surface (screen | speaker);
+#     any of): domain, entity (globs with *), service, device_class, surface (screen | speaker);
+#   - allow and confirm rules must name a domain or entity AND their services; '*' (any service) is for deny only;
 #   - a call's data may only carry keys the matching rule names: numbers in `bounds` ([min, max], outside → refused,
 #     never clamped) or strings / true / false in `data`. Anything else is refused;
 #   - the strictest entity decides the call (deny > confirm > allow), and one deny refuses the whole call;
@@ -50,9 +51,15 @@ rules:
   - allow: { domain: light, service: [turn_on, turn_off, toggle] }
     bounds: { brightness_pct: [1, 100], color_temp_kelvin: [2000, 6500] }
   - allow: { entity: switch.bathroom_vanity, service: [turn_on, turn_off, toggle] }
-  - allow: { domain: [scene, script], service: turn_on }
+  - allow: { domain: scene, service: turn_on }
+  # a script can do anything, so only harmless ones, by name (every other script asks first: the last rule)
+  - allow: { entity: script.film_night, service: turn_on }
   - allow: { domain: fan, service: [turn_on, turn_off, set_percentage] }
     bounds: { percentage: [0, 100] }
   # the pond pump runs for at most an hour; `minutes` (≤ 60) may shorten it
   - allow: { entity: 'switch.pond_pump', service: [turn_on, turn_off] }
     max_minutes: 60
+
+  # ---------------------------------------------------------------- any other script: ask first
+  - confirm: { domain: script, service: turn_on }
+    reason: Scripts can do anything; this one isn't on the harmless list

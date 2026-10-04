@@ -24,7 +24,8 @@ describe('loadConfig', () => {
       base: '/assistant',
       origins: [],
       siteDir: DEMO,
-      policyPath: join(DEMO, 'assistant-policy.yaml'),
+      // the demo house has no assistant-policy.yaml; as the default site it gets the example written for it
+      policyPath: join(ROOT, 'server/policy.example.yaml'),
       policyExplicit: false,
       dataDir: join(ROOT, 'data'),
       knowledgeDir: null,
@@ -32,8 +33,43 @@ describe('loadConfig', () => {
       model: DEFAULT_MODEL,
       effort: 'low',
       ha: { mode: 'mock' },
+      web: true,
+      turnTimeoutMs: 180_000,
       stt: null,
     });
+  });
+
+  it('finds the demo house from any working folder (cd server && npm start)', () => {
+    const c = loadConfig({}, join(ROOT, 'server'));
+    expect(c.siteDir).toBe(DEMO);
+    expect(c.policyPath).toBe(join(ROOT, 'server/policy.example.yaml'));
+    expect(c.dataDir).toBe(join(ROOT, 'server/data'));
+  });
+
+  it("a site of one's own: <site>/assistant-policy.yaml (missing: the deny-everything default, not the example)", () => {
+    const dir = mkdtempSync(join(tmpdir(), 'jarvis-site-'));
+    writeFileSync(join(dir, 'site.json'), '{}');
+    expect(loadConfig({ JARVIS_SITE_DIR: dir }, ROOT).policyPath).toBe(join(dir, 'assistant-policy.yaml'));
+    expect(loadConfig({ JARVIS_SITE_DIR: DEMO }, ROOT).policyPath).toBe(join(DEMO, 'assistant-policy.yaml'));
+  });
+
+  it('off loopback, JARVIS_ASSISTANT_ORIGINS is required (DNS rebinding defeats the same-host check)', () => {
+    for (const host of ['127.0.0.1', '127.1.2.3', '::1', '[::1]', 'localhost'])
+      expect(loadConfig({ JARVIS_ASSISTANT_HOST: host }, ROOT).origins).toEqual([]);
+    for (const host of ['0.0.0.0', '::', '192.168.1.20', 'jarvis.lan'])
+      expect(() => loadConfig({ JARVIS_ASSISTANT_HOST: host }, ROOT)).toThrow(
+        /JARVIS_ASSISTANT_ORIGINS: required when JARVIS_ASSISTANT_HOST is not loopback/,
+      );
+    const c = loadConfig({ JARVIS_ASSISTANT_HOST: '0.0.0.0', JARVIS_ASSISTANT_ORIGINS: 'https://jarvis.lan' }, ROOT);
+    expect(c.origins).toEqual(['https://jarvis.lan']);
+  });
+
+  it('JARVIS_ASSISTANT_WEB and JARVIS_ASSISTANT_TURN_TIMEOUT_S', () => {
+    const c = loadConfig({ JARVIS_ASSISTANT_WEB: 'off', JARVIS_ASSISTANT_TURN_TIMEOUT_S: '45' }, ROOT);
+    expect(c).toMatchObject({ web: false, turnTimeoutMs: 45_000 });
+    expect(() => loadConfig({ JARVIS_ASSISTANT_WEB: 'no' }, ROOT)).toThrow(/JARVIS_ASSISTANT_WEB: on or off/);
+    for (const t of ['0', '-5', 'soon'])
+      expect(() => loadConfig({ JARVIS_ASSISTANT_TURN_TIMEOUT_S: t }, ROOT)).toThrow(/TURN_TIMEOUT_S/);
   });
 
   it('reads every variable', () => {

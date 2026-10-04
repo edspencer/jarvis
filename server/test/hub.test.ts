@@ -75,7 +75,7 @@ interface Rig {
   agent: FakeAgent;
   audit: ReturnType<typeof memoryAudit>;
 }
-function rig(script?: Script, opts: { viewTimeoutMs?: number; ttlMs?: number } = {}): Rig {
+function rig(script?: Script, opts: { viewTimeoutMs?: number; ttlMs?: number; turnTimeoutMs?: number } = {}): Rig {
   const ha = createMockHa();
   const agent = fakeAgent(script);
   const audit = memoryAudit();
@@ -96,6 +96,7 @@ function rig(script?: Script, opts: { viewTimeoutMs?: number; ttlMs?: number } =
     info: { agent: agent.name, ha: 'mock', transcribe: false },
     formatTurn: (t) => `[turn] ${t.text}`,
     viewTimeoutMs: opts.viewTimeoutMs ?? 200,
+    turnTimeoutMs: opts.turnTimeoutMs,
   });
   return { hub, gate, ha, agent, audit };
 }
@@ -223,6 +224,25 @@ describe('hub: clients', () => {
     expect(c.closed).toBe(true);
     expect(hub.clientCount()).toBe(0);
   });
+
+  it('a connection that closes during an async authenticate is not registered', async () => {
+    const r = rig(actScript);
+    const wait = deferred();
+    const hub = createHub({
+      agent: r.agent,
+      tools: [],
+      gate: r.gate,
+      info: { agent: 'fake', ha: 'mock', transcribe: false },
+      authenticate: async () => (await wait.promise, null),
+    });
+    const c = conn();
+    const p = hub.onMessage(c, hello('slow'));
+    hub.onClose(c);
+    wait.resolve();
+    await p;
+    expect(hub.clientCount()).toBe(0);
+    expect(c.sent).toEqual([]);
+  });
 });
 
 describe('hub: turns', () => {
@@ -333,6 +353,82 @@ describe('hub: turns', () => {
     for (const c of [a, b])
       expect(c.of('welcome').at(-1)!.transcript.at(-1)).toMatchObject({ kind: 'divider', text: 'New conversation' });
   });
+
+  it('text after a tool chip is a paragraph of its own in the transcript', async () => {
+    const r = rig(async (_t, emit) => {
+      emit({ type: 'text', delta: 'Let me look.' });
+      emit({ type: 'tool', callId: 'w1', name: 'WebSearch', summary: 'Searching the web for me', status: 'running' });
+      emit({ type: 'tool', callId: 'w1', name: 'WebSearch', summary: 'Searching the web for me', status: 'done' });
+      emit({ type: 'text', delta: 'You are ' });
+      emit({ type: 'text', delta: 'nowhere.' });
+      emit({ type: 'done' });
+    });
+    const a = await join2(r);
+    await r.hub.onMessage(a, JSON.stringify(say('where am i')));
+    await r.hub.idle();
+    expect(r.hub.transcript().map((e) => (e.kind === 'assistant' ? e.text : e.kind))).toEqual([
+      'user',
+      'Let me look.',
+      'tool',
+      'You are nowhere.',
+    ]);
+  });
+
+  it('a turn that never finishes is ended by the watchdog, the agent reset, and the queue moves on', async () => {
+    let n = 0;
+    const r = rig(
+      async (_t, emit, tools, a) => {
+        if (n++ === 0) {
+          await new Promise(() => {}); // hangs forever
+        }
+        a.results.push('second');
+        emit({ type: 'text', delta: 'ok' });
+        emit({ type: 'done' });
+        void tools;
+      },
+      { turnTimeoutMs: 50 },
+    );
+    const a = await join2(r);
+    await r.hub.onMessage(a, JSON.stringify(say('first')));
+    await r.hub.onMessage(a, JSON.stringify(say('second')));
+    await r.hub.idle();
+    const ends = a.of('turn.end');
+    expect(ends).toHaveLength(2);
+    expect(ends[0].error).toBe('no answer within 0 s, so the assistant was restarted');
+    expect(ends[1].error).toBeUndefined();
+    expect(r.agent.resets).toBe(1);
+    expect(r.agent.results).toEqual(['second']);
+  });
+
+  it('reset during a hung turn returns (bounded by the watchdog)', async () => {
+    const r = rig(() => new Promise(() => {}), { turnTimeoutMs: 50 });
+    const a = await join2(r);
+    await r.hub.onMessage(a, JSON.stringify(say('hang')));
+    await until(() => a.of('turn.start').length);
+    await r.hub.onMessage(a, JSON.stringify({ type: 'reset' }));
+    expect(a.of('turn.end')).toHaveLength(1);
+    expect(a.of('welcome').at(-1)!.transcript.at(-1)).toMatchObject({ kind: 'divider' });
+  });
+
+  it('a late tool call from a turn the watchdog ended does nothing', async () => {
+    let late: Promise<{ text: string }> | null = null;
+    const go = deferred();
+    const r = rig(
+      async (_t, _emit, tools) => {
+        await go.promise; // past the watchdog
+        late = tools.call('ha_act', { entity_ids: ['light.hall'], service: 'turn_on' });
+        await new Promise(() => {});
+      },
+      { turnTimeoutMs: 30 },
+    );
+    const a = await join2(r);
+    await r.hub.onMessage(a, JSON.stringify(say('hang')));
+    await r.hub.idle();
+    go.resolve();
+    await until(() => late);
+    expect((await late!).text).toBe('this turn has ended; nothing was done');
+    expect(r.ha.calls).toEqual([]);
+  });
 });
 
 describe('hub: view commands', () => {
@@ -398,6 +494,8 @@ describe('hub: confirmations', () => {
     expect(req.summary).toMatch(/Hall thermostat/);
     expect(req.detail).toMatch(/climate\.set_temperature/);
     expect(req.expiresAt).toBeGreaterThan(Date.now());
+    expect(req.ttlMs).toBeGreaterThan(29_000); // the time left, for a client whose clock is off
+    expect(req.ttlMs).toBeLessThanOrEqual(30_000);
     expect(b.of('confirm.request')).toEqual([]); // only the client that asked
     expect(a.of('tool').at(-1)).toMatchObject({ name: 'ha_act', status: 'pending' });
     expect(r.ha.calls).toEqual([]);
@@ -505,6 +603,20 @@ describe('hub: confirmations', () => {
     expect(a.of('confirm.resolved')[0]).toMatchObject({ outcome: 'denied', detail: 'cancelled' });
     expect(a.of('turn.end').at(-1)).toMatchObject({ interrupted: true });
     expect(r.agent.results[0]).toMatch(/^the person declined/);
+  });
+
+  it('an interrupt from another client cancels the running turn’s confirmations too (barge-in)', async () => {
+    const r = rig(actScript);
+    const a = await join2(r);
+    const b = await join2(r, 'tab-2');
+    await r.hub.onMessage(a, JSON.stringify(say('set the hall to 72')));
+    await until(() => a.of('confirm.request').length);
+    await r.hub.onMessage(b, JSON.stringify({ type: 'interrupt' }));
+    await r.hub.idle();
+    expect(r.gate.pending()).toEqual([]);
+    expect(r.ha.calls).toEqual([]);
+    expect(a.of('confirm.resolved')[0]).toMatchObject({ outcome: 'denied', detail: 'cancelled' });
+    expect(a.of('turn.end').at(-1)).toMatchObject({ interrupted: true });
   });
 
   it('disconnecting cancels the pending confirmation', async () => {

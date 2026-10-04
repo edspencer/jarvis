@@ -6,8 +6,9 @@ import type { ClientMsg, ServerMsg } from '../../server/src/core/protocol.ts';
 import { backoff, endpoints, parseServerMsg } from '../../src/plugins/assistant/transport';
 import { initialTranscript, reduce, MAX_ENTRIES, type TranscriptState } from '../../src/plugins/assistant/transcript';
 import { createSpeaker, speakable, takeSentences } from '../../src/plugins/assistant/speech';
-import { fileName, pickMime } from '../../src/plugins/assistant/talk';
+import { fileName, pickMime, recordIfWanted } from '../../src/plugins/assistant/talk';
 import { createMockTransport, matchScript, MOCK_TIMING } from '../../src/plugins/assistant/mock';
+import { resolveLayer } from '../../src/plugins/assistant/layers';
 import { reservedKeys, validateManifest, type SiteManifest } from '../../src/site';
 
 describe('endpoints', () => {
@@ -204,6 +205,32 @@ describe('recording', () => {
       'speech.bin',
     ]);
   });
+
+  it('lets go of a microphone that arrives after the plugin went away or the talk was cancelled', async () => {
+    const fake = () => {
+      const r = { cancelled: 0, level: () => 0, stop: async () => null, cancel: () => void r.cancelled++ };
+      return r;
+    };
+    let gate!: () => void;
+    const mic = fake();
+    let wanted = true;
+    const p = recordIfWanted(
+      () => new Promise((res) => (gate = () => res(mic))),
+      () => wanted,
+    );
+    wanted = false; // disposed while getUserMedia waits (the permission prompt)
+    gate();
+    expect(await p).toBeNull();
+    expect(mic.cancelled).toBe(1); // its tracks stopped as soon as it resolved
+    const kept = fake();
+    expect(
+      await recordIfWanted(
+        async () => kept,
+        () => true,
+      ),
+    ).toBe(kept);
+    expect(kept.cancelled).toBe(0);
+  });
 });
 
 describe('the mock script matcher', () => {
@@ -241,8 +268,47 @@ describe('the mock script matcher', () => {
     });
     expect(matchScript('highlight the fridge')).toMatchObject({ subjects: ['pins:appliance.fridge'] });
     expect(matchScript('hide the furniture')).toEqual({ kind: 'layer', layer: 'furniture', on: false });
-    expect(matchScript('toggle pins')).toEqual({ kind: 'layer', layer: 'pins', on: undefined });
+    expect(matchScript('toggle the cutaway')).toEqual({ kind: 'layer', layer: 'cutaway', on: undefined });
+    expect(matchScript('toggle pins')).toEqual({ kind: 'generic' }); // a plugin's chip is not a layer
     expect(matchScript("what's the weather like")).toEqual({ kind: 'generic' });
+  });
+});
+
+describe('view_layer: what a layer name may switch', () => {
+  const layers = [
+    { id: 'roof', label: 'Roofs' },
+    { id: 'door', label: 'Doors' },
+    { id: 'furniture', label: 'Furniture' },
+    { id: 'extra_trees', label: 'Garden trees' },
+  ];
+  it('a view layer by id or exact label, any case', () => {
+    expect(resolveLayer('furniture', layers)).toEqual({ kind: 'layer', id: 'furniture', label: 'Furniture' });
+    expect(resolveLayer('Roofs', layers)).toMatchObject({ kind: 'layer', id: 'roof' });
+    expect(resolveLayer('DOOR', layers)).toMatchObject({ kind: 'layer', id: 'door' });
+    expect(resolveLayer('garden trees', layers)).toMatchObject({ kind: 'layer', id: 'extra_trees' });
+    expect(resolveLayer('extra-trees', layers)).toMatchObject({ kind: 'layer', id: 'extra_trees' });
+  });
+  it('the core view toggles on the allow-list', () => {
+    expect(resolveLayer('cutaway', layers)).toEqual({ kind: 'toggle', toggle: 'cutaway' });
+    expect(resolveLayer('Upper storey', layers)).toEqual({ kind: 'toggle', toggle: 'upper' });
+    expect(resolveLayer('ghost', layers)).toEqual({ kind: 'toggle', toggle: 'ghost' });
+  });
+  it('nothing else: no plugin chips, no fuzzy or partial matches, no empty names', () => {
+    for (const n of [
+      'crosshair',
+      'lights',
+      'pins',
+      'faults',
+      'plates',
+      'roo',
+      'furnitur',
+      'door leaves',
+      'constructor',
+    ])
+      expect(resolveLayer(n, layers).kind).toBe('none');
+    for (const n of ['', ' ', '-', '_', '--', '...'])
+      expect(resolveLayer(n, layers)).toEqual({ kind: 'none', detail: 'no layer named' });
+    expect(resolveLayer('-', [{ id: '', label: '' }]).kind).toBe('none');
   });
 });
 
@@ -297,6 +363,7 @@ describe('the mock server', () => {
       expect(got.find((m) => m.type === 'tool')).toMatchObject({ status: 'pending' });
       if (req?.type === 'confirm.request') {
         expect(req.expiresAt).toBeGreaterThan(Date.now() + MOCK_TIMING.confirm - 1000);
+        expect(req.ttlMs).toBe(MOCK_TIMING.confirm);
         if (approved !== null) t.send({ type: 'confirm.reply', id: req.id, approved });
       }
       await vi.advanceTimersByTimeAsync(approved === null ? MOCK_TIMING.confirm + 3000 : 3000);

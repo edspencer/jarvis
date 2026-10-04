@@ -1,7 +1,8 @@
 # Voice assistant (proposal)
 
-Status: **investigation and design proposal**; nothing here is implemented. Companion to `hud-panels.md` (the panel
-standard and plugin UI API this builds on).
+Status: **investigation and design proposal**. Companion to `hud-panels.md` (the panel standard and plugin UI API
+this builds on). A draft v1 now exists: [`../assistant.md`](../assistant.md) documents what was built, which differs
+from this proposal in places.
 
 Goal: a house assistant that can replace a commercial smart speaker. One conversation with an agent that
 
@@ -250,6 +251,8 @@ All tools live in the in-process MCP server `house`. HA access is the assistant'
 
 The site supplies `assistant-policy.yaml`. Rules match on domain, service, entity id (globs), device class and
 area; the **first matching rule wins** and anything unmatched is **denied**. Data bounds clamp or refuse values.
+The sketch below predates v1, whose format differs in details (bounds refuse and never clamp; every allow and confirm
+rule names its services, and `'*'` is for deny rules only): see [the policy file](../assistant.md#the-policy-file).
 
 ```yaml
 # site/assistant-policy.yaml (sketch)

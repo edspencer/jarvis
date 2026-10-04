@@ -45,7 +45,7 @@ describe('parsePolicy', () => {
     expect(policy.rules[4].risk).toBe('high');
     expect(policy.rules[7].bounds).toEqual({ temperature: [60, 85] });
     expect(policy.rules[7].data).toEqual(['hvac_mode']);
-    expect(policy.rules[14].max_minutes).toBe(60);
+    expect(policy.rules[15].max_minutes).toBe(60);
   });
 
   it('server/policy.example.yaml is the same policy (when the server has its yaml package)', async (ctx) => {
@@ -132,7 +132,9 @@ describe('parsePolicy', () => {
     expect(b([1, 2])).toMatch(/bounds: must be a mapping/);
     expect(b({ entity_id: [1, 2] })).toMatch(/entity_id can't be service data/);
     expect(b({ minutes: [1, 2] })).toMatch(/minutes can't be service data/);
-    expect(parsePolicy(rules({ allow: { domain: 'light' }, bounds: { b: [5, 5] } })).rules[0].bounds).toEqual({
+    expect(
+      parsePolicy(rules({ allow: { domain: 'light', service: 'turn_on' }, bounds: { b: [5, 5] } })).rules[0].bounds,
+    ).toEqual({
       b: [5, 5],
     });
   });
@@ -184,7 +186,7 @@ describe('default deny', () => {
   });
 
   it('the policy is the only thing that widens: an allow on one domain says nothing about another', () => {
-    const p = parsePolicy(rules({ allow: { domain: 'light' } }));
+    const p = parsePolicy(rules({ allow: { domain: 'light', service: 'turn_on' } }));
     expect(ev({ entity_ids: ['light.hall'], service: 'turn_on' }, 'screen', p).tier).toBe('allow');
     expect(ev({ entity_ids: ['switch.pond_pump'], service: 'turn_on' }, 'screen', p).tier).toBe('deny');
     expect(ev({ entity_ids: ['lock.front_door'], service: 'unlock' }, 'screen', p).tier).toBe('deny');
@@ -253,8 +255,10 @@ describe('tiers', () => {
   });
 
   it('the first matching rule wins (in both directions)', () => {
-    const allowFirst = parsePolicy(rules({ allow: { domain: 'fan' } }, { deny: { domain: 'fan' } }));
-    const denyFirst = parsePolicy(rules({ deny: { domain: 'fan' } }, { allow: { domain: 'fan' } }));
+    const allowFirst = parsePolicy(
+      rules({ allow: { domain: 'fan', service: 'turn_on' } }, { deny: { domain: 'fan' } }),
+    );
+    const denyFirst = parsePolicy(rules({ deny: { domain: 'fan' } }, { allow: { domain: 'fan', service: 'turn_on' } }));
     const req = { entity_ids: ['fan.bedroom_fan'], service: 'turn_on' };
     expect(ev(req, 'screen', allowFirst).tier).toBe('allow');
     expect(ev(req, 'screen', denyFirst).tier).toBe('deny');
@@ -323,20 +327,46 @@ describe('matchers', () => {
     expect(globMatch('switch.pond_pump', 'switch.pond_pump_2')).toBe(false);
     // `.` is literal, not "any character"
     expect(globMatch('switch.a', 'switchxa')).toBe(false);
-    const p = parsePolicy(rules({ allow: { entity: 'light.kitchen_*' } }));
+    const p = parsePolicy(rules({ allow: { entity: 'light.kitchen_*', service: 'turn_on' } }));
     expect(ev({ entity_ids: ['light.kitchen_pendant_2'], service: 'turn_on' }, 'screen', p).tier).toBe('allow');
     expect(ev({ entity_ids: ['light.hall'], service: 'turn_on' }, 'screen', p).tier).toBe('deny');
   });
 
-  it("service '*' and lists", () => {
-    const p = parsePolicy(rules({ allow: { domain: ['fan', 'light'], service: '*' } }));
-    expect(ev({ entity_ids: ['fan.bedroom_fan'], service: 'oscillate' }, 'screen', p).tier).toBe('allow');
+  it("service '*' (deny only) and lists", () => {
+    const p = parsePolicy(
+      rules({ deny: { domain: 'fan', service: '*' } }, { allow: { domain: ['fan', 'light'], service: ['turn_on'] } }),
+    );
+    expect(ev({ entity_ids: ['fan.bedroom_fan'], service: 'turn_on' }, 'screen', p).tier).toBe('deny');
     expect(ev({ entity_ids: ['light.hall'], service: 'turn_on' }, 'screen', p).tier).toBe('allow');
+    expect(ev({ entity_ids: ['light.hall'], service: 'toggle' }, 'screen', p).tier).toBe('deny');
+  });
+
+  it('allow and confirm rules must name their services, and never with *', () => {
+    expect(bad(rules({ allow: { domain: 'light' } }))).toMatch(/rules\[0\]\.allow: an allow rule needs a service/);
+    expect(bad(rules({ confirm: { entity: 'script.goodnight' } }))).toMatch(/a confirm rule needs a service/);
+    expect(bad(rules({ allow: { domain: 'script', service: '*' } }))).toMatch(
+      /rules\[0\]\.allow\.service: '\*' is only allowed on a deny rule/,
+    );
+    expect(bad(rules({ confirm: { domain: 'light', service: ['turn_on', '*'] } }))).toMatch(/only allowed on a deny/);
+    // a rule without a service would have let the model run any script with any service
+    expect(bad(rules({ allow: { domain: 'script' } }))).toMatch(/needs a service/);
+    expect(parsePolicy(rules({ deny: { domain: 'script', service: '*' } })).rules).toHaveLength(1);
+    expect(parsePolicy(rules({ deny: { domain: 'script' } })).rules).toHaveLength(1);
+  });
+
+  it('the example asks before any script but the named harmless one', () => {
+    expect(ev({ entity_ids: ['script.film_night'], service: 'turn_on' }).tier).toBe('allow');
+    expect(ev({ entity_ids: ['script.goodnight'], service: 'turn_on' })).toMatchObject({
+      tier: 'confirm',
+      reason: 'Good night turns off every light in the house',
+    });
+    expect(ev({ entity_ids: ['script.film_night'], service: 'turn_off' }).tier).toBe('deny');
+    expect(ev({ entity_ids: ['script.film_night'], service: 'toggle' }).tier).toBe('deny');
   });
 
   it('the service always runs in the entity’s own domain: generic homeassistant.* calls cannot be made', () => {
     // even an allow on everything in a domain only ever yields <entity's domain>.<service>
-    const p = parsePolicy(rules({ allow: { domain: 'light', service: '*' } }));
+    const p = parsePolicy(rules({ allow: { domain: 'light', service: ['turn_on', 'turn_off'] } }));
     const r = ev({ entity_ids: ['light.hall'], service: 'turn_off' }, 'screen', p);
     expect(r.calls[0].domain).toBe('light');
     // and "homeassistant.turn_off" isn't a service name at all
@@ -411,10 +441,9 @@ describe('max_minutes', () => {
       'minutes is not allowed in the data for light.hall turn_on',
     );
   });
-  it('a service that cannot be timed is refused on a timed rule', () => {
-    const p = parsePolicy(rules({ allow: { domain: 'fan' }, max_minutes: 10 }));
-    expect(ev({ entity_ids: ['fan.bedroom_fan'], service: 'set_percentage' }, 'screen', p).reason).toMatch(
-      /runs for at most 10 minutes/,
+  it('a service that cannot be timed is refused on a timed rule (when the policy is read)', () => {
+    expect(bad(rules({ allow: { domain: 'fan', service: ['turn_on', 'set_percentage'] }, max_minutes: 10 }))).toMatch(
+      /set_percentage can't be timed/,
     );
   });
   it('the off services table', () => {

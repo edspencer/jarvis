@@ -3,9 +3,11 @@
 //
 // LAN-only stance (design §2.3): it binds 127.0.0.1 by default and is meant to sit behind the site's reverse proxy at
 // /assistant/*, same origin as the viewer (no CORS; the HTTPS the microphone needs is already there), with the proxy
-// refusing non-LAN clients. Browsers always send an Origin on a WebSocket; it must be on JARVIS_ASSISTANT_ORIGINS, or
-// the request's own host when that list is empty. A client with no Origin is not a browser (a satellite bridge, a
-// script) and is let through: cross-site WebSocket hijacking needs a browser.
+// refusing non-LAN clients. Browsers send an Origin on a WebSocket and on a cross-site POST; on the socket and on
+// /transcribe it must be on JARVIS_ASSISTANT_ORIGINS (exactly: scheme, host and port). Only a loopback bind may leave
+// that list empty, and then the request's own Host must match: off loopback a DNS-rebinding page would send a matching
+// Host itself, so config.ts insists on the list. A client with no Origin is not a browser (a satellite bridge, a
+// script) and is let through: cross-site WebSocket hijacking and spending the STT credit from a web page need one.
 // TODO(open question 4: where the server runs): next to the static site or on an agent host; the proxy config
 // examples follow from that.
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -50,12 +52,18 @@ export function authenticate(_hello: HelloMsg, _conn: Conn): string | null {
   return null;
 }
 
-/** may a browser at `origin` open the socket? */
+/** may a browser at `origin` use the socket or /transcribe? (`allowed` empty: only on a loopback bind, config.ts) */
+/** the host names a loopback-only server's own pages may use */
+const LOOPBACK_NAME = /^(localhost|127(\.\d{1,3}){3}|\[::1\])$/;
+
 export function originAllowed(origin: string | undefined, host: string | undefined, allowed: string[]): boolean {
   if (!origin) return true; // not a browser
   if (allowed.length) return allowed.includes(origin);
+  // no list (loopback only, config.ts enforces that): the page must come from this machine by a loopback name, so a
+  // DNS-rebinding page (evil.example resolving to 127.0.0.1: Origin and Host both say evil.example) is refused too
   try {
-    return !!host && new URL(origin).host === host;
+    const u = new URL(origin);
+    return !!host && u.host === host && LOOPBACK_NAME.test(u.hostname);
   } catch {
     return false;
   }
@@ -71,16 +79,17 @@ const json = (res: ServerResponse, status: number, body: unknown) => {
   res.end(s);
 };
 
-/** the request body, refusing more than `max` bytes */
+/** the request body, refusing more than `max` bytes (the rest is read and dropped, so the 413 can be sent first) */
 function readBody(req: IncomingMessage, max: number): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
     req.on('data', (c: Buffer) => {
+      if (size > max) return;
       size += c.length;
       if (size > max) {
+        chunks.length = 0;
         reject(new TranscribeError(413, `the upload is over ${Math.round(max / 1048576)} MB`));
-        req.destroy();
       } else chunks.push(c);
     });
     req.on('end', () => resolve(Buffer.concat(chunks)));
@@ -94,7 +103,23 @@ export function createAssistantServer(o: ServerOptions) {
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD });
   const alive = new WeakMap<WebSocket, boolean>();
 
+  /** answer a request whose body we won't read: the response first, then the connection goes */
+  function refuseUpload(req: IncomingMessage, res: ServerResponse, status: number, error: string) {
+    res.setHeader('connection', 'close');
+    json(res, status, { error });
+    // the client may still be sending; give it a moment to read the answer, then close whatever is left
+    res.once('finish', () => {
+      if (req.complete) return;
+      req.resume();
+      setTimeout(() => req.socket.destroy(), 2000).unref();
+    });
+  }
+
   async function onTranscribe(req: IncomingMessage, res: ServerResponse) {
+    if (!originAllowed(req.headers.origin, req.headers.host, o.origins)) {
+      log(`transcribe: refused origin ${req.headers.origin}`);
+      return refuseUpload(req, res, 403, 'this origin may not use the assistant');
+    }
     if (!o.stt) return json(res, 503, { error: 'transcription is not configured (JARVIS_STT_URL)' });
     const type = String(req.headers['content-type'] ?? '');
     if (!type.startsWith('multipart/form-data'))
@@ -111,6 +136,7 @@ export function createAssistantServer(o: ServerOptions) {
       const r = await transcribeAudio(file, o.stt, o.fetchImpl);
       json(res, 200, r);
     } catch (e) {
+      if (e instanceof TranscribeError && e.status === 413) return refuseUpload(req, res, 413, e.message);
       if (e instanceof TranscribeError) return json(res, e.status, { error: e.message });
       log(`transcribe: ${(e as Error).message}`);
       json(res, 400, { error: 'could not read the upload' });

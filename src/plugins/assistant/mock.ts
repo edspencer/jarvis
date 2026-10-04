@@ -66,19 +66,8 @@ export const MOCK_THINGS: { re: RegExp; subject: string; name: string; where: st
   },
 ];
 
-const LAYERS = [
-  'furniture',
-  'doors',
-  'pergola',
-  'roofs',
-  'roof',
-  'ceilings',
-  'pins',
-  'faults',
-  'blueprints',
-  'plates',
-  'cutaway',
-];
+/** the demo house's view layers and the core view toggles (what view_layer can switch: plugin chips are not layers) */
+const LAYERS = ['furniture', 'doors', 'pergola', 'roofs', 'roof', 'ceilings', 'cutaway'];
 
 export type MockScript =
   | { kind: 'refuse'; summary: string; reason: string }
@@ -253,6 +242,7 @@ export function createMockTransport(opts: { hello(): HelloMsg }): Transport & { 
             detail: s.detail,
             risk: s.risk,
             expiresAt: Date.now() + MOCK_TIMING.confirm,
+            ttlMs: MOCK_TIMING.confirm,
           });
           const answer = await until<'approved' | 'denied' | 'expired'>(run, (done) => {
             confirms.set(id, done);

@@ -6,6 +6,7 @@
 //     unknown keys, bad values or a `default` other than deny are errors, never warnings, so a typo can't widen it;
 //   - every entity of a call is matched against the rules on its own (first matching rule wins); no rule → deny;
 //   - a call's tier is the strictest of its entities' (deny > confirm > allow), and one deny refuses the whole call;
+//   - an allow or confirm rule must name its services (never '*') and a domain or entity;
 //   - data keys must be named by the matching rule: numbers inside `bounds` (out of range → refused, never clamped)
 //     or strings/booleans in `data`; anything else (including `entity_id`, or a `confirmed: true` a model might try)
 //     is refused;
@@ -27,7 +28,7 @@ export interface Matcher {
   domain?: string[];
   /** entity ids, `*` globs allowed ('switch.*network*') */
   entity?: string[];
-  /** service names, or '*' for any */
+  /** service names, or '*' for any (deny rules only); required on allow and confirm rules */
   service?: string[];
   /** the entity's attributes.device_class */
   device_class?: string[];
@@ -244,10 +245,15 @@ function parseMatcher(m: unknown, at: string, tier: Tier, bad: (path: string, ms
   out.surface = strings('surface', (s) => s === 'screen' || s === 'speaker', 'screen or speaker') as
     Surface[] | undefined;
   for (const k of Object.keys(out) as (keyof Matcher)[]) if (out[k] === undefined) delete out[k];
-  // a rule that lets something happen must say which entities: `allow: { service: turn_on }` would reach every domain
-  if (tier !== 'deny' && !out.domain && !out.entity)
-    bad(at, `${tier === 'allow' ? 'an' : 'a'} ${tier} rule needs a domain or an entity`);
-  else if (!Object.keys(m).length) bad(at, 'empty matcher (it would match everything)');
+  // a rule that lets something happen must say which entities: `allow: { service: turn_on }` would reach every domain;
+  // and which services: `allow: { domain: script }` would run any script with any service, so `service` is required
+  // and names services (`'*'` is for deny rules only)
+  if (tier !== 'deny') {
+    const a = `${tier === 'allow' ? 'an' : 'a'} ${tier} rule`;
+    if (!out.domain && !out.entity) bad(at, `${a} needs a domain or an entity`);
+    if (!out.service) bad(at, `${a} needs a service (name the services it lets through)`);
+    else if (out.service.includes('*')) bad(`${at}.service`, `'*' is only allowed on a deny rule; name the services`);
+  } else if (!Object.keys(m).length) bad(at, 'empty matcher (it would match everything)');
   return out;
 }
 

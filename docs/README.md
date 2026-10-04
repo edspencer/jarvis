@@ -18,6 +18,8 @@ Start with the [README](../README.md) (what JARVIS is, the live demo, running it
 - [Plugin API](plugins.md): the `jarvis/plugin` contract (keys, panels, the inspector, the entity store, the scene,
   events), with a second example, [`examples/irrigation.ts`](examples/irrigation.ts)
 - [Deploying](deploy.md): the container image, the release tarball behind any static server, Home Assistant and CORS
+- [The voice assistant](assistant.md) (draft, not released): the `jarvis-assistant` server, model credentials, the
+  Home Assistant policy file, the browser plugin
 - [Security](../SECURITY.md): what the Home Assistant allow-list does and doesn't protect, and how to report an issue
 
 ## Project
@@ -34,6 +36,6 @@ Background, not reference: how the current design came about, and what is planne
 - [HUD audit](design/hud-audit.md): the prototype viewer's UI, and what was wrong with it
 - [HUD panel standard](design/hud-panels.md): the panel / inspector / status design the HUD implements (and
   [the static mockup](design/mockup/index.html))
-- [Voice assistant](design/voice-assistant.md): a proposal, not built yet
+- [Voice assistant](design/voice-assistant.md): the proposal; a draft v1 is documented in [assistant.md](assistant.md)
 - [Prototype migration](prototype-migration.md): where each building-specific value of the original single-building
   viewer went

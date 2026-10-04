@@ -137,6 +137,25 @@ test('holding M talks: listening while held, then the (mock) transcription start
   await idle();
 });
 
+test('view_layer switches view layers and the core toggles only', async () => {
+  await send('hide the furniture');
+  await expect(chip('Hiding Furniture')).toHaveAttribute('data-status', 'done');
+  await idle();
+  type View = { op: string; ok: boolean; detail?: string };
+  expect((await twin<View[]>(page, 'twin.assistant.views()')).at(-1)).toMatchObject({
+    op: 'layer',
+    ok: true,
+    detail: 'Furniture hidden',
+  });
+  const cutaway = await twin<boolean>(page, 'twin.state.cutaway');
+  for (const want of [!cutaway, cutaway]) {
+    await send('toggle the cutaway');
+    await expect.poll(() => twin<boolean>(page, 'twin.state.cutaway')).toBe(want);
+    await expect(panel().locator('.a').last()).toHaveText(`Done: Cutaway ${want ? 'on' : 'off'}.`);
+    await idle();
+  }
+});
+
 test('New conversation starts over', async () => {
   await panel().getByRole('button', { name: 'New conversation' }).click();
   await expect(panel().locator('.divider')).toHaveText('New conversation');

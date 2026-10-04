@@ -246,8 +246,9 @@ export interface EnergyConfig {
 /** The voice assistant's companion server (docs/design/voice-assistant.md). With no server reachable the plugin stays
  * quiet: its status item says "Assistant offline" and it keeps retrying. */
 export interface AssistantConfig {
-  /** the server's base URL: '/assistant' (same origin, through the reverse proxy) or 'https://host:8787/assistant';
-   * relative to the page. The WebSocket is <server>/ws; transcription is POST <server>/transcribe */
+  /** the server's base URL, relative to the page: a same-origin path through the reverse proxy, '/assistant'
+   * (cross-origin isn't supported in v1: plain HTTP, no CORS). The WebSocket is <server>/ws; transcription is
+   * POST <server>/transcribe */
   server: string;
   /** speak replies with the browser's speech synthesis (default true; the panel's toggle overrides it per browser) */
   tts?: boolean;

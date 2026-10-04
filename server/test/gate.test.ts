@@ -504,6 +504,50 @@ describe('max_minutes', () => {
     expect(g.ha.calls.map((c) => c.service)).toEqual(['open_valve', 'close_valve']);
   });
 
+  it('a call that fails still gets its off call: two domains, the second throws', async () => {
+    const g = setup({
+      version: 1,
+      rules: [{ allow: { domain: ['light', 'switch'], service: ['turn_on', 'turn_off'] }, max_minutes: 10 }],
+    });
+    const real = g.ha.callService.bind(g.ha);
+    vi.spyOn(g.ha, 'callService').mockImplementation((domain, service, data) =>
+      domain === 'switch' && service === 'turn_on'
+        ? Promise.reject(new Error('timed out'))
+        : real(domain, service, data),
+    );
+    const o = await g.gate.act({ entity_ids: ['light.hall', 'switch.pond_pump'], service: 'turn_on' }, screen);
+    expect(o).toMatchObject({ status: 'failed', error: 'timed out' });
+    expect(g.ha.entities.get('light.hall')!.state).toBe('on');
+    await vi.advanceTimersByTimeAsync(10 * 60_000);
+    expect(g.ha.calls.map((c) => `${c.domain}.${c.service}:${c.data.entity_id}`)).toEqual([
+      'light.turn_on:light.hall',
+      'light.turn_off:light.hall',
+      'switch.turn_off:switch.pond_pump',
+    ]);
+    expect(g.ha.entities.get('light.hall')!.state).toBe('off');
+  });
+
+  it('a single timed call that throws (a timeout: it may have happened) still schedules the off call', async () => {
+    const g = setup();
+    vi.spyOn(g.ha, 'callService').mockRejectedValueOnce(new Error('timed out'));
+    const o = await g.gate.act({ entity_ids: ['switch.pond_pump'], service: 'turn_on', data: { minutes: 5 } }, screen);
+    expect(o).toMatchObject({ status: 'failed' });
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(g.ha.calls).toEqual([{ domain: 'switch', service: 'turn_off', data: { entity_id: ['switch.pond_pump'] } }]);
+    expect(g.audits.at(-1)).toMatchObject({ outcome: 'done', timer: true });
+  });
+
+  it('a failing turn_off keeps the running timer', async () => {
+    const g = setup();
+    await g.gate.act({ entity_ids: ['switch.pond_pump'], service: 'turn_on', data: { minutes: 5 } }, screen);
+    vi.spyOn(g.ha, 'callService').mockRejectedValueOnce(new Error('unreachable'));
+    expect(await g.gate.act({ entity_ids: ['switch.pond_pump'], service: 'turn_off' }, screen)).toMatchObject({
+      status: 'failed',
+    });
+    await vi.advanceTimersByTimeAsync(5 * 60_000);
+    expect(g.ha.calls.map((c) => c.service)).toEqual(['turn_on', 'turn_off']);
+  });
+
   it('a failing off call is audited', async () => {
     const g = setup();
     await g.gate.act({ entity_ids: ['switch.pond_pump'], service: 'turn_on', data: { minutes: 1 } }, screen);

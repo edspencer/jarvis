@@ -8,7 +8,9 @@
 //     routes that person's answer back: a click (confirm.reply) or, on a voice-only surface, their next utterance if
 //     the gate's fixed yes/no list matches it whole. Only people's `say` messages ever reach gate.spoken(): the agent's
 //     own text never does, so the model cannot approve its own request;
-//   - view commands: a tool asks the turn's client's viewer to fly/highlight/toggle and waits for the result.
+//   - view commands: a tool asks the turn's client's viewer to fly/highlight/toggle and waits for the result;
+//   - a watchdog: a turn running longer than turnTimeoutMs is ended with an error and the agent reset, so the queue
+//     and `reset` can't wait forever on an agent that never finishes.
 import { randomUUID } from 'node:crypto';
 import type {
   AssistantState,
@@ -56,6 +58,8 @@ export interface HubOptions {
   welcomeLimit?: number;
   /** how long a view command waits for the viewer (default 5 s) */
   viewTimeoutMs?: number;
+  /** a turn running longer is ended with an error and the agent reset (default 180 s) */
+  turnTimeoutMs?: number;
   /** the transcript after each turn, reset or answer, to keep it somewhere.
    * TODO(open question 6: transcripts and privacy): nothing persists it by default until retention is decided. */
   persist?: (transcript: TranscriptEntry[]) => void;
@@ -93,6 +97,8 @@ interface Turn {
   info: TurnInfo;
   source: 'typed' | 'voice';
   interrupted?: boolean;
+  /** it has ended (a late tool call from it, e.g. after the watchdog, is refused) */
+  over?: boolean;
 }
 
 // ------------------------------------------------------------------------------------------------ validation
@@ -171,10 +177,13 @@ export function createHub(opts: HubOptions): Hub {
   const limit = opts.transcriptLimit ?? 200;
   const welcomeLimit = opts.welcomeLimit ?? 100;
   const viewTimeout = opts.viewTimeoutMs ?? 5000;
+  const turnTimeout = opts.turnTimeoutMs ?? 180_000;
   const toolsByName = new Map(opts.tools.map((t) => [t.name, t]));
 
   const clients = new Map<Conn, Client>();
   const chains = new Map<Conn, Promise<void>>();
+  /** conns that have closed (one closing during an async authenticate must not be registered afterwards) */
+  const gone = new WeakSet<Conn>();
   let transcript: TranscriptEntry[] = [...(opts.transcript ?? [])].slice(-limit);
   const queue: Turn[] = [];
   let current: Turn | null = null;
@@ -289,6 +298,10 @@ export function createHub(opts: HubOptions): Hub {
           opts.audit?.write({ kind: 'tool', ...base, decision: 'unknown tool' });
           return { text: `there is no tool called ${name}`, isError: true };
         }
+        if (turn.over) {
+          opts.audit?.write({ kind: 'tool', ...base, decision: 'turn over' });
+          return { text: 'this turn has ended; nothing was done', isError: true };
+        }
         if (name === 'ha_act') actCall = callId;
         let last: { summary: string; status: ToolStatus } | null = null;
         const env: ToolEnv = {
@@ -341,6 +354,8 @@ export function createHub(opts: HubOptions): Hub {
       if (current !== turn || ended) return;
       if (e.type === 'text') {
         if (!e.delta) return;
+        // text after a tool chip is a new paragraph below it (as the panel shows it live), also in the transcript
+        if (reply && transcript[transcript.length - 1] !== reply) reply = null;
         if (!reply) {
           reply = { kind: 'assistant', turnId: info.turnId, text: '', at: now() };
           record(reply);
@@ -353,13 +368,26 @@ export function createHub(opts: HubOptions): Hub {
         ended = { error: e.error, interrupted: e.interrupted };
       }
     };
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
       const prompt = opts.formatTurn ? opts.formatTurn(info) : info.text;
-      await agent.run(prompt, info, emit, runnerFor(turn));
+      const timedOut = new Promise<'timeout'>((r) => (timer = setTimeout(() => r('timeout'), turnTimeout)));
+      const r = await Promise.race([agent.run(prompt, info, emit, runnerFor(turn)), timedOut]);
+      if (r === 'timeout') {
+        const secs = Math.round(turnTimeout / 1000);
+        ended ??= { error: `no answer within ${secs} s, so the assistant was restarted` };
+        log(`turn ${info.turnId} ran over ${secs} s: resetting the agent`);
+        turn.over = true;
+        gate.cancel(info.clientId);
+        await agent.reset().catch((e) => log(`reset failed: ${(e as Error).message}`));
+      }
     } catch (e) {
       ended ??= { error: (e as Error).message || 'the agent failed' };
       log(`agent failed: ${(e as Error).stack ?? e}`);
+    } finally {
+      clearTimeout(timer);
     }
+    turn.over = true;
     const end = (ended ?? {}) as { error?: string; interrupted?: boolean };
     const interrupted = end.interrupted || turn.interrupted;
     current = null;
@@ -393,6 +421,7 @@ export function createHub(opts: HubOptions): Hub {
     if (msg.type === 'hello') {
       if (cl && cl.clientId !== msg.clientId) return fail(conn, 'hello: this connection already has a client id');
       const why = opts.authenticate ? await opts.authenticate(msg, conn) : null;
+      if (gone.has(conn)) return; // it closed while we were deciding
       if (why) {
         fail(conn, why);
         return conn.close();
@@ -405,7 +434,9 @@ export function createHub(opts: HubOptions): Hub {
         view: msg.view,
       });
       safeSend(conn, welcome());
-      // a reload or reconnect: show it the confirmations still waiting for it
+      // another connection of the same client id (a second socket of that tab, a quick reconnect while the old socket
+      // is still open): show it the confirmations still waiting. A plain reload usually finds none: when a client's
+      // last connection closes, its confirmations are cancelled (fail-safe: nobody is left to answer them).
       for (const p of gate.pending(msg.clientId)) safeSend(conn, confirmRequest(p));
       return;
     }
@@ -443,9 +474,11 @@ export function createHub(opts: HubOptions): Hub {
         return;
       }
       case 'interrupt': {
-        // this client's waiting turns go, the running one stops (whoever's it is: barge-in), its confirmations close
+        // this client's waiting turns go, the running one stops (whoever's it is: barge-in), and the confirmations of
+        // both close: the interrupter's and those of the running turn's client
         for (let i = queue.length - 1; i >= 0; i--) if (queue[i].info.clientId === cl.clientId) queue.splice(i, 1);
         gate.cancel(cl.clientId);
+        if (current && current.info.clientId !== cl.clientId) gate.cancel(current.info.clientId);
         if (current) {
           current.interrupted = true;
           await agent.interrupt().catch((e) => log(`interrupt failed: ${(e as Error).message}`));
@@ -488,6 +521,7 @@ export function createHub(opts: HubOptions): Hub {
     detail: p.detail,
     risk: p.risk,
     expiresAt: p.expiresAt,
+    ttlMs: Math.max(0, p.expiresAt - now()),
     ...(callOf.has(p.id) ? { callId: callOf.get(p.id) } : {}),
   });
 
@@ -505,6 +539,7 @@ export function createHub(opts: HubOptions): Hub {
     },
 
     onClose(conn) {
+      gone.add(conn);
       const cl = clients.get(conn);
       clients.delete(conn);
       chains.delete(conn);

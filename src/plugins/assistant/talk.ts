@@ -136,6 +136,18 @@ export async function record(opts: { onSilence?(): void; onMax?(): void } = {}):
   };
 }
 
+/** start a recording, and let go of the microphone (its tracks stop) as soon as it arrives if it is no longer
+ * `wanted` then: the plugin was disposed or the talk cancelled while getUserMedia waited. null then. */
+export async function recordIfWanted(
+  start: () => Promise<Recording>,
+  wanted: () => boolean,
+): Promise<Recording | null> {
+  const r = await start();
+  if (wanted()) return r;
+  r.cancel();
+  return null;
+}
+
 /** POST the audio to <server>/transcribe (multipart `file`) and return the text */
 export async function transcribe(url: string, blob: Blob, mime: string, signal?: AbortSignal): Promise<string> {
   const form = new FormData();

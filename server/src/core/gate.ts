@@ -147,18 +147,27 @@ export function createGate(opts: GateOptions): Gate {
     return { ev, summary: describeRequest(req, states, sharedMinutes(ev)), states };
   }
 
-  /** make the planned calls, then schedule the timed runs' off calls */
+  /** make the planned calls (stopping at the first failure), then schedule the timed runs' off calls */
   async function run(ev: Evaluation, summary: string, ctx: ActContext): Promise<ActOutcome> {
-    try {
-      for (const c of ev.calls) {
+    const tried = new Set<string>();
+    let error: string | null = null;
+    for (const c of ev.calls) {
+      for (const id of c.data.entity_id) tried.add(id);
+      try {
         await backend.callService(c.domain, c.service, { ...c.data, entity_id: [...c.data.entity_id] });
-        for (const id of c.data.entity_id) unschedule(id);
+      } catch (err) {
+        error = message(err);
+        break;
       }
-    } catch (err) {
-      return { status: 'failed', summary, error: message(err) };
+      for (const id of c.data.entity_id) unschedule(id);
     }
-    for (const t of ev.timers) schedule(t, ctx);
-    return { status: 'done', summary };
+    // every entity a call was attempted on gets its off call, whatever the outcome: a call that failed or timed out
+    // may still have switched it on, and an off call on something that is off is harmless
+    for (const t of ev.timers) {
+      const ids = t.entity_ids.filter((id) => tried.has(id));
+      if (ids.length) schedule({ ...t, entity_ids: ids }, ctx);
+    }
+    return error === null ? { status: 'done', summary } : { status: 'failed', summary, error };
   }
 
   function unschedule(id: string) {
@@ -170,6 +179,7 @@ export function createGate(opts: GateOptions): Gate {
   }
 
   function schedule(plan: PlannedTimer, ctx: ActContext) {
+    for (const id of plan.entity_ids) unschedule(id); // the new run's timer replaces any earlier one
     const t: OffTimer = { plan, ids: new Set(plan.entity_ids), handle: undefined, ctx };
     t.handle = setT(() => void fire(t), plan.minutes * 60_000);
     for (const id of plan.entity_ids) offTimers.set(id, t);

@@ -140,8 +140,10 @@ export interface ConfirmRequestMsg {
   /** the exact call: "climate.set_temperature on climate.hall { temperature: 72 }" */
   detail: string;
   risk: 'normal' | 'high';
-  /** epoch ms */
+  /** epoch ms, the server's clock */
   expiresAt: number;
+  /** ms left when this was sent: a client counts down from its own receipt time (its clock may be off) */
+  ttlMs: number;
 }
 
 export interface ConfirmResolvedMsg {

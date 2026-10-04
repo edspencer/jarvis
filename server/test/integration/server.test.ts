@@ -13,6 +13,7 @@ import { createScriptedAgent } from '../../src/agent-scripted.ts';
 import { loadConfig } from '../../src/core/config.ts';
 import type { MockHa } from '../../src/core/ha-mock.ts';
 import type { ServerMsg } from '../../src/core/protocol.ts';
+import { originAllowed } from '../../src/server.ts';
 
 const SERVER_DIR = resolve(import.meta.dirname, '../..');
 const ORIGIN = 'http://jarvis.test';
@@ -215,5 +216,44 @@ describe('assistant server', () => {
     expect((await fetch(`http://${base}/transcribe`, { method: 'POST', body: bad })).status).toBe(415);
     expect((await fetch(`http://${base}/transcribe`, { method: 'POST', body: 'x' })).status).toBe(415);
     expect((await fetch(`http://${base}/transcribe`)).status).toBe(405);
+  });
+
+  it('POST /transcribe from another origin is refused (a web page must not spend the STT credit)', async () => {
+    const n = sttSeen.length;
+    const post = (origin: string) => {
+      const form = new FormData();
+      form.append('file', new Blob([new Uint8Array(2048)], { type: 'audio/webm' }), 'a.webm');
+      return fetch(`http://${base}/transcribe`, { method: 'POST', body: form, headers: { origin } });
+    };
+    const r = await post('http://evil.example');
+    expect(r.status).toBe(403);
+    expect(await r.json()).toEqual({ error: 'this origin may not use the assistant' });
+    expect((await post('http://jarvis.test:8080')).status).toBe(403); // exact: scheme, host and port
+    expect(sttSeen.length).toBe(n);
+    expect((await post(ORIGIN)).status).toBe(200);
+  });
+
+  it('an upload over the cap gets its 413 before the connection closes', async () => {
+    const big = new Uint8Array(11 * 1024 * 1024);
+    const form = new FormData();
+    form.append('file', new Blob([big], { type: 'audio/webm' }), 'a.webm');
+    const r = await fetch(`http://${base}/transcribe`, { method: 'POST', body: form });
+    expect(r.status).toBe(413);
+    expect(r.headers.get('connection')).toBe('close');
+    expect(((await r.json()) as { error: string }).error).toMatch(/the upload is over 10 MB/);
+  });
+});
+
+describe('the Origin check', () => {
+  it('a list is exact; an empty list (loopback binds only) means the request’s own host', () => {
+    expect(originAllowed(undefined, 'x', ['https://a.example'])).toBe(true); // not a browser
+    expect(originAllowed('https://a.example', 'b.example', ['https://a.example'])).toBe(true);
+    expect(originAllowed('https://a.example:8443', 'a.example:8443', ['https://a.example'])).toBe(false);
+    expect(originAllowed('http://a.example', 'a.example', ['https://a.example'])).toBe(false);
+    expect(originAllowed('http://127.0.0.1:8787', '127.0.0.1:8787', [])).toBe(true);
+    expect(originAllowed('http://evil.example', '127.0.0.1:8787', [])).toBe(false);
+    expect(originAllowed('http://localhost:8787', 'localhost:8787', [])).toBe(true);
+    // DNS rebinding: evil.example resolves to 127.0.0.1, so Origin and Host agree, but neither is a loopback name
+    expect(originAllowed('http://evil.example:8787', 'evil.example:8787', [])).toBe(false);
   });
 });

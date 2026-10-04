@@ -30,8 +30,10 @@ export interface SdkAgentOptions {
   /** session.json lives here; also the empty working folder when there is no knowledge folder */
   dataDir: string;
   knowledgeDir: string | null;
-  /** WebSearch / WebFetch (default true) */
+  /** WebSearch / WebFetch (default true; JARVIS_ASSISTANT_WEB) */
   web?: boolean;
+  /** hosts WebFetch must never reach besides private addresses (Home Assistant's) */
+  blockedHosts?: string[];
   log?: (msg: string) => void;
   /** tests: a fake query() */
   queryImpl?: typeof query;
@@ -112,7 +114,24 @@ interface TurnState {
   /** built-in tool calls waiting for their result */
   builtins: Map<string, string>;
   interrupted: boolean;
+  /** the prompt, for the one retry after a session that couldn't be resumed */
+  prompt: string;
+  /** that retry happened */
+  retried: boolean;
 }
+
+/** the environment for the Claude Code process: ours, minus our own settings (the HA token, the STT key, …) */
+export function childEnv(env: NodeJS.ProcessEnv): Record<string, string | undefined> {
+  const out: Record<string, string | undefined> = {};
+  for (const [k, v] of Object.entries(env)) if (!k.startsWith('JARVIS_')) out[k] = v;
+  return { ...out, CLAUDE_AGENT_SDK_CLIENT_APP: 'jarvis-assistant/0' };
+}
+
+const userMsg = (content: string): SDKUserMessage => ({
+  type: 'user',
+  message: { role: 'user', content },
+  parent_tool_use_id: null,
+});
 
 export function createSdkAgent(o: SdkAgentOptions): Agent {
   const log = o.log ?? ((m: string) => console.error(m));
@@ -124,7 +143,7 @@ export function createSdkAgent(o: SdkAgentOptions): Agent {
   const web = o.web !== false;
   const builtins = [...(web ? ['WebSearch', 'WebFetch'] : []), ...(o.knowledgeDir ? ['Read', 'Grep', 'Glob'] : [])];
   const houseTools = new Set(o.tools.map((t) => houseToolName(t.name)));
-  const guardOpts = { houseTools, knowledgeDir: o.knowledgeDir, web };
+  const guardOpts = { houseTools, knowledgeDir: o.knowledgeDir, web, blockedHosts: o.blockedHosts ?? [] };
 
   let runner: ToolRunner | null = null;
   let turn: TurnState | null = null;
@@ -186,6 +205,12 @@ export function createSdkAgent(o: SdkAgentOptions): Agent {
         };
   };
 
+  const clearSession = () => {
+    try {
+      writeFileSync(sessionFile, '{}\n');
+    } catch {}
+  };
+
   function start() {
     input = inputQueue();
     const resume = loadSession();
@@ -197,6 +222,7 @@ export function createSdkAgent(o: SdkAgentOptions): Agent {
       settingSources: [],
       tools: builtins,
       mcpServers: { [SERVER]: mcp },
+      strictMcpConfig: true,
       allowedTools: [...houseTools, ...builtins],
       permissionMode: 'dontAsk',
       canUseTool,
@@ -205,25 +231,41 @@ export function createSdkAgent(o: SdkAgentOptions): Agent {
       includePartialMessages: true,
       cwd,
       ...(resume ? { resume } : {}),
-      env: { ...process.env, CLAUDE_AGENT_SDK_CLIENT_APP: 'jarvis-assistant/0' },
+      env: childEnv(process.env),
       stderr: (d) => log(`claude: ${d.trimEnd()}`),
     };
     const thisQ = run({ prompt: input, options });
     q = thisQ;
+    let started = false; // its init message came
     void (async () => {
+      let failure: string;
       try {
-        for await (const m of thisQ) if (q === thisQ) handle(m);
-        if (q === thisQ) endTurn({ error: 'the assistant process ended' });
-      } catch (e) {
-        if (q !== thisQ) return; // closed by reset() or close()
-        log(`assistant: the session failed: ${(e as Error).message}`);
-        endTurn({ error: `the assistant failed: ${(e as Error).message}` });
-      } finally {
-        if (q === thisQ) {
-          q = null;
-          input = null;
+        for await (const m of thisQ) {
+          if (q !== thisQ) continue;
+          if (m.type === 'system' && m.subtype === 'init') started = true;
+          handle(m);
         }
+        failure = 'the assistant process ended';
+      } catch (e) {
+        failure = `the assistant failed: ${(e as Error).message}`;
       }
+      if (q !== thisQ) return; // closed by reset() or close()
+      q = null;
+      input = null;
+      if (resume && !started) {
+        // the saved session can't be resumed (gone, or from another machine): forget it, so no later turn tries again
+        log(`assistant: cannot resume session ${resume} (${failure}); starting a new one`);
+        clearSession();
+        fresh = true;
+        const t = turn;
+        if (t && !t.retried && !t.interrupted) {
+          t.retried = true;
+          start();
+          input!.push(userMsg(t.prompt));
+          return;
+        }
+      } else log(`assistant: ${failure}`);
+      endTurn({ error: failure });
     })();
   }
 
@@ -303,9 +345,11 @@ export function createSdkAgent(o: SdkAgentOptions): Agent {
           streamed: new Set(),
           builtins: new Map(),
           interrupted: false,
+          prompt,
+          retried: false,
         };
         if (!q) start();
-        input!.push({ type: 'user', message: { role: 'user', content: prompt }, parent_tool_use_id: null });
+        input!.push(userMsg(prompt));
       });
     },
 
@@ -315,8 +359,8 @@ export function createSdkAgent(o: SdkAgentOptions): Agent {
       try {
         await q.interrupt();
       } catch (e) {
+        // the turn still ends with its `result` (or the process ending); the hub's turn timeout bounds the wait
         log(`assistant: interrupt failed: ${(e as Error).message}`);
-        endTurn({ interrupted: true });
       }
     },
 
@@ -328,9 +372,7 @@ export function createSdkAgent(o: SdkAgentOptions): Agent {
       input = null;
       old?.close();
       fresh = true; // the next turn starts a new session (and a restart before it doesn't resume the old one)
-      try {
-        writeFileSync(sessionFile, '{}\n');
-      } catch {}
+      clearSession();
     },
 
     async close() {

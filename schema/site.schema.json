@@ -446,7 +446,7 @@
               "type": "string",
               "minLength": 1,
               "pattern": "^(https?://|/|\\./|\\.\\./)",
-              "description": "The assistant server's base URL, relative to the page: \"/assistant\" (same origin, through the reverse proxy) or \"https://host:8787/assistant\". The WebSocket is <server>/ws (http becomes ws); transcription is POST <server>/transcribe."
+              "description": "The assistant server's base URL, relative to the page. Use a same-origin path through the site's reverse proxy: \"/assistant\" (docs/assistant.md). Cross-origin isn't supported in v1: the server speaks plain HTTP and sends no CORS headers. The WebSocket is <server>/ws (http becomes ws); transcription is POST <server>/transcribe."
             },
             "tts": {
               "type": "boolean",

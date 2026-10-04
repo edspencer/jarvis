@@ -1,6 +1,6 @@
 // The SDK agent against a fake query(): the options it starts the session with (tools, permissions, guard, resume),
 // and how it maps the SDK's messages to the hub's events. No model is called.
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Options, SDKMessage, SDKUserMessage, query } from '@anthropic-ai/claude-agent-sdk';
@@ -11,24 +11,41 @@ import type { AgentEvent, ToolSpec } from '../../src/core/types.ts';
 
 type Reply = (text: string, n: number) => SDKMessage[] | 'die' | 'hang';
 
+interface FakeOpts {
+  /** a resumed session dies before its init message (a session id the CLI can't find) */
+  badResume?: boolean;
+  /** interrupt() throws (the turn still ends when its `result` comes) */
+  interruptThrows?: boolean;
+}
+
 /** a fake query(): answers each pushed user message with the messages `reply` gives */
-function fakeQuery(reply: Reply) {
-  const calls: { options: Options }[] = [];
+function fakeQuery(reply: Reply, fo: FakeOpts = {}) {
+  const calls: { options: Options; prompts: string[] }[] = [];
   let interrupts = 0;
   let closes = 0;
+  let wake: (() => void) | null = null;
   const impl = ((params: { prompt: AsyncIterable<SDKUserMessage>; options: Options }) => {
-    calls.push({ options: params.options });
+    const call = { options: params.options, prompts: [] as string[] };
+    calls.push(call);
     const sid = `session-${calls.length}`;
     let wakeHang: (() => void) | null = null;
     let closed = false;
     async function* gen(): AsyncGenerator<SDKMessage> {
+      if (fo.badResume && params.options.resume) {
+        for await (const m of params.prompt) {
+          call.prompts.push(String(m.message.content));
+          break;
+        }
+        throw new Error(`No conversation found with session ID: ${params.options.resume}`);
+      }
       yield { type: 'system', subtype: 'init', session_id: sid } as unknown as SDKMessage;
       let n = 0;
       for await (const m of params.prompt) {
+        call.prompts.push(String(m.message.content));
         const out = reply(String(m.message.content), n++);
         if (out === 'die') throw new Error('process exited with code 1');
         if (out === 'hang') {
-          await new Promise<void>((r) => (wakeHang = r));
+          await new Promise<void>((r) => (wake = wakeHang = r));
           if (closed) return;
           yield result(sid, 'error_during_execution');
           continue;
@@ -40,6 +57,7 @@ function fakeQuery(reply: Reply) {
     return Object.assign(it, {
       async interrupt() {
         interrupts++;
+        if (fo.interruptThrows) throw new Error('the control channel is gone');
         wakeHang?.();
       },
       close() {
@@ -49,7 +67,8 @@ function fakeQuery(reply: Reply) {
       },
     });
   }) as unknown as typeof query;
-  return { impl, calls, interrupts: () => interrupts, closes: () => closes };
+  /** wake: let a hanging turn produce its result */
+  return { impl, calls, interrupts: () => interrupts, closes: () => closes, wake: () => wake?.() };
 }
 
 const result = (sid: string, subtype = 'success', extra: Record<string, unknown> = {}) =>
@@ -82,8 +101,11 @@ const TOOLS: ToolSpec[] = [
   },
 ];
 
-function agent(reply: Reply, extra: { knowledgeDir?: string | null; dataDir?: string } = {}) {
-  const fq = fakeQuery(reply);
+function agent(
+  reply: Reply,
+  extra: { knowledgeDir?: string | null; dataDir?: string; web?: boolean; blockedHosts?: string[] } & FakeOpts = {},
+) {
+  const fq = fakeQuery(reply, extra);
   const dataDir = extra.dataDir ?? mkdtempSync(join(tmpdir(), 'jarvis-sdk-'));
   const a = createSdkAgent({
     tools: TOOLS,
@@ -92,6 +114,8 @@ function agent(reply: Reply, extra: { knowledgeDir?: string | null; dataDir?: st
     effort: 'low',
     dataDir,
     knowledgeDir: extra.knowledgeDir ?? null,
+    web: extra.web,
+    blockedHosts: extra.blockedHosts,
     queryImpl: fq.impl,
     log: () => {},
   });
@@ -122,9 +146,39 @@ describe('sdk agent', () => {
       allowedTools: ['mcp__house__ha_find', 'WebSearch', 'WebFetch'],
       permissionMode: 'dontAsk',
       includePartialMessages: true,
+      strictMcpConfig: true,
     });
     expect(o.resume).toBeUndefined();
     expect(Object.keys(o.mcpServers!)).toEqual(['house']);
+  });
+
+  it("the Claude Code process gets none of the assistant's own settings (the HA token, the STT key, …)", async () => {
+    const keep = { ...process.env };
+    Object.assign(process.env, { JARVIS_HA_TOKEN: 'ha-secret', JARVIS_STT_KEY: 'stt-secret', JARVIS_X: '1' });
+    try {
+      const { fq, turn } = agent(() => [result('s')]);
+      await turn('hi');
+      const env = fq.calls[0].options.env!;
+      expect(Object.keys(env).filter((k) => k.startsWith('JARVIS_'))).toEqual([]);
+      expect(JSON.stringify(env)).not.toMatch(/ha-secret|stt-secret/);
+      expect(env.CLAUDE_AGENT_SDK_CLIENT_APP).toBe('jarvis-assistant/0');
+      expect(env.PATH).toBe(process.env.PATH);
+    } finally {
+      for (const k of Object.keys(process.env)) if (!(k in keep)) delete process.env[k];
+    }
+  });
+
+  it('JARVIS_ASSISTANT_WEB=off drops WebSearch/WebFetch; WebFetch never reaches the LAN or Home Assistant', async () => {
+    const off = agent(() => [result('s')], { web: false });
+    await off.turn('hi');
+    expect(off.fq.calls[0].options.tools).toEqual([]);
+    const on = agent(() => [result('s')], { blockedHosts: ['ha.example.org'] });
+    await on.turn('hi');
+    const o = on.fq.calls[0].options;
+    const ask = (url: string) => o.canUseTool!('WebFetch', { url }, { signal: new AbortController().signal } as never);
+    expect(await ask('https://example.org/manual')).toMatchObject({ behavior: 'allow' });
+    for (const url of ['https://ha.example.org/api/', 'http://192.168.1.10:8123/', 'http://homeassistant.local/'])
+      expect(await ask(url)).toMatchObject({ behavior: 'deny' });
   });
 
   it('adds Read/Grep/Glob only with a knowledge folder, and cwd is that folder', async () => {
@@ -203,6 +257,42 @@ describe('sdk agent', () => {
     ]);
     expect((await turn('limit')).at(-1)).toEqual({ type: 'done', error: 'usage limit: Claude AI usage limit reached' });
     expect((await turn('other')).at(-1)).toEqual({ type: 'done', error: 'too many turns' });
+  });
+
+  it('a session that cannot be resumed is forgotten and the turn retried in a new one, once', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'jarvis-sdk-'));
+    writeFileSync(join(dataDir, 'session.json'), JSON.stringify({ sessionId: 'gone' }));
+    const { fq, turn } = agent(() => [...streamText('m1', 'Hello.'), result('s')], { dataDir, badResume: true });
+    expect(await turn('hi')).toEqual([{ type: 'text', delta: 'Hello.' }, { type: 'done' }]);
+    expect(fq.calls.map((c) => c.options.resume)).toEqual(['gone', undefined]);
+    expect(fq.calls[1].prompts).toEqual(['hi']); // the same prompt, again
+    expect(JSON.parse(readFileSync(join(dataDir, 'session.json'), 'utf8')).sessionId).toBe('session-2');
+    expect((await turn('again')).at(-1)).toEqual({ type: 'done' });
+    expect(fq.calls).toHaveLength(2);
+  });
+
+  it('if the fresh session fails too, the turn reports it, and the dead session id is gone', async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), 'jarvis-sdk-'));
+    writeFileSync(join(dataDir, 'session.json'), JSON.stringify({ sessionId: 'gone' }));
+    const { fq, turn } = agent(() => 'die', { dataDir, badResume: true });
+    expect((await turn('hi')).at(-1)).toEqual({
+      type: 'done',
+      error: 'the assistant failed: process exited with code 1',
+    });
+    expect(fq.calls.map((c) => c.options.resume)).toEqual(['gone', undefined]);
+    expect(JSON.parse(readFileSync(join(dataDir, 'session.json'), 'utf8')).sessionId).toBe('session-2');
+  });
+
+  it('an interrupt that throws keeps waiting for the turn’s result', async () => {
+    const { a, fq, turn } = agent(() => 'hang', { interruptThrows: true });
+    let done = false;
+    const p = turn('long question').then((e) => ((done = true), e));
+    await new Promise((r) => setTimeout(r, 20));
+    await a.interrupt();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(done).toBe(false);
+    fq.wake(); // the process gets to it after all
+    expect(await p).toEqual([{ type: 'done', interrupted: true }]);
   });
 
   it('interrupt ends the turn as interrupted', async () => {

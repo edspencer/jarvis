@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { checkToolUse, insideFolder } from '../src/core/guard.ts';
+import { checkToolUse, hostOf, insideFolder, webFetchProblem } from '../src/core/guard.ts';
 
 const base = mkdtempSync(join(tmpdir(), 'jarvis-guard-'));
 const kb = join(base, 'kb');
@@ -29,6 +29,83 @@ describe('guard', () => {
     expect(allowed('WebSearch', { query: 'x' })).toBe(true);
     expect(allowed('WebFetch', { url: 'https://example.org' })).toBe(true);
     expect(allowed('WebSearch', {}, { ...opts, web: false } as typeof opts)).toBe(false);
+    expect(allowed('WebFetch', { url: 'https://example.org' }, { ...opts, web: false } as typeof opts)).toBe(false);
+  });
+
+  it('WebFetch: public http(s) only, never the LAN, this machine or Home Assistant', () => {
+    const fetchOk = (url: unknown, blocked: string[] = []) => webFetchProblem(url, blocked) === null;
+    for (const url of [
+      'https://example.org/manual.pdf',
+      'http://www.example.com:8080/x?y=1',
+      'https://8.8.8.8/',
+      'https://[2606:4700:4700::1111]/',
+      'https://172.32.0.1/',
+      'https://100.128.0.1/',
+      'https://192.169.0.1/',
+    ])
+      expect(fetchOk(url), url).toBe(true);
+    for (const url of [
+      'file:///etc/passwd',
+      'ftp://example.org/x',
+      'javascript:alert(1)',
+      'data:text/html,hi',
+      'not a url',
+      '',
+      undefined,
+      'https://user:pw@example.org/',
+      // loopback, private, CGNAT, link-local, unspecified, multicast
+      'http://127.0.0.1:8787/assistant/health',
+      'http://127.9.9.9/',
+      'http://10.0.0.1/',
+      'http://172.16.5.4/',
+      'http://172.31.255.255/',
+      'http://192.168.1.90/',
+      'http://100.64.0.1/',
+      'http://100.127.255.255/',
+      'http://169.254.169.254/latest/meta-data/',
+      'http://0.0.0.0/',
+      'http://224.0.0.1/',
+      // other notations of the same addresses, normalised by URL parsing
+      'http://2130706433/',
+      'http://0x7f000001/',
+      'http://0x7f.1/',
+      'http://017700000001/',
+      'http://127.1/',
+      'http://3232235777/',
+      'http://[::1]/',
+      'http://[::]/',
+      'http://[::ffff:127.0.0.1]/',
+      'http://[::ffff:c0a8:15a]/',
+      'http://[64:ff9b::a00:1]/',
+      'http://[fc00::1]/',
+      'http://[fd12:3456::1]/',
+      'http://[fe80::1]/',
+      // names that only mean something here
+      'http://localhost:8123/',
+      'http://LOCALHOST./',
+      'http://foo.localhost/',
+      'http://homeassistant:8123/',
+      'http://nas/',
+      'http://printer.local/',
+      'http://router.lan/',
+      'http://ha.home.arpa/',
+      'http://db.internal/',
+      'http://nas.localdomain/',
+    ])
+      expect(fetchOk(url), String(url)).toBe(false);
+    // the configured Home Assistant's host, whatever its name
+    expect(fetchOk('https://ha.example.org/api/states', ['ha.example.org'])).toBe(false);
+    expect(fetchOk('https://HA.example.org./api/states', ['ha.example.org'])).toBe(false);
+    expect(fetchOk('https://example.org/', ['ha.example.org'])).toBe(true);
+    const o = { ...opts, blockedHosts: ['ha.example.org'] };
+    expect(checkToolUse('WebFetch', { url: 'https://ha.example.org/' }, o)).toEqual({
+      allow: false,
+      reason: 'WebFetch: the assistant may not fetch addresses on the local network',
+    });
+    expect(allowed('WebFetch', { url: 'http://192.168.1.1/' })).toBe(false);
+    expect(hostOf('https://ha.example.org:8123/x')).toBe('ha.example.org');
+    expect(hostOf('http://[fd00::5]:8123')).toBe('fd00::5');
+    expect(hostOf(undefined)).toBeNull();
   });
 
   it('refuses everything that writes or runs', () => {

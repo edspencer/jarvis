@@ -26,8 +26,9 @@ import { initialTranscript, reduce, type LocalMsg, type TranscriptState } from '
 import { createSocketTransport, clientId, endpoints, type ConnState, type Transport } from './transport';
 import { createMockTransport } from './mock';
 import { createSpeaker } from './speech';
-import { record, transcribe, type Recording } from './talk';
+import { record, recordIfWanted, transcribe, type Recording } from './talk';
 import { AssistantPanel, type PanelModel, type Phase } from './panel';
+import { resolveLayer } from './layers';
 
 /** what the mock's talk button "hears" */
 const MOCK_UTTERANCE = 'show me the air handler';
@@ -53,7 +54,10 @@ export default definePlugin<AssistantConfig>({
     /** the recording is click-to-talk (stops on a second click or silence), not held */
     let toggleMode = false;
     let starting = false;
-    let stopWanted = false;
+    /** stopTalk was asked for while the microphone was starting: send what was said, or drop it */
+    let stopWanted: 'submit' | 'cancel' | null = null;
+    /** the plugin was disposed (a pending getUserMedia must then let go of the microphone) */
+    let disposed = false;
     let transcribing: AbortController | null = null;
     /** the view commands run (mock mode keeps them for tests) */
     const viewLog: { op: string; args: ViewCommandMsg['args']; ok: boolean; detail?: string }[] = [];
@@ -319,26 +323,37 @@ export default definePlugin<AssistantConfig>({
         return;
       }
       starting = true;
-      stopWanted = false;
+      stopWanted = null;
       changed();
+      let r: Recording | null;
       try {
-        rec = await record({ onSilence: () => toggleMode && void stopTalk(true), onMax: () => void stopTalk(true) });
+        // gone, or cancelled, while the microphone was starting (the permission prompt): it is let go of at once
+        r = await recordIfWanted(
+          () => record({ onSilence: () => toggleMode && void stopTalk(true), onMax: () => void stopTalk(true) }),
+          () => !disposed && stopWanted !== 'cancel',
+        );
       } catch (err) {
         starting = false;
         changed();
-        ctx.toast({ text: (err as Error).message, tone: 'warn' });
+        if (!disposed) ctx.toast({ text: (err as Error).message, tone: 'warn' });
         return;
       }
       starting = false;
+      if (!r) {
+        if (!disposed) changed();
+        return;
+      }
+      rec = r;
       local = 'listening';
       changed();
-      if (stopWanted) await stopTalk(true); // released while the microphone was starting (the permission prompt)
+      if (stopWanted) await stopTalk(true); // released while the microphone was starting
     }
 
     /** stop recording; `submit`: transcribe and send it (else drop it) */
     async function stopTalk(submit: boolean): Promise<void> {
       if (starting) {
-        stopWanted = true;
+        // a cancel wins over a submit asked for meanwhile
+        stopWanted = submit && stopWanted !== 'cancel' ? 'submit' : 'cancel';
         return;
       }
       if (local !== 'listening') return;
@@ -357,6 +372,7 @@ export default definePlugin<AssistantConfig>({
       local = 'transcribing';
       changed();
       const audio = await r?.stop();
+      if (disposed) return;
       if (!submit || !audio) {
         local = null;
         changed();
@@ -382,6 +398,7 @@ export default definePlugin<AssistantConfig>({
       }
     }
     ctx.own(() => {
+      disposed = true;
       rec?.cancel();
       transcribing?.abort();
       speaker.stop();
@@ -400,7 +417,9 @@ export default definePlugin<AssistantConfig>({
         answered = true;
         send({ type: 'confirm.reply', id: m.id, approved });
       };
-      const left = () => Math.max(0, Math.ceil((m.expiresAt - Date.now()) / 1000));
+      // counted from this page's receipt time: the server's clock (expiresAt) may not agree with ours
+      const deadline = Date.now() + (Number.isFinite(m.ttlMs) ? m.ttlMs : m.expiresAt - Date.now());
+      const left = () => Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
       const h = ctx.modal({
         title: m.risk === 'high' ? 'The assistant asks: are you sure?' : 'The assistant asks',
         blocks: () => [
@@ -426,7 +445,7 @@ export default definePlugin<AssistantConfig>({
         },
       });
       const countdown = setInterval(() => {
-        if (Date.now() >= m.expiresAt + 1000) {
+        if (Date.now() >= deadline + 1000) {
           answered = true; // the server has expired it itself
           h.close();
         } else h.refresh();
@@ -483,43 +502,28 @@ export default definePlugin<AssistantConfig>({
     }
 
     const title = (s: string) => ctx.inspector.describe(s)?.title || s;
-    const norm = (s: string) =>
-      s
-        .toLowerCase()
-        .replace(/[^a-z0-9]/g, '')
-        .replace(/s$/, '');
 
-    /** a layer by id or label (the view's layers), else a chip's key by its label (pins, faults, plates, blueprints) */
+    /** a view layer, or one of the core's view toggles (layers.ts); never a plugin's key (those can act on the house) */
     function setLayer(name: string, on: boolean | undefined): { ok: boolean; detail: string } {
-      const n = norm(name);
-      const layer = ctx.view.layers().find((l) => norm(l.id) === n || norm(l.label) === n);
-      if (layer) {
-        const shown = !ctx.view.state.hidden[layer.id];
-        if (on === undefined || on !== shown) ctx.view.toggleLayer(layer.id);
-        return { ok: true, detail: `${layer.label} ${(on ?? !shown) ? 'shown' : 'hidden'}` };
+      const t = resolveLayer(name, ctx.view.layers());
+      if (t.kind === 'none') return { ok: false, detail: t.detail };
+      if (t.kind === 'layer') {
+        const shown = !ctx.view.state.hidden[t.id];
+        if (on === undefined || on !== shown) ctx.view.toggleLayer(t.id);
+        return { ok: true, detail: `${t.label} ${(on ?? !shown) ? 'shown' : 'hidden'}` };
       }
-      // the core's view toggles, whose state the view tells
-      const core: Record<string, { code: string; get(): boolean }> = {
-        cutaway: { code: 'KeyX', get: () => ctx.view.state.cutaway },
-        upper: { code: 'KeyU', get: () => !ctx.view.state.upperHidden },
-        upstair: { code: 'KeyU', get: () => !ctx.view.state.upperHidden },
-        ghost: { code: 'KeyG', get: () => ctx.view.state.ghost },
-      };
-      const keys = ctx.keys.list().filter((k) => k.run && !k.release && !k.shift && !k.alt && k.owner !== ctx.id);
-      const c = core[n];
-      if (c) {
-        const k = keys.find((x) => x.code === c.code);
-        if (!k) return { ok: false, detail: `no ${name} toggle here` };
-        if (on === undefined || on !== c.get()) k.run!(new KeyboardEvent('keydown', { code: c.code }));
-        return { ok: true, detail: `${name} ${c.get() ? 'on' : 'off'}` };
-      }
-      // a plugin's chip: its key toggles it; its state isn't readable from here (TODO: a status-toggle API)
-      const k = keys.find(
-        (x) => /^Key[A-Z]$/.test(x.code) && (norm(x.ownerName).includes(n) || norm(x.label.split(':')[0]).includes(n)),
-      );
-      if (!k) return { ok: false, detail: `no layer called "${name}"` };
-      k.run!(new KeyboardEvent('keydown', { code: k.code }));
-      return { ok: true, detail: `${k.label.split(':')[0]} toggled` };
+      // the core's toggles have no setter in the view API: press the core's own key, whose state the view tells
+      const core = {
+        cutaway: { code: 'KeyX', label: 'Cutaway', get: () => ctx.view.state.cutaway },
+        upper: { code: 'KeyU', label: 'Upper storey', get: () => !ctx.view.state.upperHidden },
+        ghost: { code: 'KeyG', label: 'Ghost', get: () => ctx.view.state.ghost },
+      }[t.toggle];
+      const k = ctx.keys
+        .list()
+        .find((x) => x.owner === 'core' && x.code === core.code && x.run && !x.shift && !x.alt && !x.release);
+      if (!k) return { ok: false, detail: `no ${core.label.toLowerCase()} toggle here` };
+      if (on === undefined || on !== core.get()) k.run!(new KeyboardEvent('keydown', { code: core.code }));
+      return { ok: true, detail: `${core.label} ${core.get() ? 'on' : 'off'}` };
     }
 
     function runView(m: ViewCommandMsg): void {

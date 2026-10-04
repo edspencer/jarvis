@@ -6,6 +6,7 @@ import { parse as parseYaml } from 'yaml';
 import { createAudit } from './core/audit.ts';
 import { boxed, type AssistantConfig } from './core/config.ts';
 import { createGate, type Gate } from './core/gate.ts';
+import { hostOf } from './core/guard.ts';
 import { createMockHa } from './core/ha-mock.ts';
 import { createHub, type Hub } from './core/hub.ts';
 import { buildSystemPrompt, formatTurn, loadSite, type SiteKnowledge } from './core/knowledge.ts';
@@ -107,6 +108,9 @@ export function createAssistant(config: AssistantConfig, o: AssistantOverrides =
           effort: config.effort,
           dataDir: config.dataDir,
           knowledgeDir: config.knowledgeDir,
+          web: config.web,
+          // besides every private address: Home Assistant's and the transcription server's names
+          blockedHosts: [hostOf(config.ha.url), hostOf(config.stt?.url)].filter((h): h is string => !!h),
           log,
         }));
 
@@ -118,6 +122,7 @@ export function createAssistant(config: AssistantConfig, o: AssistantOverrides =
     formatTurn: (turn) => formatTurn(turn, site),
     authenticate,
     audit,
+    turnTimeoutMs: config.turnTimeoutMs,
     log,
   });
   const theHub = hub;
