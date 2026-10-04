@@ -975,7 +975,11 @@ export class JvStatus extends RegionElement {
           left: var(--jv-gap);
           right: var(--jv-gap);
         }
-        .seg,
+        /* the mode switch stays (walking on a touch screen has the thumb-stick), as tall as the strip allows */
+        .seg button {
+          min-height: 28px;
+          padding: 2px 12px;
+        }
         .chips,
         .sep,
         .item.opt {
@@ -1725,6 +1729,133 @@ export class JvHover extends RegionElement {
   }
 }
 
+// ------------------------------------------------------------------ touch thumb-stick
+const TRAVEL = 36; // px: the knob's reach from the stick's centre
+/** Walking on a touch screen: an analog stick bottom left (direction and how far it's pushed), above the tab bar and
+ * any peek sheet; hidden behind a taller sheet. Pointer Events with capture, so it works alongside a second finger
+ * looking around on the view (core/touch.ts). Not focusable: the keys (W A S D) are the keyboard's way to move. */
+export class JvStick extends RegionElement {
+  readonly region = 'stick';
+  private finger: number | null = null;
+  private x = 0;
+  private y = 0;
+  static override styles = [
+    base,
+    css`
+      .stick {
+        position: fixed;
+        left: calc(var(--jv-gap) * 2 + var(--jv-rail) + 16px);
+        bottom: 24px;
+        width: 120px;
+        height: 120px;
+        border-radius: 50%;
+        background: rgba(18, 21, 27, 0.45);
+        border: 1px solid rgba(255, 255, 255, 0.35);
+        box-shadow: var(--jv-shadow);
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        z-index: 8;
+      }
+      .knob {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 52px;
+        height: 52px;
+        margin: -26px 0 0 -26px;
+        border-radius: 50%;
+        background: var(--jv-surface-raised);
+        border: 1px solid var(--jv-accent);
+        pointer-events: none;
+        transition: transform var(--jv-motion) ease-out;
+      }
+      .stick.held .knob {
+        transition: none;
+      }
+      @media (max-width: 719px) {
+        .stick {
+          left: calc(var(--jv-gap) + 12px);
+          /* above the tab bar (52 px) */
+          bottom: calc(52px + var(--jv-gap) * 2 + 12px);
+        }
+        .stick.peek {
+          /* above a peek sheet (64 + 96 px) */
+          bottom: 172px;
+        }
+      }
+    `,
+  ];
+  /** shown: walking, on a touch screen, and no sheet taller than a peek */
+  private shown(): boolean {
+    const h = this.hud;
+    const up = h.sheetUp();
+    return h.touch && h.deps.mode() === 'walk' && (up === null || up === 'peek');
+  }
+  private send(x: number, y: number): void {
+    this.x = x;
+    this.y = y;
+    this.hud.deps.stick?.(x, y);
+    const k = this.renderRoot.querySelector<HTMLElement>('.knob');
+    if (k) k.style.transform = `translate(${x * TRAVEL}px, ${-y * TRAVEL}px)`;
+  }
+  private release(): void {
+    this.finger = null;
+    this.renderRoot.querySelector('.stick')?.classList.remove('held');
+    if (this.x || this.y) this.send(0, 0);
+  }
+  private move(e: PointerEvent): void {
+    // full speed at the knob's full travel (TRAVEL px from the centre), well inside the ring
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    let dx = (e.clientX - (r.left + r.width / 2)) / TRAVEL,
+      dy = -(e.clientY - (r.top + r.height / 2)) / TRAVEL;
+    const len = Math.hypot(dx, dy);
+    if (len > 1) {
+      dx /= len;
+      dy /= len;
+    }
+    // a small dead zone, so a resting thumb doesn't creep
+    this.send(len < 0.12 ? 0 : dx, len < 0.12 ? 0 : dy);
+  }
+  private onDown = (e: PointerEvent) => {
+    if (this.finger !== null) return;
+    e.preventDefault();
+    this.finger = e.pointerId;
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    (e.currentTarget as HTMLElement).classList.add('held');
+    this.move(e);
+  };
+  private onMove = (e: PointerEvent) => {
+    if (e.pointerId === this.finger) this.move(e);
+  };
+  private onUp = (e: PointerEvent) => {
+    if (e.pointerId === this.finger) this.release();
+  };
+  protected override updated(): void {
+    if (!this.shown() && (this.finger !== null || this.x || this.y)) this.release();
+  }
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    this.release();
+  }
+  override render() {
+    if (!this.shown()) return nothing;
+    return html`<div
+      class="stick ${this.hud.sheetUp() === 'peek' ? 'peek' : ''}"
+      role="application"
+      aria-roledescription="thumb-stick"
+      aria-label="Move: drag the thumb-stick (keys: W A S D)"
+      @pointerdown=${this.onDown}
+      @pointermove=${this.onMove}
+      @pointerup=${this.onUp}
+      @pointercancel=${this.onUp}
+      @lostpointercapture=${this.onUp}
+    >
+      <div class="knob"></div>
+    </div>`;
+  }
+}
+
 // ------------------------------------------------------------------ the root
 export class JvHud extends LitElement {
   static override properties = { hud: { attribute: false } };
@@ -1750,6 +1881,7 @@ export class JvHud extends LitElement {
   override render() {
     const h = this.hud;
     return html`<jv-hover .hud=${h}></jv-hover>
+      <jv-stick .hud=${h}></jv-stick>
       <jv-rail .hud=${h}></jv-rail>
       <jv-status .hud=${h}></jv-status>
       <jv-dock .hud=${h}></jv-dock>
@@ -1803,6 +1935,7 @@ define('jv-toasts', JvToasts);
 define('jv-modal', JvModal);
 define('jv-search', JvSearch);
 define('jv-hover', JvHover);
+define('jv-stick', JvStick);
 define('jv-hud', JvHud);
 
 /** put the HUD on the page */

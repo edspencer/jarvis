@@ -2,7 +2,7 @@
 import * as THREE from 'three';
 import type { Site } from '../site';
 import { P } from './units';
-import type { Keys, Player, ViewState } from './types';
+import type { Analog, Keys, Player, ViewState } from './types';
 
 // The body (metres) comes from the site manifest's `walk`, with general defaults: eye height, crouched eye height,
 // radius, and the highest step taken without a jump (a model with steps but no treads needs it higher).
@@ -45,6 +45,7 @@ export function createWalker({
   player,
   state,
   keys,
+  analog = { x: 0, y: 0 },
   camera,
   getCollider,
   onCrouchChange,
@@ -52,6 +53,8 @@ export function createWalker({
   player: Player;
   state: ViewState;
   keys: Keys;
+  /** the touch thumb-stick, added to the keys */
+  analog?: Analog;
   camera: THREE.Camera;
   getCollider: () => THREE.Mesh | null;
   onCrouchChange: () => void;
@@ -154,8 +157,12 @@ export function createWalker({
   }
 
   function stepWalk(dt: number): void {
-    const fwd = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
-    const strafe = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
+    const kFwd = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
+    const kStrafe = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
+    // the thumb-stick adds to the keys; a key held moves at full speed, the stick alone at its deflection
+    const fwd = THREE.MathUtils.clamp(kFwd + analog.y, -1, 1);
+    const strafe = THREE.MathUtils.clamp(kStrafe + analog.x, -1, 1);
+    const throttle = kFwd || kStrafe ? 1 : Math.min(1, Math.hypot(analog.x, analog.y));
     player.yaw += ((keys.KeyQ ? 1 : 0) - (keys.KeyE ? 1 : 0)) * TURN * dt;
     const sy = Math.sin(player.yaw),
       cy = Math.cos(player.yaw);
@@ -168,7 +175,7 @@ export function createWalker({
       if (player.crouched !== wasCrouched) onCrouchChange();
     }
     const speed = state.ghost ? GHOST * (running ? 2 : 1) : player.crouched ? CROUCH : running ? RUN : WALK;
-    if (move.lengthSq() > 0) move.normalize().multiplyScalar(speed * dt);
+    if (move.lengthSq() > 0) move.normalize().multiplyScalar(speed * throttle * dt);
 
     if (state.ghost) {
       // fly where you look, no collision; Space rises, C (held) sinks

@@ -33,7 +33,8 @@ import type {
 import { openPanel, sameSubject, sectionsFor, type SectionRec } from './model';
 import type { BlockEnv } from './blocks';
 
-export type Region = 'rail' | 'dock' | 'inspector' | 'status' | 'legend' | 'toasts' | 'modal' | 'search' | 'hover';
+export type Region =
+  'rail' | 'dock' | 'inspector' | 'status' | 'legend' | 'toasts' | 'modal' | 'search' | 'hover' | 'stick';
 
 export interface PanelRec {
   spec: PanelSpec;
@@ -82,6 +83,8 @@ export interface HudDeps {
   locked(): boolean;
   mode(): Mode;
   setMode(m: Mode): void;
+  /** the touch thumb-stick moved: x strafes right, y walks forward, each -1 … 1 (0, 0 when let go) */
+  stick?(x: number, y: number): void;
 }
 
 interface Saved {
@@ -95,6 +98,7 @@ interface Saved {
 }
 
 const SMALL = '(max-width: 719px)';
+const COARSE = '(pointer: coarse)';
 
 export class Hud {
   readonly deps: HudDeps;
@@ -133,6 +137,9 @@ export class Hud {
   expanded = new Set<string>();
   savedToggles: Record<string, boolean> = {};
   small: boolean;
+  /** a touch screen (a coarse pointer, or the last pointer down was a finger): walking gets the thumb-stick, drag to
+   * look and tap to inspect (core/touch.ts) */
+  touch: boolean;
   /** bottom sheet height on small screens */
   sheet: 'peek' | 'half' | 'full' = 'half';
   private seq = 0;
@@ -150,6 +157,8 @@ export class Hud {
     this.sectionClosed = s.sections || {};
     this.groups = s.groups || {};
     this.savedToggles = s.toggles || {};
+    const coarse = typeof matchMedia === 'function' ? matchMedia(COARSE) : null;
+    this.touch = !!coarse?.matches;
     const mq = typeof matchMedia === 'function' ? matchMedia(SMALL) : null;
     this.small = !!mq?.matches;
     mq?.addEventListener?.('change', (e) => {
@@ -163,6 +172,8 @@ export class Hud {
   /** redraw some regions (all by default) on the next frame */
   update(...rs: Region[]): void {
     for (const r of rs.length ? rs : ([...this.regions.keys()] as Region[])) this.queued.add(r);
+    // the thumb-stick sits above a bottom sheet (or hides behind a tall one): it follows the dock and the inspector
+    if (this.queued.has('dock') || this.queued.has('inspector')) this.queued.add('stick');
     if (this.raf) return;
     const run = () => {
       this.raf = 0;
@@ -186,6 +197,18 @@ export class Hud {
       toggles: this.savedToggles,
     };
     this.deps.storage.set('state', s);
+  }
+
+  /** a finger or a mouse was used last (a coarse pointer stays touch) */
+  setTouch(on: boolean): void {
+    if (on === this.touch) return;
+    this.touch = on;
+    this.update('stick', 'status');
+  }
+  /** a bottom sheet (dock panel or inspector) is up on a small screen, and how high */
+  sheetUp(): 'peek' | 'half' | 'full' | null {
+    if (!this.small || (!this.subject && !this.open.length)) return null;
+    return this.sheet;
   }
 
   // ------------------------------------------------------------------ dock panels
@@ -613,7 +636,7 @@ export class Hud {
       const h = this.modal({
         title: 'Keys and controls',
         wide: true,
-        blocks: () => helpBlocks(this.deps.site, this.deps.keys.list()),
+        blocks: () => helpBlocks(this.deps.site, this.deps.keys.list(), this.touch),
         actions: () => [{ label: 'Close', kind: 'primary', onClick: () => h.close() }],
       });
     });

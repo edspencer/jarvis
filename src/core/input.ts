@@ -113,6 +113,8 @@ export function bindInput({
   const toNdc = (e: MouseEvent) => mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
 
   canvas.addEventListener('click', (e) => {
+    // a finger walking: touch.ts has handled the tap (no pointer lock on touch)
+    if (state.mode === 'walk' && (e as PointerEvent).pointerType === 'touch') return;
     const locked = document.pointerLockElement === canvas;
     if (state.mode === 'walk' && !locked) {
       if (!hud.small) canvas.requestPointerLock?.();
