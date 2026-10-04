@@ -769,14 +769,15 @@ export interface MaterialOverride extends Disposable {
   refresh(): void;
 }
 
-/** the built-in plugins' places in a mesh's material stack (higher on top); a plugin's own default is 0 */
+/** the built-in plugins' places in a mesh's material stack (higher on top); a plugin's own default is 0, so energy
+ * mode sits above it rather than tying (a tie goes to whichever pushed later) */
 export const MATERIAL_PRIORITY = {
   /** the lights: a fixture's glowing copy */
   glow: -10,
   /** blueprints: the model faded under a sheet */
   fade: -5,
   /** energy mode: the ghost and the load tints */
-  energy: 0,
+  energy: 10,
 } as const;
 
 /** Each mesh shows the top of a stack of overrides over its own material: higher `priority` on top (default 0; see
@@ -789,8 +790,10 @@ export interface MaterialsApi {
     m: MaterialLayer,
     opts?: { priority?: number },
   ): MaterialOverride;
-  /** the mesh's own material, whatever is drawn over it (also in userData.baseMaterial while it has overrides) */
-  base(mesh: THREE.Mesh): THREE.Material;
+  /** the mesh's own material, whatever is drawn over it: what to read a mesh's real material from. Typed as the
+   * mesh's material, so a plain `THREE.Mesh` gives `Material | Material[]` (a mesh with an array is never covered;
+   * narrow it with Array.isArray). The stack also leaves it in `userData.baseMaterial`: internal, not part of the API. */
+  base<M extends THREE.Material | THREE.Material[]>(mesh: THREE.Mesh<THREE.BufferGeometry, M>): M;
 }
 
 export interface ViewApi {

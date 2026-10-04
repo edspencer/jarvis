@@ -439,6 +439,9 @@ after click. Selected rows: accent left border plus raised surface.
   errors `assertive`.
 - Contrast ≥ 4.5:1 for text and 3:1 for UI boundaries on the surface over a white scene (worst case: the sky).
 - Hit targets ≥ 24 px desktop, 40 px touch. Everything in a tooltip is also in the inspector or help.
+- A screen-reader user on a touch-only device can't walk (the thumb-stick is `aria-hidden`, and W A S D need a
+  keyboard), but walking only moves the camera: everything it can show is reachable without it, through the overview,
+  search and the inspector (§11, touch walk controls).
 
 ## 7. Rendering technology
 
@@ -571,7 +574,10 @@ Screenshots, before → after (taken on a private building, so not in the reposi
   opens the inspector as a peek sheet, so the view and the stick stay usable; the sheet's height comes back when the
   inspector closes. No crosshair on touch. The canvas and the stick are `touch-action: none`. The stick is
   `aria-hidden` and not focusable (the keyboard moves with W A S D, so it traps nothing); its knob springs back over
-  `--jv-motion`, which reduced motion sets to 0. The strip's mode switch has a 40 px tall hit area on small screens.
+  `--jv-motion`, which reduced motion sets to 0. The window losing focus lets go of it too (as it does the held keys),
+  so a stick held through an app switch doesn't keep walking. A screen-reader user on a touch-only device can't walk
+  (no stick for them, and no keyboard), but reaches all the information through the overview, search and the
+  inspector. The strip's mode switch has a 40 px tall hit area on small screens.
   Help lists the touch controls on a touch screen. Not yet on touch: jump and crouch (ghost, on at start, is in the
   strip's ⋯), running, pinch-to-zoom in walk mode, long-press for hover.
 - **The blink test** (§8) is a confirm modal, then a sticky toast that steps through the bulbs ("Which fixture

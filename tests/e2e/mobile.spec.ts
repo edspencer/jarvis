@@ -1,6 +1,6 @@
-// Walking on a phone (390 × 844, touch): the strip's mode switch walks, the thumb-stick moves the walker, a drag on
-// the view looks around (with the stick at the same time), a tap inspects what is under the finger (a drag doesn't),
-// and axe passes on the layout. Touches go through CDP (Input.dispatchTouchEvent), so the page sees real touch
+// Walking on a phone (390 × 844, touch): the strip's mode switch walks, the thumb-stick moves the walker (and the
+// window losing focus lets go of it), a drag on the view looks around (with the stick at the same time), a tap inspects
+// what is under the finger (a drag doesn't), and axe passes on the layout. Touches go through CDP (Input.dispatchTouchEvent), so the page sees real touch
 // Pointer Events. Assertions read the walker's state through window.twin and poll: software WebGL draws 1–2 frames a
 // second.
 import AxeBuilder from '@axe-core/playwright';
@@ -76,6 +76,26 @@ test('the thumb-stick moves the walker; let go (or cancelled), it stops', async 
   await drag(1, c, { x: c.x + 50, y: c.y });
   await expect.poll(() => twin<number>(page, 'twin.analog.x')).toBeGreaterThan(0.9);
   await touch('touchCancel', []);
+  await expect.poll(() => twin<number>(page, 'Math.hypot(twin.analog.x, twin.analog.y)')).toBe(0);
+});
+
+test('the window losing focus lets go of a held stick: the walker stops, the knob springs back', async () => {
+  const c = await centreOf();
+  await drag(1, c, { x: c.x, y: c.y - 50 });
+  await expect.poll(() => twin<number>(page, 'twin.analog.y')).toBeGreaterThan(0.9);
+  await page.evaluate(() => dispatchEvent(new Event('blur'))); // (as an app switch does; the keys are let go too)
+  await expect.poll(() => twin<number>(page, 'Math.hypot(twin.analog.x, twin.analog.y)')).toBe(0);
+  const knob = () => page.locator('jv-stick .knob').evaluate((k) => (k as HTMLElement).style.transform);
+  await expect.poll(knob).toBe('translate(0px, 0px)');
+  // the same finger moving on doesn't pick it up again; it was let go
+  await touch('touchMove', [{ x: c.x + 50, y: c.y, id: 1 }]);
+  await page.waitForTimeout(100);
+  expect(await twin<number>(page, 'Math.hypot(twin.analog.x, twin.analog.y)')).toBe(0);
+  await touch('touchEnd', []);
+  // a new touch works as before
+  await drag(1, c, { x: c.x, y: c.y - 50 });
+  await expect.poll(() => twin<number>(page, 'twin.analog.y')).toBeGreaterThan(0.9);
+  await touch('touchEnd', []);
   await expect.poll(() => twin<number>(page, 'Math.hypot(twin.analog.x, twin.analog.y)')).toBe(0);
 });
 

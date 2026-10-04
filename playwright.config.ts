@@ -14,9 +14,9 @@ const GL_ARGS = GPU
 // devicePixelRatio of 0.5; the page's layout is the same 1280 × 720). About 3x faster on 4 cores. E2E_PIXEL_RATIO overrides.
 process.env.E2E_PIXEL_RATIO ??= GPU ? '' : '0.5';
 
-// the HUD's specs (hud, a11y, the phone walk layout); "view" has the rest (the 3D view's layers, energy, the demo
-// house, parity)
-const HUD_SPECS = ['**/hud.spec.ts', '**/a11y.spec.ts', '**/mobile.spec.ts'];
+// the HUD's specs (hud, a11y, the phone walk layout, touch on a desktop); "view" has the rest (the 3D view's layers,
+// energy, the demo house, parity)
+const HUD_SPECS = ['**/hud.spec.ts', '**/a11y.spec.ts', '**/mobile.spec.ts', '**/desktop-touch.spec.ts'];
 
 export default defineConfig({
   testDir: 'tests/e2e',

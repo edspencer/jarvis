@@ -286,6 +286,8 @@ T and V need Home Assistant, live or `?ha=mock`.
 On a touch screen: the strip's **Walk / Overview** switch changes the mode (a phone opens in the overview). Walking, the
 thumb-stick bottom left moves (push it further to go faster), a drag on the view looks around (with the stick at the
 same time), and a tap inspects what is under the finger. In the overview, drag to rotate, pinch to zoom, tap to inspect.
+The stick is hidden from screen readers, so a screen-reader user on a touch-only device can't walk; everything walking
+shows is reachable without it, through the overview, search and the inspector.
 
 ## URL parameters
 

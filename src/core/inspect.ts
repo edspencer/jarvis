@@ -2,7 +2,7 @@
 // win, then the model: the object hit, and for a merged node the original object from the parts file. Plugins turn a
 // model hit into their own subject (a wall plate's instance) through resolvers.
 import * as THREE from 'three';
-import { isShown, matOf } from './three-utils';
+import { isShown } from './three-utils';
 import type { PartsIndex, PickResult } from './types';
 import type { Disposable, PickApi, Subject } from './plugin/types';
 
@@ -48,12 +48,15 @@ export function createPicker({
   parts,
   ownerOf,
   isGlass,
+  baseOf,
 }: {
   camera: THREE.Camera;
   root: THREE.Object3D;
   parts: PartsIndex;
   ownerOf: (o: THREE.Object3D) => THREE.Object3D;
   isGlass: (m: THREE.Material) => boolean;
+  /** a mesh's own material, under any overrides (materials.base) */
+  baseOf: (mesh: THREE.Mesh) => THREE.Material | THREE.Material[];
 }): Picker {
   const picker = new THREE.Raycaster();
   picker.firstHitOnly = false;
@@ -68,7 +71,9 @@ export function createPicker({
     const hits = picker.intersectObjects(root.children, true);
     for (const h of hits) {
       if (!isShown(h.object)) continue;
-      const mat = (h.object as THREE.Mesh).material ? matOf(h.object as THREE.Mesh) : undefined;
+      // its own material, not energy mode's ghost or the blueprint fade drawn over it
+      const own = (h.object as THREE.Mesh).material ? baseOf(h.object as THREE.Mesh) : undefined;
+      const mat = Array.isArray(own) ? undefined : own;
       const mn = mat?.name;
       if (mat && isGlass(mat) && hits.length > 1 && h !== hits[hits.length - 1]) continue; // look through glass
       const po = h.object.userData.plantOwners as THREE.Object3D[] | undefined; // a plant: one instance

@@ -123,12 +123,13 @@ describe('energy mode: the material swap', () => {
     expect(mesh.material).toBe(own);
     expect(floor.material).toBe(floorOwn);
   });
-  it("leaves the mesh's own material in userData.baseMaterial while swapped (the lights read it), and clears it", () => {
-    const { es, mesh, own } = setup();
+  it("keeps the mesh's own material in materials.base() while swapped (the lights read it)", () => {
+    const { es, mesh, own, materials } = setup();
     es.show({ nodes: new Map(), rooms: new Map(), anchors: [] });
-    expect(mesh.userData.baseMaterial).toBe(own);
+    expect(materials.base(mesh)).toBe(own);
     es.hide();
-    expect(mesh.userData.baseMaterial).toBeUndefined();
+    expect(materials.base(mesh)).toBe(own);
+    expect(materials.size()).toBe(0);
   });
   it("keeps another plugin's override made meanwhile under the ghost, and puts theirs back", () => {
     const { es, mesh, own, materials } = setup();
@@ -136,7 +137,7 @@ describe('energy mode: the material swap', () => {
     const theirs = new THREE.MeshStandardMaterial({ name: 'lamp-clone' });
     materials.push(mesh, theirs, { priority: -10 }); // the lights prepare a fixture while energy mode is on
     expect(mesh.material).toBe(es.ghost);
-    expect(mesh.userData.baseMaterial).toBe(own);
+    expect(materials.base(mesh)).toBe(own);
     es.hide();
     expect(mesh.material).toBe(theirs);
     es.dispose();

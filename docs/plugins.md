@@ -142,14 +142,17 @@ conf, src, meta })`. They come from the site's mapping files (the lights plugin 
   that to the plugin's stop). Each mesh shows the top of its stack of overrides over its own material: the higher
   `priority` on top (default 0), the later push on top of an equal one; so any order of on and off puts back exactly
   what is left. The built-in plugins' places are exported as `MATERIAL_PRIORITY` (`glow: -10`, the lights' glowing
-  copies; `fade: -5`, the blueprint fade; `energy: 0`, energy mode), so `{ priority: MATERIAL_PRIORITY.fade + 1 }`
-  draws over the fade and under energy mode. The material can be a function of the one beneath it,
+  copies; `fade: -5`, the blueprint fade; `energy: 10`, energy mode), so `{ priority: MATERIAL_PRIORITY.fade + 1 }`
+  draws over the fade and under energy mode, and so does an override at the default 0 (energy mode is above it, not
+  tied with it). The material can be a function of the one beneath it,
   `(below, mesh) => material` (the blueprint fade makes a faded copy of whatever is there; cache what it makes, it runs
   again whenever the stack changes). `o.set(m)` changes a layer in place; `o.refresh()` re-runs each of its meshes'
   whole stack, for when you edited your material and a function layer above copies from it. Anything pushed that isn't
   a mesh with one material is skipped, with a warning. `materials.base(mesh)` is the mesh's own material, whatever
-  covers it (also in `mesh.userData.baseMaterial` while covered): a plugin that prepares materials from a mesh's (the
-  lights clone a fixture's) starts from it, and picking reports it.
+  covers it: a plugin that prepares materials from a mesh's (the lights clone a fixture's) starts from it, and picking
+  and the inspector report it. It is typed as the mesh's material (`Material | Material[]` for a plain `THREE.Mesh`;
+  a mesh with an array is never covered, so narrow with `Array.isArray`). Read it rather than `mesh.material`, which
+  is whatever is drawn now; the stack's `mesh.userData.baseMaterial` is internal, not part of the API.
 - The allow-list protects against bugs and misclicks, not hostile code: Home Assistant's login tokens are in
   `localStorage`, readable by any code on the page, plugins included. The README says how to limit the damage (a
   dedicated, non-admin Home Assistant user for the viewer).

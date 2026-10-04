@@ -2,8 +2,9 @@
 // blueprint fade, a light fixture's glowing copy). Each mesh keeps its own material (its base) and a stack of layers,
 // lowest priority first (ties: the earlier push lower); what it shows is the top of the stack, where a layer given as
 // a function makes its material from the one beneath it. Pushes and disposals in any order put back exactly what the
-// remaining layers say, and the base when none is left. While a mesh has layers its base is also in
-// userData.baseMaterial (for readers that only have the mesh). Pure three.js objects, no renderer: unit-tested.
+// remaining layers say, and the base when none is left. base(mesh) is how anything (core or plugin) reads a mesh's own
+// material. While a mesh has layers its base is also left in userData.baseMaterial: internal (a devtools aid), not a
+// contract; nothing reads it, don't start. Pure three.js objects, no renderer: unit-tested.
 import type * as THREE from 'three';
 import type { MaterialLayer, MaterialOverride, MaterialsApi } from './plugin/types';
 
@@ -64,7 +65,7 @@ export function createMaterialStack(): MaterialStack {
       if (!s) {
         s = { base: mesh.material as THREE.Material, layers: [] };
         stacks.set(mesh, s);
-        mesh.userData.baseMaterial = s.base;
+        mesh.userData.baseMaterial = s.base; // internal: read base() instead
       }
       s.layers.push(layer);
       s.layers.sort((a, b) => a.priority - b.priority || a.seq - b.seq);
@@ -93,7 +94,8 @@ export function createMaterialStack(): MaterialStack {
     };
   }
 
-  const base = (mesh: THREE.Mesh): THREE.Material => (stacks.get(mesh)?.base ?? mesh.material) as THREE.Material;
+  // a covered mesh's base was its one material (push skips arrays), so it is the mesh's material type
+  const base: MaterialsApi['base'] = (mesh) => (stacks.get(mesh)?.base ?? mesh.material) as typeof mesh.material;
 
   /** a warning that shows once */
   const once = (say: (msg: string) => void) => {

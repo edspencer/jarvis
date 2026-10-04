@@ -447,7 +447,10 @@ export function installCore({
       delete u.name;
       delete u.merged;
       delete u.plantOwners;
-      const mat = (s.hit?.object as THREE.Mesh | undefined)?.material as THREE.Material | undefined;
+      // the mesh's own material (its name), not an override drawn over it
+      const hitMesh = s.hit?.object as THREE.Mesh | undefined;
+      const own = hitMesh?.material ? ctx.three.materials.base(hitMesh) : undefined;
+      const mat = Array.isArray(own) ? undefined : own;
       const rows: [string, string | { text: string; mono: boolean }][] = [
         ['Node', { text: nodeName(s.node), mono: true }],
       ];
