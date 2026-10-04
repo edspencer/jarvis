@@ -194,7 +194,8 @@ that runs nothing else. More in [SECURITY.md](SECURITY.md).
 lacks. Headless Chromium renders WebGL on the GPU if there is a DRM render node (`E2E_GPU=0` forces software), else in
 software (SwiftShader): the demo house takes about a minute that way, a large real model several; the tests share one
 page and allow minutes. `npx playwright install chromium` once, or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to a
-local Chromium; `E2E_PORT` moves the test server off 5192. `PROTOTYPE_URL=http://host:port npm run test:e2e -- parity`
+local Chromium; `E2E_PORT` moves the test server off 5192. The tests start their own server and fail if the port is
+busy (`E2E_REUSE_SERVER=1` uses the dev server already there). `PROTOTYPE_URL=http://host:port npm run test:e2e -- parity`
 also renders the same views, with the HUD hidden, in a running reference build (another checkout's dev server, e.g.
 `main`) and compares them pixel by pixel (`test-results/parity/`).
 

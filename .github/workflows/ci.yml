@@ -67,17 +67,20 @@ jobs:
             exit 1
           fi
 
-  # The browser tests in shards (Playwright splits the spec files between them); each uploads a blob report, and the
+  # The browser tests in shards (one Playwright project each); each uploads a blob report, and the
   # E2E job below, the one a ruleset requires, passes only if every shard did and merges the reports into one HTML
   # report on failure.
   e2e-shard:
-    name: E2E shard ${{ matrix.shard }}/${{ strategy.job-total }}
+    name: E2E shard ${{ matrix.shard }}/${{ strategy.job-total }} (${{ matrix.project }})
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
+      # one Playwright project per shard (playwright.config.ts: two halves of about the same time)
       matrix:
-        shard: [1, 2]
+        include:
+          - { shard: 1, project: hud }
+          - { shard: 2, project: view }
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -105,7 +108,7 @@ jobs:
       - name: Browser E2E against examples/demo-site
         env:
           E2E_GPU: '0'
-        run: npx playwright test --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+        run: npx playwright test --project=${{ matrix.project }}
       - name: Upload blob report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v7

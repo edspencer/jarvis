@@ -14,6 +14,9 @@ const GL_ARGS = GPU
 // devicePixelRatio of 0.5; the page's layout is the same 1280 × 720). About 3x faster on 4 cores. E2E_PIXEL_RATIO overrides.
 process.env.E2E_PIXEL_RATIO ??= GPU ? '' : '0.5';
 
+// the HUD's specs (hud, a11y); "view" has the rest (the 3D view's layers, energy, the demo house, parity)
+const HUD_SPECS = ['**/hud.spec.ts', '**/a11y.spec.ts'];
+
 export default defineConfig({
   testDir: 'tests/e2e',
   timeout: 10 * 60_000,
@@ -24,6 +27,12 @@ export default defineConfig({
   // annotations on the PR
   reporter: CI ? [['list'], ['blob'], ['github']] : [['list']],
   outputDir: 'test-results',
+  // two halves of about the same time under software WebGL, one per CI shard (Playwright's --shard keeps whole files
+  // in order, which left one shard with most of the work). A new spec file lands in "view"; rebalance here if needed.
+  projects: [
+    { name: 'hud', testMatch: HUD_SPECS },
+    { name: 'view', testIgnore: HUD_SPECS },
+  ],
   use: {
     baseURL: `http://localhost:${PORT}/`,
     viewport: { width: 1280, height: 720 },
@@ -38,7 +47,9 @@ export default defineConfig({
   webServer: {
     command: `npx vite --port ${PORT} --strictPort`,
     url: `http://localhost:${PORT}/`,
-    reuseExistingServer: !CI,
+    // never someone else's server: a dev server already on the port may be another checkout's (another branch). With
+    // --strictPort a busy port fails the run instead; pick another with E2E_PORT, or E2E_REUSE_SERVER=1 to use yours.
+    reuseExistingServer: !CI && process.env.E2E_REUSE_SERVER === '1',
     timeout: 60_000,
   },
 });

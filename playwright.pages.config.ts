@@ -9,6 +9,7 @@ const PORT = Number(process.env.PAGES_PORT || 5193);
 export default defineConfig({
   ...base,
   testDir: 'tests/pages',
+  projects: [{ name: 'pages' }], // (not the e2e config's two halves)
   use: { ...base.use, baseURL: `http://localhost:${PORT}/jarvis/` },
   webServer: {
     command: `node tools/serve-pages.ts ${PORT}`,

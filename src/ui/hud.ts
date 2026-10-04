@@ -374,7 +374,8 @@ export class Hud {
     this.subject = s;
     for (const k of [...this.expanded]) if (k.startsWith('inspector:')) this.expanded.delete(k);
     if (s && this.small) this.open = [];
-    this.update('inspector', 'legend', 'dock', 'rail');
+    // (the status strip too: it makes room for the inspector, and must not wait for its next refresh to do so)
+    this.update('inspector', 'legend', 'dock', 'rail', 'status');
     if (!sameSubject(prev, s) || prev !== s) this.deps.onSelect(s, prev);
   }
   /** a history entry still there? (its owner may have gone, its node left the scene) */
