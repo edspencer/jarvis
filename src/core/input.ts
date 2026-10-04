@@ -43,6 +43,7 @@ export function bindInput({
   bus,
   orbit,
   pointer,
+  lastWasTouch = () => false,
 }: {
   canvas: HTMLCanvasElement;
   state: ViewState;
@@ -55,6 +56,8 @@ export function bindInput({
   bus: Bus;
   orbit: OrbitHolder;
   pointer: Pointer;
+  /** the last pointer down was a finger (touch.ts) */
+  lastWasTouch?: () => boolean;
 }): void {
   const { mouse } = pointer;
   // was the HUD control that has focus reached from the keyboard (Tab, F6) or clicked? A clicked one doesn't keep the
@@ -124,6 +127,8 @@ export function bindInput({
   const toNdc = (e: MouseEvent) => mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
 
   canvas.addEventListener('click', (e) => {
+    // a finger walking: touch.ts has handled the tap (no pointer lock on touch)
+    if (state.mode === 'walk' && ((e as PointerEvent).pointerType === 'touch' || lastWasTouch())) return;
     const locked = document.pointerLockElement === canvas;
     if (state.mode === 'walk' && !locked) {
       if (!hud.small) canvas.requestPointerLock?.();

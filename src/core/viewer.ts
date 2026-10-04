@@ -15,6 +15,7 @@ import { CENTRE_NDC, bindInput, type OrbitHolder, type Pointer } from './input';
 import { createPicker } from './inspect';
 import { createLoading, type Loading } from './loading';
 import { createMaterialStack } from './material-stack';
+import { bindTouch } from './touch';
 import { createModel } from './model';
 import { createPlayer, createWalker } from './player';
 import { createBus } from './plugin/events';
@@ -26,7 +27,7 @@ import { createStore } from './plugin/store';
 import type { Subject, ViewApi } from './plugin/types';
 import { createStage } from './stage';
 import { createSunlight } from './sunlight';
-import type { Keys, Mode, ViewState } from './types';
+import type { Analog, Keys, Mode, ViewState } from './types';
 import { P, setPlanUnit, toPlan } from './units';
 
 /** Load the site manifest, then start; a missing or invalid manifest is listed on the loading screen. */
@@ -79,6 +80,7 @@ function startSite(site: Site, loading: Loading): void {
   };
   const player = createPlayer(site.walk);
   const keys: Keys = {};
+  const analog: Analog = { x: 0, y: 0 }; // the touch thumb-stick
   const orbit: OrbitHolder = { controls: null, dragged: false };
   const orbitCam = { pos: site.overviewCamera ? P(...site.overviewCamera) : centre.clone(), target: centre.clone() };
   const pointer: Pointer = { mouse: new THREE.Vector2(), hoverT: 0, hoverAt: null };
@@ -142,6 +144,7 @@ function startSite(site: Site, loading: Loading): void {
     player,
     state,
     keys,
+    analog,
     camera,
     getCollider: () => model.collider,
     onCrouchChange: () => hud.update('status'),
@@ -186,7 +189,7 @@ function startSite(site: Site, loading: Loading): void {
     }
     document.getElementById('cross')?.classList.toggle('hidden', mode !== 'walk');
     hud.setHover(null, null);
-    hud.update('status', 'hover');
+    hud.update('status', 'hover', 'stick');
     bus.emit('mode', { mode });
   }
 
@@ -299,6 +302,10 @@ function startSite(site: Site, loading: Loading): void {
     locked: () => document.pointerLockElement === renderer.domElement,
     mode: () => state.mode,
     setMode,
+    stick: (x, y) => {
+      analog.x = x;
+      analog.y = y;
+    },
   });
   const hudEl = mountHud(hud);
 
@@ -342,7 +349,21 @@ function startSite(site: Site, loading: Loading): void {
     here: () => here,
   });
 
-  bindInput({ canvas: renderer.domElement, state, keys, player, keyReg, hud, hudEl, picker, bus, orbit, pointer });
+  const touch = bindTouch({ canvas: renderer.domElement, state, player, hud, picker, bus });
+  bindInput({
+    canvas: renderer.domElement,
+    state,
+    keys,
+    player,
+    keyReg,
+    hud,
+    hudEl,
+    picker,
+    bus,
+    orbit,
+    pointer,
+    lastWasTouch: touch.lastWasTouch,
+  });
   addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
@@ -417,6 +438,7 @@ function startSite(site: Site, loading: Loading): void {
       player,
       state,
       keys,
+      analog,
       teleport: walker.teleport,
       setMode,
       applyVisibility,
@@ -496,7 +518,7 @@ function startSite(site: Site, loading: Loading): void {
         state.cutaway = true;
         applyVisibility();
       }
-      if (url.has('overview') || hud.small) setMode('orbit'); // phones: overview only, for now
+      if (url.has('overview') || hud.small) setMode('orbit'); // phones start in the overview (the strip's switch walks)
       if (url.get('sun')) {
         const [h, dy] = url.get('sun')!.split(',').map(Number); // ?sun=13.5,172
         sunlight.setSun(h, dy);

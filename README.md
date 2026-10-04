@@ -39,6 +39,8 @@ Done:
   Assistant, lights, faults, equipment pins, wall plates, blueprints, sun
 - the HUD: Lit components (rail, dock, inspector, status strip, search, help generated from the key registry)
 - releases: a container image on GHCR and a static tarball, cut with changesets
+- touch: phones get bottom sheets and a tab bar; walking on a touch screen has a thumb-stick, drag to look and tap to
+  inspect (a phone opens in the overview; the strip's Walk switch walks)
 - the demo house, synthetic, which the tests, CI and the live demo run on
 
 Next:
@@ -48,7 +50,6 @@ Next:
 - a **voice assistant**: an optional assistant server (Claude Agent SDK) that talks, acts through Home Assistant under
   a server-enforced allow / confirm / deny policy, knows the site and drives the view; hold-to-talk first, a wake word
   and Home Assistant voice satellites later. Designed, not built: [docs/design/voice-assistant.md](docs/design/voice-assistant.md)
-- **mobile / touch walk controls**: on a phone the viewer opens in the overview only, for now
 
 ## Develop
 
@@ -286,6 +287,10 @@ lists only the keys of the plugins that are running.
 | F6 / Shift-F6    | move between the HUD's regions: the rail, the dock, the inspector, the status strip, the view              |
 
 T and V need Home Assistant, live or `?ha=mock`.
+
+On a touch screen: the strip's **Walk / Overview** switch changes the mode (a phone opens in the overview). Walking, the
+thumb-stick bottom left moves (push it further to go faster), a drag on the view looks around (with the stick at the
+same time), and a tap inspects what is under the finger. In the overview, drag to rotate, pinch to zoom, tap to inspect.
 
 ## URL parameters
 
