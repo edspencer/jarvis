@@ -102,11 +102,11 @@
       "place": {
         "src": "plate",
         "ref": "LV-S-A",
-        "plan": [6.94, 3.35, 1.2],
+        "plan": [6.94, 2.45, 1.2],
         "room": "Living room",
         "approx": false,
         "conf": "high",
-        "pos": [6.94, 1.2, -3.35],
+        "pos": [6.94, 1.2, -2.45],
         "centre": [3.5, 1.2, -2.5]
       },
       "health": {

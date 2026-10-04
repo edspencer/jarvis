@@ -99,6 +99,10 @@ const MATERIALS: Record<string, { c: Rgba; rough?: number; metal?: number; blend
   wood_walnut: { c: hex('#5c3f2a'), rough: 0.5 },
   wood_ash: { c: hex('#c9ab82'), rough: 0.6 },
   linen: { c: hex('#ece6da'), rough: 1 },
+  rug: { c: hex('#b4553c'), rough: 1 },
+  books_red: { c: hex('#9c3b32'), rough: 0.8 },
+  books_blue: { c: hex('#33557a'), rough: 0.8 },
+  art_print: { c: hex('#6d9bb8'), rough: 0.6 },
   black_steel: { c: hex('#1f1f21'), rough: 0.5, metal: 0.6 },
 };
 
@@ -362,7 +366,7 @@ const WALLS: Wall[] = [
   ]),
   ext('West wall (ground)', 0, 'W', [win('living_w', 1.8, 3.4), win('kitchen_w', 6.0, 7.4, 1.05)]),
   ext('East wall (ground)', 0, 'E', [win('stair_e', 5.0, 6.4, 1.4, 2.6)]),
-  int('Living / hall wall', 0, 'y', 7, 0, 5, [open(1.4, 3.1)]),
+  int('Living / hall wall', 0, 'y', 7, 0, 5, [open(2.6, 3.8)]),
   int('Kitchen / study wall', 0, 'y', 7, 5, 9),
   int('Living / kitchen wall', 0, 'x', 5, 0, 6.94, [open(2.4, 4.4)]),
   int('Hall / study wall', 0, 'x', 4, 7.06, 10.66, [door('study', 8.0, 8.9)]),
@@ -561,7 +565,7 @@ const PLATES: PlateSpec[] = [
     id: 'LV-S-A',
     room: 'living_room',
     kind: 'switch',
-    at: [7 - INT / 2, 3.35, 1.2],
+    at: [7 - INT / 2, 2.45, 1.2],
     normal: [-1, 0],
     positions: [
       {
@@ -646,7 +650,7 @@ function buildMain(): Model {
 
   // the site: lawn, front path, back terrace (one merged node)
   merged(m, 'Site', 'site', [
-    { name: 'Lawn', material: 'lawn', boxes: [[-14, -12, G.lawn - 0.1, 26, 22, G.lawn]], extras: { kind: 'ground' } },
+    { name: 'Lawn', material: 'lawn', boxes: [[-54, -52, G.lawn - 0.1, 66, 62, G.lawn]], extras: { kind: 'ground' } },
     { name: 'Front path', material: 'path_gravel', boxes: [[8.8, -8, G.lawn, 10.2, -EXT, -0.02]] },
     { name: 'Front step', material: 'terrace_stone', boxes: [[8.6, -1.2, G.lawn, 10.4, -EXT, 0]] },
     { name: 'Back terrace', material: 'terrace_stone', boxes: [[2.5, D + EXT, G.lawn, 9.5, 13.2, 0]] },
@@ -996,8 +1000,28 @@ function buildFurniture(): Model {
     ['wood_ash', [2.6, 2.8, 0, 2.65, 2.85, 0.36]],
   ]);
   item('Furn_media_unit', 'living_room', 'low media unit', [
-    ['wood_walnut', [6.45, 1.2, 0, 6.9, 3.2, 0.5]],
-    ['black_steel', [6.6, 1.6, 0.5, 6.66, 2.8, 1.2]],
+    ['wood_walnut', [6.45, 0.4, 0, 6.9, 2.3, 0.5]],
+    ['black_steel', [6.75, 0.75, 0.75, 6.8, 1.95, 1.45]],
+  ]);
+  item('Furn_rug', 'living_room', 'wool rug, 2 × 2.4 m', [['rug', [1.5, 1.1, 0, 3.5, 3.5, 0.012]]]);
+  item('Furn_bookcase', 'living_room', 'bookcase', [
+    ['wood_walnut', [4.7, 4.58, 0, 6.3, 4.94, 0.02]],
+    ['wood_walnut', [4.7, 4.58, 0, 4.73, 4.94, 2.0]],
+    ['wood_walnut', [6.27, 4.58, 0, 6.3, 4.94, 2.0]],
+    ['wood_walnut', [4.7, 4.92, 0, 6.3, 4.94, 2.0]],
+    ...[0.4, 0.8, 1.2, 1.6, 1.98].map((z): [string, number[]] => [
+      'wood_walnut',
+      [4.73, 4.58, z, 6.27, 4.92, z + 0.025],
+    ]),
+    ['books_red', [4.8, 4.66, 0.02, 5.3, 4.9, 0.32]],
+    ['books_blue', [5.4, 4.66, 0.425, 6.1, 4.9, 0.7]],
+    ['books_red', [4.76, 4.66, 0.825, 5.2, 4.9, 1.1]],
+    ['books_blue', [5.5, 4.66, 1.225, 6.2, 4.9, 1.48]],
+    ['books_red', [4.9, 4.66, 1.625, 5.6, 4.9, 1.88]],
+  ]);
+  item('Furn_picture', 'living_room', 'framed print', [
+    ['black_steel', [0.6, 4.9, 1.25, 2.0, 4.94, 2.05]],
+    ['art_print', [0.65, 4.895, 1.3, 1.95, 4.9, 2.0]],
   ]);
   // kitchen: table and four chairs (one merged node, with a parts file)
   item('Furn_dining_table', 'kitchen', 'dining table, 1.6 × 0.9 m', [
@@ -1515,7 +1539,7 @@ function manifest() {
     geo: { lat: 51.4779, lon: -0.0015, timeZone: 'Europe/London' },
     frame: { units: 'm', northAzimuth: 12 },
     centre: [6, 5],
-    overview: { camera: [24, -16, 18] },
+    overview: { camera: [18, -6, 19] },
     ground: { z: G.lawn - 0.02 },
     models: {
       main: { url: 'demo.glb', parts: 'demo.parts.json' },
