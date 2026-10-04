@@ -46,7 +46,7 @@ the date and time. Each convention adds a feature:
 | `fixture_id` extra on a light fixture                             | the lights plugin: fixtures glow with their Home Assistant state, T switches one |
 | a group with `layer: "plants"`                                    | plants drawn instanced, passable                                                 |
 | a group with `layer: "switches"`                                  | wall plates (L), with their wiring                                               |
-| `plugins.*` sections and their data files                         | Home Assistant, faults (V), pins (P), blueprints (B)                             |
+| `plugins.*` sections and their data files                         | Home Assistant, faults (V), pins (P), blueprints (B), energy (J)                 |
 
 `Door_` is only a naming habit (the demo uses it and the inspect panel drops the prefix): the door layer takes nodes by
 the `door_leaf` extra or `layer: "door"`, unless you give it a `match`.
@@ -251,7 +251,8 @@ them more useful:
 [`tools/make-demo-site.ts`](../../tools/make-demo-site.ts) (`npm run demo-site`) writes the whole demo site folder with
 [glTF Transform](https://gltf-transform.dev): it is an example of producing a compliant model from your own data (a
 BIM export, a floor-plan database, a parametric script). Its plan frame is metres, the origin the house's south-west
-corner at finished ground-floor level, and one helper converts plan to glTF:
+corner at finished ground-floor level, and one helper
+([`tools/demo-site/geometry.ts`](../../tools/demo-site/geometry.ts)) converts plan to glTF:
 
 ```ts
 export const toGltf = ([x, y, z]: V3): V3 => [x, z, -y];
@@ -428,7 +429,8 @@ uses are refused; validate-site lists them.
     "faults": { "devices": "ha_devices.json" },
     "pins": { "registry": "registry_pins.json", "sourceLink": "https://example.org/repo/blob/main/{file}" },
     "switches": {},
-    "blueprints": { "index": "blueprints/index.json", "default": "A-1" }
+    "blueprints": { "index": "blueprints/index.json", "default": "A-1" },
+    "energy": { "map": "energy.json" }
   }
 }
 ```
@@ -449,6 +451,8 @@ with Home Assistant even without their own section). Leave out what you don't ha
   `blueprints.index`: the demo's files show each format; the blueprint index is
   [model format §9](../model-format.md#9-blueprint-index). `source` in `faults` and `switches` is free text naming
   where the data came from.
+- `energy.map`: the meters and what each one feeds, for the Energy panel and energy mode (J); the format is
+  [plugins/energy.md](../plugins/energy.md).
 
 To add your own plugin, follow [Writing a plugin](writing-a-plugin.md); the API reference is [docs/plugins.md](../plugins.md).
 
@@ -481,6 +485,7 @@ It exits 1 on errors; warnings alone pass. The demo:
   · main model: demo.glb: 97 top-level nodes, 16 fixtures, 8 rooms, 7 merged keys, 120.0 × 114.0 m
   · model furniture: furniture.glb: 13 top-level nodes, 1 fixtures, 0 rooms, 1 merged keys, 10.0 × 8.6 m
   · blueprints: 2 sheets
+  · energy map: 20 meters (1 low confidence)
 ok
 ```
 
@@ -500,7 +505,7 @@ Once the schema passes, the rules:
 ```
 /tmp/broken-site/site.json
   error site.json: startView: there are only 7 viewpoints
-  error site.json: layers[1].key: X is one of the viewer's own keys (A B C D E G H L N P Q S T U V W X)
+  error site.json: layers[1].key: X is one of the viewer's own keys (A B C D E G H J L N P Q S T U V W X)
 2 errors
 ```
 
