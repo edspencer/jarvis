@@ -274,21 +274,6 @@
                 },
                 {
                   "plate": "ST-S-A"
-                },
-                {
-                  "room": "kitchen"
-                },
-                {
-                  "room": "living_room"
-                },
-                {
-                  "room": "hall"
-                },
-                {
-                  "room": "powder_room"
-                },
-                {
-                  "room": "study"
                 }
               ],
               "conf": "high",
@@ -745,9 +730,6 @@
                 },
                 {
                   "room": "garage"
-                },
-                {
-                  "room": "laundry"
                 }
               ],
               "conf": "high",

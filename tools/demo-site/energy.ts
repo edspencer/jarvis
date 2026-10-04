@@ -55,8 +55,10 @@ function circuitMeter(c: Circuit) {
   const on = onCircuit(c.id);
   const rooms = [
     ...new Set(
-      // (not switch plates: a switch on this circuit may be in another room than what it switches)
-      [...on.pins, ...on.plates.filter((p) => p.kind === 'outlet'), ...on.fixtures]
+      // the rooms of its equipment and outlets: not its lights (a room is tinted by the sum of the meters feeding
+      // it, so a lighting circuit across five rooms would paint all five with its whole load), nor its switch
+      // plates (a switch on this circuit may be in another room than what it switches)
+      [...on.pins.filter((p) => p.category !== 'fixture'), ...on.plates.filter((p) => p.kind === 'outlet')]
         .map((x) => x.room)
         .concat(c.rooms ?? [])
         .filter((r) => r !== 'exterior'),
