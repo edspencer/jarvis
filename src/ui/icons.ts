@@ -44,6 +44,9 @@ export const ICONS: Record<string, string> = {
   room: s('<path d="M3 21V8l9-5 9 5v13M3 21h18M9 21v-7h6v7"/>'),
   camera: s('<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>'),
   pinned: s('<path d="M9 4h6l-1 6 3 3H7l3-3zM12 13v8"/>'),
+  mic: s('<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0013 0M12 17.5V21M8.5 21h7"/>'),
+  stop: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg>',
+  send: s('<path d="M4 12l16-8-6 16-2.5-6.5z"/><path d="M11.5 13.5L20 4"/>'),
 };
 
 /** the SVG for an icon reference (a name or an SVG string) */

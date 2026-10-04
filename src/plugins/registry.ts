@@ -26,6 +26,7 @@ export const BUILTIN_PLUGINS: Record<string, BuiltinPlugin> = {
   pins: { keys: ['P'], load: () => import('./pins/index.ts') },
   switches: { keys: ['L'], autoStart: true, load: () => import('./switches/index.ts') },
   energy: { keys: ['J'], load: () => import('./energy/index.ts') },
+  assistant: { keys: ['M'], load: () => import('./assistant/index.ts') },
 };
 
 /** the built-in plugins to download: those the site enables and the autoStart ones, in registry order */

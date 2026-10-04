@@ -295,6 +295,14 @@ export function checkRules(m: SiteManifest): ValidationResult {
       path: 'plugins["home-assistant"].url',
       message: 'no URL: only ?ha=mock will work',
     });
+  // the microphone needs an https page, and an https page can't open a plain ws:// socket (mixed content)
+  const srv = p.assistant?.server;
+  if (srv && /^http:\/\//i.test(srv) && !/^http:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i.test(srv))
+    warnings.push({
+      path: 'plugins.assistant.server',
+      message:
+        'plain http: a page served over https (which the microphone needs) can\'t reach it; use https, or the same origin ("/assistant")',
+    });
 
   // external plugins' declared keys: free of the core's, the built-in plugins' and each other's (the site's layers are
   // checked against them above, through reservedKeys)

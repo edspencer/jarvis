@@ -1798,6 +1798,7 @@ function manifest() {
       switches: { source: 'tools/make-demo-site.ts' },
       blueprints: { index: 'blueprints/index.json', default: 'A-1' },
       energy: { map: 'energy.json' },
+      // (no assistant: it needs a server of its own, docs/assistant.md; the e2e test adds the section)
     },
   };
 }

@@ -7,6 +7,9 @@
 // is this page's origin, so no app has to be registered in HA. The tokens live in this browser's localStorage
 // (TOKENS_KEY), as the HA frontend keeps its own; nothing is baked into the page. HA must list the viewer's origin in
 // http: cors_allowed_origins, or the token exchange and the websocket fail.
+// accessToken() hands the current access token (refreshed when it has expired) to other plugins through the
+// `home-assistant.auth` service: the assistant logs in to its server with it. Nothing is handed out in mock or off
+// mode.
 // ?ha=mock replays a fake state stream instead (every fixture without a mapped entity gets a made-up one per switched
 // group), for testing without a login; ?hamock=<seed> varies it, ?hamock=static stops the changes. ?ha=off never
 // connects, even with stored tokens.
@@ -18,6 +21,7 @@ import {
   createConnection,
   getAuth,
   subscribeEntities,
+  type Auth,
   type AuthData,
   type Connection,
 } from 'home-assistant-js-websocket';
@@ -233,15 +237,39 @@ export function createConnector(d: ConnectorDeps) {
     return String((err as Error)?.message || err);
   }
 
-  async function connect(): Promise<void> {
-    if (c.mode !== 'live' || c.conn) return;
+  /** the login (live mode, once connected), for accessToken() */
+  let auth: Auth | null = null;
+  /** a connect() under way, which accessToken() waits for */
+  let connecting: Promise<void> | null = null;
+
+  /** the person's current access token (refreshed if it has expired), or null: mock / off mode, not logged in */
+  async function accessToken(): Promise<string | null> {
+    if (c.mode !== 'live') return null;
+    if (connecting) await connecting.catch(() => {});
+    if (!auth) return null;
+    try {
+      if (auth.expired) await auth.refreshAccessToken();
+      return auth.accessToken;
+    } catch {
+      return null;
+    }
+  }
+
+  function connect(): Promise<void> {
+    if (c.mode !== 'live' || c.conn) return Promise.resolve();
+    if (connecting) return connecting;
+    connecting = doConnect().finally(() => (connecting = null));
+    return connecting;
+  }
+
+  async function doConnect(): Promise<void> {
     if (!HASS_URL) {
       setStatus('error', 'no Home Assistant URL in the site manifest');
       return;
     }
     setStatus('connecting');
     try {
-      const auth = await getAuth({ hassUrl: HASS_URL, saveTokens, loadTokens }); // may navigate away to HA's login
+      const a = await getAuth({ hassUrl: HASS_URL, saveTokens, loadTokens }); // may navigate away to HA's login
       if (disposed) return;
       const q2 = new URLSearchParams(location.search);
       if (q2.has('auth_callback')) {
@@ -249,10 +277,11 @@ export function createConnector(d: ConnectorDeps) {
         for (const k of ['auth_callback', 'code', 'state']) q2.delete(k);
         history.replaceState(null, '', location.pathname + (q2.toString() ? `?${q2}` : '') + location.hash);
       }
-      if (auth.expired) await auth.refreshAccessToken();
-      const conn = await createConnection({ auth });
+      if (a.expired) await a.refreshAccessToken();
+      const conn = await createConnection({ auth: a });
       if (disposed) return conn.close();
       c.conn = conn;
+      auth = a;
       conn.addEventListener('ready', () => setStatus('live')); // reconnected (the library retries)
       conn.addEventListener('disconnected', () => setStatus('connecting', 'connection lost, retrying'));
       conn.addEventListener('reconnect-error', (_c, e) => {
@@ -267,6 +296,7 @@ export function createConnector(d: ConnectorDeps) {
     } catch (err) {
       if (err === ERR_INVALID_AUTH) saveTokens(null);
       c.conn = null;
+      auth = null;
       setStatus('error', why(err));
       console.warn('Home Assistant:', err);
     }
@@ -277,6 +307,7 @@ export function createConnector(d: ConnectorDeps) {
       c.conn.close();
       c.conn = null;
     }
+    auth = null;
     if (forget) saveTokens(null);
     onEntities({});
     setStatus('disconnected');
@@ -487,6 +518,7 @@ export function createConnector(d: ConnectorDeps) {
   }
 
   return Object.assign(c, {
+    accessToken,
     dispose,
     readHistory,
     start,

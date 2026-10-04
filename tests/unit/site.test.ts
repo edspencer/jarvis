@@ -66,6 +66,7 @@ const FULL: SiteManifest = {
     switches: { boxIdPattern: '\\b([A-Z]+-\\d+)\\b', source: 'plates/{file}.yaml' },
     blueprints: { index: 'bp/index.json', default: 'A-1' },
     energy: { map: 'e.json' },
+    assistant: { server: 'https://assistant.example.org/assistant', tts: false },
   },
   pluginOrigins: ['https://plugins.example.org'],
 };

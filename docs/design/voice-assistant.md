@@ -1,7 +1,8 @@
 # Voice assistant (proposal)
 
-Status: **investigation and design proposal**; nothing here is implemented. Companion to `hud-panels.md` (the panel
-standard and plugin UI API this builds on).
+Status: **investigation and design proposal**. Companion to `hud-panels.md` (the panel standard and plugin UI API
+this builds on). A v1 now exists: [`../assistant.md`](../assistant.md) documents what was built, which differs
+from this proposal in places.
 
 Goal: a house assistant that can replace a commercial smart speaker. One conversation with an agent that
 
@@ -107,6 +108,9 @@ WebSocket keeps the protocol text-only and lets the transcription endpoint be sw
   websocket, or `GET /api/` with the bearer token) and learns **who** is talking (HA user id and name, admin or not).
   No second user database; per-person memory and per-person policy come for free (§9). The token is used only to
   identify the user and is not stored.
+  v1 does this, and adds access codes for devices without a Home Assistant login (a wall tablet, a satellite bridge);
+  either way the surface comes from the server's configuration, not the client: see
+  [the assistant's authentication](../assistant.md#authentication).
 - The server itself acts on HA with **its own long-lived token for a dedicated, non-admin HA user** (e.g.
   "JARVIS assistant"), so every action shows up in HA's logbook under that user, and revoking it is one click.
 - The model credential lives only in the server's environment (§4).
@@ -250,6 +254,8 @@ All tools live in the in-process MCP server `house`. HA access is the assistant'
 
 The site supplies `assistant-policy.yaml`. Rules match on domain, service, entity id (globs), device class and
 area; the **first matching rule wins** and anything unmatched is **denied**. Data bounds clamp or refuse values.
+The sketch below predates v1, whose format differs in details (bounds refuse and never clamp; every allow and confirm
+rule names its services, and `'*'` is for deny rules only): see [the policy file](../assistant.md#the-policy-file).
 
 ```yaml
 # site/assistant-policy.yaml (sketch)

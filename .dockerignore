@@ -8,3 +8,12 @@ playwright-report
 .github
 docs/design/img
 *.log
+# the optional assistant server is its own service, not part of the viewer image; only its protocol types come in
+# (the assistant plugin and its unit test import them, and the build type-checks them). The re-includes step down one
+# folder at a time, which every Docker builder reads the same way.
+server/*
+!server/src
+server/src/*
+!server/src/core
+server/src/core/*
+!server/src/core/protocol.ts

@@ -437,6 +437,24 @@
               "description": "The energy map (schema/energy.schema.json): meters, their power and energy entities, and what they feed in the model."
             }
           }
+        },
+        "assistant": {
+          "type": "object",
+          "required": ["server"],
+          "additionalProperties": false,
+          "description": "The voice assistant (a dock panel, hold M to talk) through its companion server; without this section there is no assistant. People log in to the server with their Home Assistant login or an access code (docs/assistant.md). With no server reachable the plugin stays quiet: its status item says \"Assistant offline\".",
+          "properties": {
+            "server": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^(https?://|/|\\./|\\.\\./)",
+              "description": "The assistant server's base URL, relative to the page. Use a same-origin path through the site's reverse proxy: \"/assistant\" (docs/assistant.md). Cross-origin isn't supported in v1: the server speaks plain HTTP and sends no CORS headers. The WebSocket is <server>/ws (http becomes ws); transcription is POST <server>/transcribe."
+            },
+            "tts": {
+              "type": "boolean",
+              "description": "Speak replies with the browser's speech synthesis (default true); the panel's toggle overrides it per browser."
+            }
+          }
         }
       },
       "description": "Each optional plugin's configuration, keyed by plugin id; a plugin that isn't listed doesn't start (sun and switches start on their own). A section that isn't a built-in plugin's and has a module loads that plugin from the site (docs/plugins.md, External plugins)."

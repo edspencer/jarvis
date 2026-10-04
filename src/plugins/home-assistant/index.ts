@@ -6,7 +6,7 @@
 import type { HomeAssistantConfig, LightsConfig, Site } from '../../site';
 import { definePlugin, type Blocks, type InlineSpan, type Subject, type Tone } from '../../plugin-api';
 import { createConnector } from './connector';
-import type { Control, ConnectorStatusLabel } from './types';
+import type { Control, ConnectorStatusLabel, HomeAssistantAuth } from './types';
 
 const LABEL: ConnectorStatusLabel = {
   disconnected: 'not connected',
@@ -72,6 +72,8 @@ export default definePlugin<HAConfig>({
     ctx.events.on('model', ({ id }) => {
       if (id !== 'main') c.fixturesAdded();
     });
+    // the person's login for other plugins (the assistant's server checks it): docs/plugins.md
+    ctx.services.provide<HomeAssistantAuth>('home-assistant.auth', { accessToken: () => c.accessToken() });
 
     // ------------------------------------------------------------------ status item and the connector modal
     let modal: { close(): void; refresh(): void } | null = null;
