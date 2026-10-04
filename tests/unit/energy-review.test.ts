@@ -158,3 +158,15 @@ describe('review: edge cases', () => {
     expect(fmtW(999.4)).toBe('999 W');
   });
 });
+
+describe('review: the scale check uses the defaults', () => {
+  it('idle above the default max is an error', async () => {
+    const { checkEnergyMap } = await import('../../src/plugins/energy/map');
+    const r = checkEnergyMap({
+      jarvis: 'jarvis-energy/1',
+      scale: { idle: 6000 },
+      meters: [{ id: 'm', power: 'sensor.m' }],
+    });
+    expect(r.ok).toBe(false);
+  });
+});

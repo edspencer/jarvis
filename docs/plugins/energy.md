@@ -283,3 +283,5 @@ recomputes at most once a second, and the HUD re-renders only what changed.
   `energy.today` entity: today's kilowatt-hours are integrated only from a meter's own power history, and only when
   that history reaches back to midnight.
 - No net metering (grid import and export) and no costs or tariffs.
+- Energy mode and the blueprint overlay's model fade both change the model's materials, and they don't know about each
+  other: turn one off before using the other, or the house can stay faded until the page is reloaded.

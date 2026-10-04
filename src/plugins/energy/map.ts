@@ -132,7 +132,7 @@ export function checkEnergyMap(value: unknown): ValidationResult {
       if (x.children) walk(x.children, `${p}.children`, x);
     });
   walk(m.meters, 'meters', null);
-  if (m.scale?.idle && m.scale.max && m.scale.idle >= m.scale.max)
+  if ((m.scale?.idle ?? 5) >= (m.scale?.max ?? 5000))
     errors.push({ path: 'scale.idle', message: 'must be below scale.max' });
   return { ok: !errors.length, errors, warnings };
 }

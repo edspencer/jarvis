@@ -186,7 +186,9 @@ export default definePlugin<EnergyConfig>({
       const kids = m.children.filter((c) => c.kind === m.kind);
       if (!kids.length) return { s: [], pts: [] };
       const all = await Promise.all(kids.map((c) => seriesOf(c, from, to)));
-      return { s: sumSeries(all.map((a) => a.s)), pts: [] };
+      // a child with no history at all is left out rather than blanking the whole day
+      const known = all.map((a) => a.s).filter((x) => x.some((v) => v !== null));
+      return { s: known.length ? sumSeries(known) : [], pts: [] };
     };
     function wantPast(m: Meter): Past | null {
       const p = past.get(m.id);
@@ -323,9 +325,15 @@ export default definePlugin<EnergyConfig>({
     });
 
     // ------------------------------------------------------------------ the Energy panel
-    const unitOf = (w: number | null) => (w !== null && Math.abs(w) >= 1000 ? 'kW' : 'W');
-    const meterValue = (w: number | null) =>
-      w === null ? '—' : Math.abs(w) >= 1000 ? (w / 1000).toFixed(Math.abs(w) < 10000 ? 2 : 1) : Math.round(w);
+    // round first, then choose W or kW (999.6 W is 1.00 kW; -0.3 W of CT noise is 0 W)
+    const unitOf = (w: number | null) => (w !== null && Math.round(Math.abs(w)) >= 1000 ? 'kW' : 'W');
+    const meterValue = (w: number | null) => {
+      if (w === null) return '—';
+      const a = Math.round(Math.abs(w));
+      if (a < 1000) return Math.round(w) || 0;
+      const kw = w / 1000;
+      return Math.abs(kw) < 9.995 ? kw.toFixed(2) : kw.toFixed(1);
+    };
     const houseSpark = () => {
       const roots = tree.roots.filter((m) => m.kind === 'load');
       const ps = roots.map((m) => wantPast(m));
@@ -580,7 +588,8 @@ export default definePlugin<EnergyConfig>({
     let dirty = false;
     store.onChange(() => (dirty = true), tree.entityIds);
     const tick = setInterval(() => {
-      if (!dirty) return;
+      // energy mode: ghost what changed meanwhile (the lights preparing a fixture, a model coming in)
+      if (!dirty) return void (es.on && es.show(tint()));
       dirty = false;
       rs = compute(tree, get);
       tot = totals(tree, rs);
