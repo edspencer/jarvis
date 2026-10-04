@@ -6,6 +6,7 @@ sites/
 .env*
 test-results/
 playwright-report/
+pages/
 docs/design/img/
 docs/design/mockup/bg-*.jpg
 !examples/**/*.glb
