@@ -93,12 +93,12 @@ export class JvRail extends RegionElement {
         font-weight: 700;
         line-height: 16px;
         text-align: center;
-        background: #2c3c55;
+        background: var(--jv-badge-fill);
         color: var(--jv-text);
       }
       .badge.tone-bad {
-        /* darker than --jv-bad: white 10px text on it needs 4.5:1 (#ef5a4f gives 3.4, this 5.2) */
-        background: #c9372c;
+        /* not --jv-bad: white 10px text on that is 3.4:1 */
+        background: var(--jv-bad-fill);
         color: #fff;
       }
       .badge.tone-warn {

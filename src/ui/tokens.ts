@@ -15,6 +15,9 @@ export const TOKENS = {
   ok: '#3fcf6a',
   warn: '#f0b43c',
   bad: '#ef5a4f',
+  // fills under white or text-colour labels (count badges): darker than the status colour, for 4.5:1 contrast
+  badFill: '#c9372c',
+  badgeFill: '#2c3c55',
   info: '#6aa8ff',
   off: '#7a8494',
 } as const;
