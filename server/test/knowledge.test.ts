@@ -45,6 +45,13 @@ describe('loadSite', () => {
       'kitchen.pendant.1',
       'kitchen.pendant.2',
       'kitchen.pendant.3',
+      'kitchen.chandelier',
+      'kitchen.can.1',
+      'kitchen.can.2',
+      'kitchen.can.3',
+      'kitchen.can.4',
+      'kitchen.undercab.1',
+      'kitchen.undercab.2',
     ]);
   });
 
@@ -60,7 +67,7 @@ describe('loadSite', () => {
   });
 
   it('reads the registry, devices and controls', () => {
-    expect(site.registry).toHaveLength(12);
+    expect(site.registry).toHaveLength(19);
     expect(site.registry.find((r) => r.id === 'plumb.water-heater')).toMatchObject({
       name: 'Water heater',
       room: 'garage',

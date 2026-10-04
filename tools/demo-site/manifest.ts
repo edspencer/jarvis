@@ -25,7 +25,7 @@ export function manifest() {
     ],
     viewpoints: [
       { name: 'Front of the house', at: [9.4, -14, G.lawn], yaw: 0 },
-      { name: 'Living room', at: [3.6, 4.5, 0], yaw: 180 },
+      { name: 'Living room', at: [2.0, 4.6, 0], yaw: 225 },
       { name: 'Kitchen', at: [6.2, 5.6, 0], yaw: 45 },
       { name: 'Foot of the stair', at: [11.3, 1.2, 0], yaw: 0 },
       { name: 'Landing', at: [10.2, 4.6, UP], yaw: 90 },
