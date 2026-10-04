@@ -150,13 +150,13 @@ export function createStore(): Store & { scoped(owner: string, collect: (d: Disp
   }
   const list = (ids: string | string[]) => [...new Set(([] as string[]).concat(ids))];
 
-  function refusal(ids: string | string[], action: StoreAction): string | null {
+  function refusal(ids: string | string[], action: StoreAction, data?: Record<string, unknown>): string | null {
     const all = list(ids);
     if (!all.length) return 'no entity';
     for (const [o, part] of split(all)) {
       const c = conns.get(o);
       if (!c) return `${part.join(', ')}: no connector has ${part.length > 1 ? 'these' : 'this'}`;
-      const r = c.spec.refusal?.(part, action);
+      const r = c.spec.refusal?.(part, action, data);
       if (r) return r;
     }
     return null;
@@ -166,7 +166,7 @@ export function createStore(): Store & { scoped(owner: string, collect: (d: Disp
     const all = list(ids);
     // every part is checked (unknown entities, each connector's refusal) before any part is sent, so a call across
     // connectors is never left half done by a refusal
-    const r = refusal(all, action);
+    const r = refusal(all, action, data);
     if (r) throw new Error(r);
     for (const [o, part] of split(all)) await conns.get(o)!.spec.call(part, action, data);
   }

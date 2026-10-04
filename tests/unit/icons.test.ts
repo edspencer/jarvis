@@ -90,6 +90,12 @@ describe("a plugin's SVG icon", () => {
     expect(iconSvg('<svg><path d="M0 0"></svg>')).toBe(ICONS.cube);
   });
 
+  it('falls back to the cube when the sanitiser drops the whole icon (an <svg> in another namespace)', () => {
+    const odd = '<svg xmlns="http://www.w3.org/1999/xhtml"><path d="M0 0"/></svg>';
+    expect(sanitizeSvg(odd)).toBeNull();
+    expect(iconSvg(odd)).toBe(ICONS.cube);
+  });
+
   it('names still resolve, unknown names give the cube', () => {
     expect(iconSvg('search')).toBe(ICONS.search);
     expect(iconSvg('nope')).toBe(ICONS.cube);

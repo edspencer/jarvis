@@ -50,7 +50,7 @@ export const ICONS: Record<string, string> = {
 export function iconSvg(ref: string | undefined): string {
   if (!ref) return '';
   // a plugin's own SVG, rebuilt from an allowlist (it goes into the page as markup)
-  if (ref.trimStart().startsWith('<')) return sanitizeSvg(ref) ?? ICONS.cube;
+  if (ref.trimStart().startsWith('<')) return sanitizeSvg(ref) || ICONS.cube;
   return ICONS[ref] || ICONS.cube;
 }
 
@@ -136,7 +136,8 @@ export function sanitizeSvg(src: string): string | null {
   try {
     const doc = new DOMParser().parseFromString(src, 'image/svg+xml');
     const root = doc.documentElement;
-    if (!doc.getElementsByTagName('parsererror').length && root.localName === 'svg') out = write(root, true);
+    // (write() gives '' for a root it drops, e.g. an <svg> in another namespace)
+    if (!doc.getElementsByTagName('parsererror').length && root.localName === 'svg') out = write(root, true) || null;
   } catch {
     out = null;
   }
