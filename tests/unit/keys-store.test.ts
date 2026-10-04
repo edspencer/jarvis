@@ -45,13 +45,37 @@ describe('the key registry', () => {
     expect(r.conflicts).toHaveLength(1);
   });
 
-  it('help-only entries (no run) never conflict and never run', () => {
+  it('help-only entries from a plugin never conflict and never run', () => {
     const r = createKeyRegistry({ warn: () => {} });
-    r.add('core', 'Core', { code: 'KeyW', label: 'move' });
+    r.add('docs', 'Docs', { code: 'KeyJ', label: 'listed' });
     const f = vi.fn();
-    r.add('x', 'X', { code: 'KeyW', label: 'w', run: f });
+    r.add('x', 'X', { code: 'KeyJ', label: 'j', run: f });
     expect(r.conflicts).toEqual([]);
     expect(r.list()).toHaveLength(2);
+  });
+
+  it('a key with no Shift binding of its own still works while Shift is held (running)', () => {
+    const r = createKeyRegistry();
+    const x = vi.fn(),
+      p = vi.fn(),
+      sp = vi.fn();
+    r.add('core', 'Core', { code: 'KeyX', label: 'cutaway', run: x });
+    r.add('pins', 'Pins', { code: 'KeyP', label: 'pins', run: p });
+    r.add('pins', 'Pins', { code: 'KeyP', shift: true, label: 'through walls', run: sp });
+    r.handle(ev('KeyX', { shiftKey: true }));
+    r.handle(ev('KeyP', { shiftKey: true }));
+    expect(x).toHaveBeenCalledOnce();
+    expect(sp).toHaveBeenCalledOnce();
+    expect(p).not.toHaveBeenCalled(); // its Shift variant wins
+  });
+
+  it("keeps the core's movement keys: a plugin can't bind them", () => {
+    const warn = vi.fn();
+    const r = createKeyRegistry({ warn });
+    r.add('core', 'Core', { code: 'KeyW', label: 'move' });
+    r.add('x', 'X', { code: 'KeyW', label: 'mine', run: () => {} });
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/W \(mine, x\) is already core's/));
+    expect(r.match(ev('KeyW'))).toBeNull();
   });
 
   it('honours when()', () => {

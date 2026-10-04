@@ -80,6 +80,9 @@ export function installCore({
     },
   ])
     ctx.keys.add({ ...k, group: MOVE });
+  // the rest of the movement keys: held, read by the walker; listed so no plugin takes them
+  for (const code of ['KeyA', 'KeyS', 'KeyD', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'])
+    ctx.keys.add({ code, label: 'movement', group: MOVE, hidden: true });
   ctx.keys.add({
     code: 'Space',
     label: 'Jump (walking) · rise (ghost)',

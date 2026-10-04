@@ -142,4 +142,30 @@ describe('the plugin host', () => {
     host.dispose('base'); // twice is harmless
     expect(log).toHaveLength(4);
   });
+
+  it('a plugin disposed while it is still starting is cleaned up when its setup finishes', async () => {
+    const { host } = makeHost();
+    const log: string[] = [];
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const started = host.start([
+      {
+        id: 'slow',
+        name: 'Slow',
+        async setup(ctx) {
+          ctx.own(() => log.push('early'));
+          await gate;
+          ctx.own(() => log.push('late')); // registered after the dispose: undone at once
+          return { dispose: () => log.push('instance') };
+        },
+      },
+    ]);
+    await tick();
+    host.dispose('slow');
+    expect(log).toEqual(['early']);
+    release();
+    await started;
+    expect(log).toEqual(['early', 'late', 'instance']);
+    expect(host.running('slow')).toBe(false);
+  });
 });

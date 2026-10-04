@@ -252,11 +252,39 @@ export default definePlugin<HAConfig>({
       },
     });
 
-    // the console hook; setWallhack is the faults plugin's overlay now (kept for scripts written against the prototype)
-    Object.defineProperty(c, 'wallhack', { get: () => !!ctx.services.get<{ on: boolean }>('faults')?.on });
+    // The console hook: read-only, so the allow-list's inputs (controls, map, policy, mode) can't be changed from it,
+    // and no send(). The mock's test handles (failNext, set, calls) exist only with ?ha=mock. setWallhack is the faults
+    // plugin's overlay now (kept for scripts written against the prototype).
     ctx.expose(
       'ha',
-      Object.assign(c, {
+      Object.freeze({
+        get mode() {
+          return c.mode;
+        },
+        get status() {
+          return c.status;
+        },
+        get error() {
+          return c.error;
+        },
+        get entities() {
+          return c.entities;
+        },
+        get mock() {
+          return c.mock;
+        },
+        get hassUrl() {
+          return c.hassUrl;
+        },
+        /** the entities send() may call, and the services each may have (a copy) */
+        get allowed() {
+          return Object.fromEntries([...c.allow].map(([e, s]) => [e, [...s]]));
+        },
+        connect: () => c.connect(),
+        disconnect: (forget = false) => c.disconnect(forget),
+        get wallhack() {
+          return !!ctx.services.get<{ on: boolean }>('faults')?.on;
+        },
         setWallhack: (on: boolean) => ctx.services.get<{ setOn(v: boolean): void }>('faults')?.setOn(on),
       }),
     );

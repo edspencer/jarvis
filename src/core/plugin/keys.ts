@@ -48,7 +48,8 @@ export function createKeyRegistry(
   const conflicts: string[] = [];
 
   function add(owner: string, ownerName: string, k: KeyBinding): Disposable {
-    const clash = k.run && entries.find((e) => e.run && sig(e) === sig(k));
+    // a clash: the same key already runs something, or the core holds it for movement (help-only entries)
+    const clash = k.run && entries.find((e) => (e.run || e.owner === 'core') && sig(e) === sig(k));
     if (clash) {
       const m = `keys: ${keyName(k)} (${k.label}, ${owner}) is already ${clash.owner}'s (${clash.label}); ignored`;
       conflicts.push(m);
@@ -72,12 +73,15 @@ export function createKeyRegistry(
 
   function match(e: Pick<KeyboardEvent, 'code' | 'shiftKey' | 'altKey' | 'ctrlKey' | 'metaKey'>): KeyEntry | null {
     if (e.ctrlKey || e.metaKey) return null; // the browser's shortcuts
-    for (const k of entries) {
-      if (!k.run || k.code !== e.code || !!k.shift !== e.shiftKey || !!k.alt !== e.altKey) continue;
-      if (k.when && !k.when()) continue;
-      return k;
-    }
-    return null;
+    const find = (shift: boolean) =>
+      entries.find(
+        (k) => k.run && k.code === e.code && !!k.shift === shift && !!k.alt === e.altKey && (!k.when || k.when()),
+      ) ?? null;
+    const exact = find(e.shiftKey);
+    if (exact || !e.shiftKey) return exact;
+    // Shift held to run: a key with no Shift binding of its own still works (Space jumps, X cuts away)
+    const shifted = entries.some((k) => k.code === e.code && k.shift && !!k.alt === e.altKey);
+    return shifted ? null : find(false);
   }
 
   function handle(e: KeyboardEvent): boolean {

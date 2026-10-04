@@ -131,9 +131,20 @@ export function createPluginHost(deps: HostDeps): PluginHost {
     }
     r.state = 'starting';
     try {
-      const ctx = deps.context(d, (x) => r.disposers.push(x));
+      // registrations after the plugin was stopped (disposed while still starting) are undone at once
+      const ctx = deps.context(d, (x) =>
+        r.state === 'starting' || r.state === 'running' ? r.disposers.push(x) : x.dispose(),
+      );
       r.instance = await d.setup(ctx);
-      if (r.state !== 'starting') return false; // disposed while starting
+      if (r.state !== 'starting') {
+        // disposed while starting: its own dispose runs now that it exists
+        try {
+          r.instance?.dispose?.();
+        } catch (err) {
+          console.error(`plugin ${d.id}: dispose failed`, err);
+        }
+        return false;
+      }
       r.state = 'running';
       return true;
     } catch (err) {
