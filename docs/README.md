@@ -20,7 +20,7 @@ Start with the [README](../README.md) (what JARVIS is, the live demo, running it
   events), [external plugins](plugins.md#external-plugins) and their trust model, with a second example,
   [`examples/irrigation.ts`](examples/irrigation.ts)
 - [Deploying](deploy.md): the container image, the release tarball behind any static server, Home Assistant and CORS
-- [The voice assistant](assistant.md) (draft, not released): the `jarvis-assistant` server, model credentials, the
+- [The voice assistant](assistant.md) (experimental): the `jarvis-assistant` server, model credentials, the
   Home Assistant policy file, the browser plugin
 - [Security](../SECURITY.md): what the Home Assistant allow-list does and doesn't protect, and how to report an issue
 

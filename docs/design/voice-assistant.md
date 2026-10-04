@@ -1,7 +1,7 @@
 # Voice assistant (proposal)
 
 Status: **investigation and design proposal**. Companion to `hud-panels.md` (the panel standard and plugin UI API
-this builds on). A draft v1 now exists: [`../assistant.md`](../assistant.md) documents what was built, which differs
+this builds on). A v1 now exists: [`../assistant.md`](../assistant.md) documents what was built, which differs
 from this proposal in places.
 
 Goal: a house assistant that can replace a commercial smart speaker. One conversation with an agent that

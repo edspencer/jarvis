@@ -358,5 +358,5 @@ call, and calls exactly that.
   transcript), a hold-to-talk key (`keys.add({ …, run, release })`), a status item and `ctx.confirm` for
   confirmations. Its viewer commands map onto `view.flyTo(subject)`, `inspector.open(subject)`, the chips (`status`
   toggles, or their keys) and `search` providers to resolve names. Acting on the building goes through its own
-  server-side policy, not the browser's store. A draft v1 exists (`src/plugins/assistant/`, `server/`): see
+  server-side policy, not the browser's store. A v1 exists (`src/plugins/assistant/`, `server/`): see
   [assistant.md](assistant.md).

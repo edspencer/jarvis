@@ -1,6 +1,6 @@
 # jarvis-assistant
 
-The optional voice assistant server for JARVIS (**draft v1**, not released): one Claude Agent SDK session behind one
+The optional voice assistant server for JARVIS (**v1, experimental**; not in the container image): one Claude Agent SDK session behind one
 WebSocket, acting on Home Assistant only through a server-enforced policy (allow / confirm / deny). The browser's
 assistant plugin talks to it; the static viewer works without it.
 

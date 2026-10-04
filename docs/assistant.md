@@ -1,7 +1,8 @@
 # The voice assistant
 
-> **Status: draft.** This is v1 for review, not a release: nothing here is in a published image or tarball yet, and
-> any of it may change. Most open questions in the design
+> **Status: experimental (v1).** The plugin ships with the viewer, off unless a site enables it; the server is a
+> separate package in `server/`, not in the container image. Any of it may change between minor releases. Several open
+> questions in the design
 > ([`design/voice-assistant.md` §11](design/voice-assistant.md#11-open-questions)) are still undecided, so some
 > defaults below are **placeholders**: the contents of the example policy are there to make it run, not
 > recommendations. The model default is decided ([Models](#models)). See [Not in v1](#not-in-v1-and-open-questions).
