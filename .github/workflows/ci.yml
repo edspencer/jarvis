@@ -118,7 +118,8 @@ jobs:
   e2e:
     name: E2E (Playwright, demo site, software WebGL)
     needs: e2e-shard
-    if: ${{ always() }}
+    # runs when a shard failed too (to fail this check and merge the reports), not when the run was cancelled
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

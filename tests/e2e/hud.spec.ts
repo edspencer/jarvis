@@ -222,6 +222,25 @@ test("the HUD's components work as custom elements for a plugin's own UI (<jv-me
   await page.evaluate(() => document.getElementById('custom-ui')!.remove());
 });
 
+test('on a phone (390 × 844) the rail is a bottom bar, about 52 px tall and the width of the screen', async () => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const bar = page.locator('jv-rail [role="toolbar"]');
+  await expect
+    .poll(
+      async () => {
+        const b = await bar.boundingBox();
+        return b && { h: Math.round(b.height), wide: b.width > 390 - 40 };
+      },
+      { timeout: 30_000 },
+    )
+    .toMatchObject({ h: 52, wide: true });
+  const b = (await bar.boundingBox())!;
+  expect(844 - (b.y + b.height), 'at the bottom').toBeLessThan(24);
+  expect(b.x, 'from the left edge').toBeLessThan(20);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await expect.poll(async () => Math.round((await bar.boundingBox())?.height ?? 0)).toBeGreaterThan(200);
+});
+
 test('no console errors after all that', () => {
   expect(errors).toEqual([]);
 });
