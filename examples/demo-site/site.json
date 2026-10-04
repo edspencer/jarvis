@@ -137,6 +137,9 @@
     "blueprints": {
       "index": "blueprints/index.json",
       "default": "A-1"
+    },
+    "energy": {
+      "map": "energy.json"
     }
   }
 }

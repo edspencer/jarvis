@@ -1,0 +1,415 @@
+{
+  "$schema": "../../schema/energy.schema.json",
+  "jarvis": "jarvis-energy/1",
+  "scale": {
+    "idle": 5,
+    "max": 5000
+  },
+  "meters": [
+    {
+      "id": "grid",
+      "label": "Grid",
+      "kind": "load",
+      "power": "sensor.grid_power",
+      "conf": "high",
+      "src": "tools/make-demo-site.ts",
+      "children": [
+        {
+          "id": "panel.main",
+          "label": "Main panel",
+          "power": ["sensor.main_panel_l1_power", "sensor.main_panel_l2_power"],
+          "legs": ["L1", "L2"],
+          "remainder": "sensor.main_panel_balance_power",
+          "energy": {
+            "today": "sensor.main_panel_energy_today",
+            "month": "sensor.main_panel_energy_month"
+          },
+          "volts": 240,
+          "feeds": [
+            {
+              "registry": "elec.panel"
+            }
+          ],
+          "conf": "high",
+          "src": "tools/make-demo-site.ts",
+          "children": [
+            {
+              "id": "circuit.kitchen_counter",
+              "label": "Kitchen counter outlets",
+              "power": "sensor.kitchen_counter_power",
+              "energy": {
+                "today": "sensor.kitchen_counter_energy_today"
+              },
+              "panel": "Main panel",
+              "breaker": 1,
+              "feeds": [
+                {
+                  "node": "Kitchen_units"
+                },
+                {
+                  "room": "kitchen"
+                }
+              ],
+              "conf": "high",
+              "src": "tools/make-demo-site.ts"
+            },
+            {
+              "id": "circuit.fridge",
+              "label": "Fridge-freezer",
+              "power": "sensor.fridge_power",
+              "energy": {
+                "today": "sensor.fridge_energy_today"
+              },
+              "panel": "Main panel",
+              "breaker": 3,
+              "feeds": [
+                {
+                  "registry": "appliance.fridge"
+                }
+              ],
+              "conf": "high",
+              "src": "tools/make-demo-site.ts"
+            },
+            {
+              "id": "circuit.range",
+              "label": "Range",
+              "power": ["sensor.range_l1_power", "sensor.range_l2_power"],
+              "legs": ["L1", "L2"],
+              "volts": 240,
+              "energy": {
+                "today": "sensor.range_energy_today"
+              },
+              "panel": "Main panel",
+              "breaker": [2, 4],
+              "feeds": [
+                {
+                  "node": "Kitchen_units"
+                }
+              ],
+              "conf": "high",
+              "src": "tools/make-demo-site.ts"
+            },
+            {
+              "id": "circuit.living_outlets",
+              "label": "Living room outlets",
+              "power": "sensor.living_outlets_power",
+              "energy": {
+                "today": "sensor.living_outlets_energy_today"
+              },
+              "panel": "Main panel",
+              "breaker": 5,
+              "feeds": [
+                {
+                  "plate": "LV-O-A"
+                },
+                {
+                  "fixture": "living.floor_lamp"
+                },
+                {
+                  "room": "living_room"
+                }
+              ],
+              "conf": "high",
+              "src": "tools/make-demo-site.ts"
+            },
+            {
+              "id": "circuit.lights_ground",
+              "label": "Lighting, ground floor",
+              "power": "sensor.lights_ground_power",
+              "energy": {
+                "today": "sensor.lights_ground_energy_today"
+              },
+              "panel": "Main panel",
+              "breaker": 7,
+              "feeds": [
+                {
+                  "plate": "LV-S-A"
+                },
+                {
+                  "fixture": "living.can.1"
+                },
+                {
+                  "fixture": "living.can.2"
+                },
+                {
+                  "fixture": "living.can.3"
+                },
+                {
+                  "fixture": "living.can.4"
+                },
+                {
+                  "fixture": "hall.pendant"
+                },
+                {
+                  "plate": "HL-S-A"
+                },
+                {
+                  "room": "living_room"
+                },
+                {
+                  "room": "hall"
+                }
+              ],
+              "conf": "high",
+              "src": "tools/make-demo-site.ts"
+            },
+            {
+              "id": "circuit.lights_outside",
+              "label": "Outside lights",
+              "power": "sensor.lights_outside_power",
+              "energy": {
+                "today": "sensor.lights_outside_energy_today"
+              },
+              "panel": "Main panel",
+              "breaker": 9,
+              "feeds": [
+                {
+                  "fixture": "porch.lantern"
+                },
+                {
+                  "fixture": "terrace.wall.1"
+                },
+                {
+                  "fixture": "terrace.wall.2"
+                }
+              ],
+              "conf": "high",
+              "src": "tools/make-demo-site.ts"
+            },
+            {
+              "id": "circuit.lights_kitchen",
+              "label": "Kitchen lights",
+              "power": "sensor.lights_kitchen_power",
+              "energy": {
+                "today": "sensor.lights_kitchen_energy_today"
+              },
+              "panel": "Main panel",
+              "breaker": 11,
+              "feeds": [
+                {
+                  "plate": "KT-S-A"
+                },
+                {
+                  "fixture": "kitchen.pendant.1"
+                },
+                {
+                  "fixture": "kitchen.pendant.2"
+                },
+                {
+                  "fixture": "kitchen.pendant.3"
+                },
+                {
+                  "registry": "fixture.kitchen-pendants"
+                }
+              ],
+              "conf": "high",
+              "src": "tools/make-demo-site.ts"
+            },
+            {
+              "id": "circuit.study",
+              "label": "Study outlets",
+              "power": "sensor.study_power",
+              "energy": {
+                "today": "sensor.study_energy_today"
+              },
+              "panel": "Main panel",
+              "breaker": 13,
+              "feeds": [
+                {
+                  "room": "study"
+                },
+                {
+                  "registry": "net.router"
+                }
+              ],
+              "conf": "high",
+              "src": "tools/make-demo-site.ts",
+              "children": [
+                {
+                  "id": "plug.desk",
+                  "label": "Desk (smart plug)",
+                  "power": "sensor.desk_plug_power",
+                  "energy": {
+                    "today": "sensor.desk_plug_energy_today"
+                  },
+                  "feeds": [
+                    {
+                      "node": "Furn_desk"
+                    }
+                  ],
+                  "conf": "high",
+                  "src": "tools/make-demo-site.ts"
+                }
+              ]
+            },
+            {
+              "id": "circuit.lights_upstairs",
+              "label": "Lighting, upstairs",
+              "power": "sensor.lights_upstairs_power",
+              "energy": {
+                "today": "sensor.lights_upstairs_energy_today"
+              },
+              "panel": "Main panel",
+              "breaker": 14,
+              "feeds": [
+                {
+                  "plate": "BA-S-A"
+                },
+                {
+                  "fixture": "bathroom.vanity"
+                },
+                {
+                  "fixture": "bedroom_1.ceiling"
+                },
+                {
+                  "fixture": "bedroom_2.ceiling"
+                },
+                {
+                  "fixture": "landing.ceiling"
+                },
+                {
+                  "room": "bedroom_1"
+                },
+                {
+                  "room": "bedroom_2"
+                },
+                {
+                  "room": "bathroom"
+                },
+                {
+                  "room": "landing"
+                }
+              ],
+              "conf": "high",
+              "src": "tools/make-demo-site.ts"
+            },
+            {
+              "id": "circuit.bedroom_outlets",
+              "label": "Bedroom outlets",
+              "power": "sensor.bedroom_outlets_power",
+              "energy": {
+                "today": "sensor.bedroom_outlets_energy_today"
+              },
+              "panel": "Main panel",
+              "breaker": 15,
+              "feeds": [
+                {
+                  "room": "bedroom_1"
+                },
+                {
+                  "room": "bedroom_2"
+                }
+              ],
+              "conf": "high",
+              "src": "tools/make-demo-site.ts"
+            },
+            {
+              "id": "circuit.garden",
+              "label": "Garden and pond",
+              "power": "sensor.garden_power",
+              "energy": {
+                "today": "sensor.garden_energy_today"
+              },
+              "panel": "Main panel",
+              "breaker": 17,
+              "feeds": [
+                {
+                  "node": "Pond"
+                },
+                {
+                  "registry": "site.irrigation"
+                }
+              ],
+              "conf": "high",
+              "src": "tools/make-demo-site.ts",
+              "children": [
+                {
+                  "id": "switch.pond_pump",
+                  "label": "Pond pump",
+                  "power": "sensor.pond_pump_power",
+                  "feeds": [
+                    {
+                      "node": "Pond"
+                    }
+                  ],
+                  "conf": "high",
+                  "src": "tools/make-demo-site.ts"
+                }
+              ]
+            },
+            {
+              "id": "circuit.heat_pump",
+              "label": "Heat pump and air handler",
+              "power": ["sensor.heat_pump_l1_power", "sensor.heat_pump_l2_power"],
+              "legs": ["L1", "L2"],
+              "volts": 240,
+              "energy": {
+                "today": "sensor.heat_pump_energy_today"
+              },
+              "panel": "Main panel",
+              "breaker": [6, 8],
+              "feeds": [
+                {
+                  "registry": "hvac.air-handler"
+                }
+              ],
+              "conf": "high",
+              "src": "tools/make-demo-site.ts"
+            },
+            {
+              "id": "circuit.water_heater",
+              "label": "Water heater",
+              "power": ["sensor.water_heater_l1_power", "sensor.water_heater_l2_power"],
+              "legs": ["L1", "L2"],
+              "volts": 240,
+              "energy": {
+                "today": "sensor.water_heater_energy_today"
+              },
+              "panel": "Main panel",
+              "breaker": [10, 12],
+              "feeds": [
+                {
+                  "registry": "plumb.water-heater"
+                }
+              ],
+              "conf": "high",
+              "src": "tools/make-demo-site.ts"
+            },
+            {
+              "id": "circuit.dryer",
+              "label": "Dryer",
+              "power": ["sensor.dryer_l1_power", "sensor.dryer_l2_power"],
+              "legs": ["L1", "L2"],
+              "volts": 240,
+              "panel": "Main panel",
+              "breaker": [16, 18],
+              "conf": "low",
+              "src": "tools/make-demo-site.ts",
+              "question": "The model has no laundry: where is the dryer, and is 16+18 really its breaker?"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pv",
+      "label": "Solar",
+      "kind": "source",
+      "power": "sensor.solar_power",
+      "energy": {
+        "today": "sensor.solar_energy_today",
+        "month": "sensor.solar_energy_month"
+      },
+      "conf": "high",
+      "src": "tools/make-demo-site.ts"
+    },
+    {
+      "id": "battery",
+      "label": "Battery",
+      "kind": "storage",
+      "power": "sensor.battery_power",
+      "conf": "high",
+      "src": "tools/make-demo-site.ts"
+    }
+  ]
+}

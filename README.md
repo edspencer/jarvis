@@ -141,6 +141,7 @@ More of the manifest, all optional (the [schema](schema/site.schema.json) docume
     "pins": { "registry": "registry_pins.json", "sourceLink": "https://example.org/repo/{file}" },
     "switches": {},
     "blueprints": { "index": "blueprints/index.json", "default": "A-1" },
+    "energy": { "map": "energy.json" }, // the meters and what they feed: docs/plugins/energy.md
   },
 }
 ```
@@ -233,7 +234,8 @@ src/
     faults/               device health through walls (health.ts: the rules)
     pins/                 equipment registry pins
     switches/             wall plates
-schema/site.schema.json   the manifest's JSON Schema
+    energy/               power and energy by meter: the panel, energy mode, the map (map.ts) and its maths (tree.ts)
+schema/site.schema.json   the manifest's JSON Schema; energy.schema.json, the energy map's
 tools/                    the Vite site-folder plugin, the validate-site CLI, the demo-house generator (and
                           demo-site/), the docs' screenshots
 examples/demo-site/       the demo house (generated: npm run demo-site)
@@ -272,6 +274,7 @@ lists only the keys of the plugins that are running.
 | V / Shift-V      | faults through walls / the healthy devices too (without the faults plugin, V shows unavailable lights) |
 | P / Shift-P      | equipment pins / through walls (dimmed)                                                                |
 | L / Shift-L      | wall plates / through walls                                                                            |
+| J / Shift-J      | energy mode: the house ghosted, metered rooms and objects tinted by load / the Energy panel            |
 | Esc              | release the mouse; then close the innermost menu, the search or the inspector                          |
 | Alt-← / Alt-→    | back / forward through what the inspector has shown                                                    |
 | F6 / Shift-F6    | move between the HUD's regions: the rail, the dock, the inspector, the status strip, the view          |
@@ -299,3 +302,4 @@ T and V need Home Assistant, live or `?ha=mock`.
 | `?pins`, `?pinswall`, `?pin=<id>`                        | pins on; through walls; open one registry item and fly to it                                     |
 | `?plates[=switch\|outlet]`, `?plateswall`, `?plate=<id>` | wall plates on (all, or one kind); through walls; open one plate (by id or box id) and fly to it |
 | `?bp=<sheet>`, `?bpfade=<percent>`                       | show a blueprint sheet; the model's opacity while one is shown (default 20)                      |
+| `?energy`, `&energymock=off`                             | start in energy mode; with `?ha=mock`, don't make up loads (set them with `twin.ha.mock.load`)   |

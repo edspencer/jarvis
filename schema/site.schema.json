@@ -424,6 +424,17 @@
               "type": "string"
             }
           }
+        },
+        "energy": {
+          "type": "object",
+          "required": ["map"],
+          "additionalProperties": false,
+          "properties": {
+            "map": {
+              "$ref": "#/$defs/path",
+              "description": "The energy map (schema/energy.schema.json): meters, their power and energy entities, and what they feed in the model."
+            }
+          }
         }
       }
     }

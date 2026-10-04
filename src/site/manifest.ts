@@ -237,6 +237,12 @@ export interface BlueprintsConfig {
   default?: string;
 }
 
+export interface EnergyConfig {
+  /** the energy map: meters (feed → panel → circuit → device), their entities and what they feed in the model
+   * (schema/energy.schema.json, docs/plugins/energy.md) */
+  map: string;
+}
+
 export interface PluginConfigs {
   'home-assistant'?: HomeAssistantConfig;
   lights?: LightsConfig;
@@ -244,4 +250,5 @@ export interface PluginConfigs {
   pins?: PinsConfig;
   switches?: SwitchesConfig;
   blueprints?: BlueprintsConfig;
+  energy?: EnergyConfig;
 }

@@ -2,6 +2,7 @@
 // read at run time. Pure (no DOM), so tests and the validate-site tool use it too.
 import type {
   BlueprintsConfig,
+  EnergyConfig,
   FaultsConfig,
   Geo,
   HomeAssistantConfig,
@@ -86,6 +87,7 @@ export interface Site {
     pins: PinsConfig | null;
     switches: SwitchesConfig | null;
     blueprints: BlueprintsConfig | null;
+    energy: EnergyConfig | null;
   };
 }
 
@@ -215,6 +217,7 @@ export function resolveSite(m: SiteManifest, url: string): Site {
       pins: p.pins ? { ...p.pins, registry: r(p.pins.registry) } : null,
       switches: p.switches || null,
       blueprints: p.blueprints ? { ...p.blueprints, index: r(p.blueprints.index) } : null,
+      energy: p.energy ? { ...p.energy, map: r(p.energy.map) } : null,
     },
   };
 }

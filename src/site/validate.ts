@@ -5,7 +5,7 @@
 import schema from '../../schema/site.schema.json' with { type: 'json' };
 import { MANIFEST_VERSION, type SiteManifest } from './manifest.ts';
 import { CORE_KEYS } from '../core/plugin/keys.ts';
-import { pluginKeys } from '../plugins/registry.ts';
+import { BUILTIN_PLUGINS, pluginKeys } from '../plugins/registry.ts';
 
 export interface Issue {
   /** where in the manifest, e.g. 'layers[1].key' ('' = the whole manifest) */
@@ -19,10 +19,13 @@ export interface ValidationResult {
   warnings: Issue[];
 }
 
-/** the JSON Schema subset the manifest schema uses */
-interface Schema {
+type SchemaType = 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean';
+
+/** the JSON Schema subset the manifest (and the plugins' file) schemas use */
+export interface Schema {
   $ref?: string;
-  type?: 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean';
+  /** one type, or several (a string or an array of them) */
+  type?: SchemaType | SchemaType[];
   properties?: Record<string, Schema>;
   required?: string[];
   additionalProperties?: boolean | Schema;
@@ -66,40 +69,69 @@ const join = (path: string, key: string | number): string =>
 const typeName = (v: unknown): string =>
   v === null ? 'null' : Array.isArray(v) ? 'an array' : typeof v === 'object' ? 'an object' : `a ${typeof v}`;
 
-function resolveRef(ref: string): Schema {
+function resolveRef(ref: string, root: Schema): Schema {
   const m = /^#\/\$defs\/(.+)$/.exec(ref);
-  const s = m && ROOT.$defs?.[m[1]];
+  const s = m && root.$defs?.[m[1]];
   if (!s) throw new Error(`schema: unknown $ref ${ref}`);
   return s;
 }
 
-/** Validate `value` against a schema node, appending to `out`. */
-export function checkSchema(value: unknown, node: Schema = ROOT, path = '', out: Issue[] = []): Issue[] {
-  const s = node.$ref ? { ...resolveRef(node.$ref), ...node, $ref: undefined } : node;
+const isType = (v: unknown, t: SchemaType): boolean =>
+  t === 'object'
+    ? typeof v === 'object' && v !== null && !Array.isArray(v)
+    : t === 'array'
+      ? Array.isArray(v)
+      : t === 'number'
+        ? typeof v === 'number' && Number.isFinite(v)
+        : t === 'integer'
+          ? typeof v === 'number' && Number.isInteger(v)
+          : typeof v === t;
+const TYPE_NAME: Record<SchemaType, string> = {
+  object: 'an object',
+  array: 'an array',
+  string: 'a string',
+  number: 'a number',
+  integer: 'a whole number',
+  boolean: 'true or false',
+};
+
+/** Validate `value` against a schema node, appending to `out`. `root` holds the $defs ($ref: '#/$defs/<name>'). */
+export function checkSchema(
+  value: unknown,
+  node: Schema = ROOT,
+  path = '',
+  out: Issue[] = [],
+  root: Schema = ROOT,
+): Issue[] {
+  const s = node.$ref ? { ...resolveRef(node.$ref, root), ...node, $ref: undefined } : node;
   const err = (message: string) => out.push({ path, message });
-  switch (s.type) {
-    case 'object':
-      if (typeof value !== 'object' || value === null || Array.isArray(value))
-        return (err(`expected an object, got ${typeName(value)}`), out);
-      break;
-    case 'array':
-      if (!Array.isArray(value)) return (err(`expected an array, got ${typeName(value)}`), out);
-      break;
-    case 'string':
-      if (typeof value !== 'string') return (err(`expected a string, got ${typeName(value)}`), out);
-      break;
-    case 'number':
-      if (typeof value !== 'number' || !Number.isFinite(value))
-        return (err(`expected a number, got ${typeName(value)}`), out);
-      break;
-    case 'integer':
-      if (typeof value !== 'number' || !Number.isInteger(value))
-        return (err(`expected a whole number, got ${JSON.stringify(value)}`), out);
-      break;
-    case 'boolean':
-      if (typeof value !== 'boolean') return (err(`expected true or false, got ${typeName(value)}`), out);
-      break;
-  }
+  if (Array.isArray(s.type)) {
+    if (!s.type.some((t) => isType(value, t)))
+      return (err(`expected ${s.type.map((t) => TYPE_NAME[t]).join(' or ')}, got ${typeName(value)}`), out);
+  } else
+    switch (s.type) {
+      case 'object':
+        if (typeof value !== 'object' || value === null || Array.isArray(value))
+          return (err(`expected an object, got ${typeName(value)}`), out);
+        break;
+      case 'array':
+        if (!Array.isArray(value)) return (err(`expected an array, got ${typeName(value)}`), out);
+        break;
+      case 'string':
+        if (typeof value !== 'string') return (err(`expected a string, got ${typeName(value)}`), out);
+        break;
+      case 'number':
+        if (typeof value !== 'number' || !Number.isFinite(value))
+          return (err(`expected a number, got ${typeName(value)}`), out);
+        break;
+      case 'integer':
+        if (typeof value !== 'number' || !Number.isInteger(value))
+          return (err(`expected a whole number, got ${JSON.stringify(value)}`), out);
+        break;
+      case 'boolean':
+        if (typeof value !== 'boolean') return (err(`expected true or false, got ${typeName(value)}`), out);
+        break;
+    }
   if (s.const !== undefined && value !== s.const)
     err(`must be ${JSON.stringify(s.const)}, got ${JSON.stringify(value)}`);
   if (s.enum && !s.enum.includes(value))
@@ -132,14 +164,14 @@ export function checkSchema(value: unknown, node: Schema = ROOT, path = '', out:
           ? `expected ${s.maxItems} items, got ${value.length}`
           : `expected at most ${s.maxItems} items, got ${value.length}`,
       );
-    if (s.items) value.forEach((v, i) => checkSchema(v, s.items, join(path, i), out));
+    if (s.items) value.forEach((v, i) => checkSchema(v, s.items, join(path, i), out, root));
   }
-  if (s.type === 'object' && value && typeof value === 'object' && !Array.isArray(value)) {
+  if (isType(value, 'object') && (s.type === 'object' || (Array.isArray(s.type) && s.type.includes('object')))) {
     const obj = value as Record<string, unknown>;
     for (const k of s.required || []) if (!(k in obj)) out.push({ path: join(path, k), message: 'is required' });
     for (const [k, v] of Object.entries(obj)) {
       const p = s.properties?.[k];
-      if (p) checkSchema(v, p, join(path, k), out);
+      if (p) checkSchema(v, p, join(path, k), out, root);
       else if (s.additionalProperties === false) {
         const known = Object.keys(s.properties || {});
         const near = known.find((x) => x.toLowerCase() === k.toLowerCase());
@@ -147,7 +179,8 @@ export function checkSchema(value: unknown, node: Schema = ROOT, path = '', out:
           path: join(path, k),
           message: `unknown field${near ? ` (did you mean "${near}"?)` : known.length ? ` (expected one of: ${known.join(', ')})` : ''}`,
         });
-      } else if (typeof s.additionalProperties === 'object') checkSchema(v, s.additionalProperties, join(path, k), out);
+      } else if (typeof s.additionalProperties === 'object')
+        checkSchema(v, s.additionalProperties, join(path, k), out, root);
     }
   }
   return out;
@@ -241,7 +274,7 @@ export function checkRules(m: SiteManifest): ValidationResult {
           : `moved to plugins.lights.${k} (read from here for now)`,
       });
   // the features read the entity store, which a connector fills (Home Assistant is the one that ships)
-  for (const f of ['faults', 'lights'] as const)
+  for (const f of ['faults', 'lights', 'energy'] as const)
     if (p[f] && !p['home-assistant'])
       warnings.push({
         path: `plugins.${f}`,
@@ -255,13 +288,59 @@ export function checkRules(m: SiteManifest): ValidationResult {
   return { ok: !errors.length, errors, warnings };
 }
 
-/** Schema, then rules. `value` is the parsed JSON. */
+/** the plugin sections this build knows: the schema's, and the built-in plugins (sun has no section of its own) */
+export const KNOWN_PLUGINS: readonly string[] = [
+  ...new Set([...Object.keys(ROOT.properties?.plugins?.properties || {}), ...Object.keys(BUILTIN_PLUGINS)]),
+];
+
+/** edit distance, for "did you mean" (small strings only) */
+function distance(a: string, b: string): number {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...new Array<number>(b.length).fill(0)]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  return d[a.length][b.length];
+}
+
+/**
+ * A plugins section this build doesn't know (written for a newer viewer, or a plugin that isn't built in) is a
+ * warning, not an error: the plugin is skipped and the rest of the site loads. A typo inside a known plugin's section
+ * is still an error (the schema). Returns the manifest without those sections, and the warnings.
+ */
+function splitUnknownPlugins(value: unknown): { value: unknown; errors: Issue[]; warnings: Issue[] } {
+  const v = value as { plugins?: unknown } | null;
+  const p = v?.plugins;
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return { value, errors: [], warnings: [] };
+  const unknown = Object.keys(p).filter((k) => !KNOWN_PLUGINS.includes(k));
+  if (!unknown.length) return { value, errors: [], warnings: [] };
+  const errors: Issue[] = [],
+    warnings: Issue[] = [];
+  for (const k of unknown) {
+    // a near miss of a known plugin ('Pins', 'light') is a typo: an error, as a typo in a known field is
+    const near = KNOWN_PLUGINS.find(
+      (x) => x.toLowerCase() === k.toLowerCase() || (k.length >= 4 && distance(x, k.toLowerCase()) <= 1),
+    );
+    if (near) errors.push({ path: join('plugins', k), message: `unknown plugin (did you mean "${near}"?)` });
+    else
+      warnings.push({
+        path: join('plugins', k),
+        message: `site config for plugin '${k}', which this build doesn't have: skipped`,
+      });
+  }
+  const kept = Object.fromEntries(Object.entries(p).filter(([k]) => KNOWN_PLUGINS.includes(k)));
+  return { value: { ...v, plugins: kept }, errors, warnings };
+}
+
+/** Schema, then rules. `value` is the parsed JSON. A plugins section this build doesn't know is only a warning. */
 export function validateManifest(value: unknown): ValidationResult {
-  const errors = checkSchema(value);
+  const split = splitUnknownPlugins(value);
+  const errors = [...split.errors, ...checkSchema(split.value)];
   if (!errors.length && (value as { jarvis?: string }).jarvis !== MANIFEST_VERSION)
     errors.push({ path: 'jarvis', message: `this viewer reads ${MANIFEST_VERSION}` });
-  if (errors.length) return { ok: false, errors, warnings: [] };
-  return checkRules(value as SiteManifest);
+  if (errors.length) return { ok: false, errors, warnings: split.warnings };
+  const r = checkRules(split.value as SiteManifest);
+  return { ...r, warnings: [...split.warnings, ...r.warnings] };
 }
 
 /** one line per issue: "layers[1].key: K is …" */

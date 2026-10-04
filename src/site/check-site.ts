@@ -6,6 +6,7 @@ import { checkModel, checkParts, readGltfJson, type ModelReport } from './model-
 import { resolveSite, type Site } from './resolve.ts';
 import { formatIssues, validateManifest } from './validate.ts';
 import type { SiteManifest } from './manifest.ts';
+import { PLUGIN_FILE_CHECKS } from '../plugins/checks.ts';
 
 export type Reader = (url: string) => Promise<Uint8Array | null>;
 
@@ -155,6 +156,21 @@ export async function checkSite(manifestUrl: string, read: Reader): Promise<Site
           warnings.push(`plugins.blueprints.default: no sheet "${p.blueprints.default}" in the index`);
         notes.push(`blueprints: ${idx.sheets.length} sheets`);
       }
+    }
+  }
+  // the plugins' own mapping files (src/plugins/checks.ts)
+  for (const [id, checks] of Object.entries(PLUGIN_FILE_CHECKS)) {
+    const section = (p as Record<string, unknown>)[id] as Record<string, unknown> | null | undefined;
+    if (!section) continue;
+    for (const c of checks) {
+      const url = c.file(section);
+      if (!url) continue;
+      const d = await jsonFile(url, c.what, c.required ?? true);
+      if (d === undefined) continue;
+      const v = c.check(d);
+      errors.push(...formatIssues(v.errors).map((l) => `${c.what}: ${l}`));
+      warnings.push(...formatIssues(v.warnings).map((l) => `${c.what}: ${l}`));
+      for (const n of v.notes || []) notes.push(`${c.what}: ${n}`);
     }
   }
   report.ok = !errors.length;
