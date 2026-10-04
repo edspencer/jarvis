@@ -79,8 +79,8 @@ describe('§3 and §7: the manifest snippets', () => {
   it("agree with the demo's own manifest where they overlap", () => {
     const m = assembled();
     const demo = JSON.parse(read('examples/demo-site/site.json'));
-    for (const k of ['jarvis', 'id', 'name', 'description', 'geo', 'frame', 'centre', 'overview', 'models', 'storeys'])
-      expect(m[k], k).toEqual(demo[k]);
+    const same = ['jarvis', 'id', 'name', 'description', 'geo', 'frame', 'centre', 'overview', 'models', 'storeys'];
+    for (const k of [...same, 'startView', 'layers', 'walk']) expect(m[k], k).toEqual(demo[k]);
     expect(m.ground.z).toBeCloseTo(demo.ground.z, 6);
     // the guide shows some of the viewpoints, and every plugin section the demo has
     for (const v of m.viewpoints) expect(demo.viewpoints).toContainEqual(v);
@@ -123,16 +123,18 @@ describe('§8: validate-site prints what the guide shows', () => {
     const r = spawnSync(process.execPath, ['tools/validate-site.ts', dir], {
       cwd: fileURLToPath(ROOT),
       encoding: 'utf8',
+      timeout: 30_000,
     });
-    return { status: r.status, out: r.stdout.trimEnd().split(dir).join(as) };
+    const why = `validate-site ${as}: status ${r.status}${r.error ? `, ${r.error.message}` : ''}\n${r.stderr}`;
+    return { status: r.status, out: (r.stdout ?? '').trimEnd().split(dir).join(as), why };
   }
   const shown = () => blocks(section(8), '');
   const demo = () => JSON.parse(read('examples/demo-site/site.json'));
 
   it('the demo', () => {
     const r = validate(fileURLToPath(new URL('examples/demo-site', ROOT)), '/…/examples/demo-site');
-    expect(r.status).toBe(0);
-    expect(r.out).toBe(shown()[0]);
+    expect(r.status, r.why).toBe(0);
+    expect(r.out, r.why).toBe(shown()[0]);
   });
 
   it('a copy with mistakes in the manifest', () => {
@@ -142,8 +144,8 @@ describe('§8: validate-site prints what the guide shows', () => {
     m.frame.units = 'feet';
     m.viewpoints[0].at = m.viewpoints[0].at.slice(0, 2);
     const r = validate(site({ 'site.json': JSON.stringify(m) }), '/tmp/broken-site');
-    expect(r.status).toBe(1);
-    expect(r.out).toBe(shown()[1]);
+    expect(r.status, r.why).toBe(1);
+    expect(r.out, r.why).toBe(shown()[1]);
   });
 
   it('once the schema passes, the rules', () => {
@@ -151,8 +153,8 @@ describe('§8: validate-site prints what the guide shows', () => {
     m.startView = 8;
     m.layers[1].key = 'X';
     const r = validate(site({ 'site.json': JSON.stringify(m) }), '/tmp/broken-site');
-    expect(r.status).toBe(1);
-    expect(r.out).toBe(shown()[2]);
+    expect(r.status, r.why).toBe(1);
+    expect(r.out, r.why).toBe(shown()[2]);
   });
 
   it('a first CAD export: millimetres, Draco, no conventions', () => {
@@ -185,7 +187,7 @@ describe('§8: validate-site prints what the guide shows', () => {
       { required: ['KHR_draco_mesh_compression'] },
     );
     const r = validate(site({ 'site.json': JSON.stringify(m), 'model.gltf': glb }), '/tmp/my-house');
-    expect(r.status).toBe(1);
-    expect(r.out).toBe(shown()[3]);
+    expect(r.status, r.why).toBe(1);
+    expect(r.out, r.why).toBe(shown()[3]);
   });
 });
