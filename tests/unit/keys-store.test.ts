@@ -264,6 +264,23 @@ describe('the entity store', () => {
     expect(s.refusal('light.a', 'toggle')).toBeNull();
   });
 
+  it('checks every connector’s refusal before sending any part, so a refused call is never half done', async () => {
+    const s = createStore();
+    const haCall = vi.fn(async () => {}),
+      mqttCall = vi.fn(async () => {});
+    s.addConnector({ id: 'ha', name: 'HA', call: haCall }).update([st('light.a', 'on')]);
+    s.addConnector({ id: 'mqtt', name: 'MQTT', call: mqttCall, refusal: () => 'not on the list' }).update([
+      st('switch.m', 'off'),
+    ]);
+    await expect(s.call(['light.a', 'switch.m'], 'turn_on')).rejects.toThrow('not on the list');
+    expect(haCall).not.toHaveBeenCalled();
+    expect(mqttCall).not.toHaveBeenCalled();
+    // and an unknown entity anywhere in the call stops all of it
+    await expect(s.call(['light.a', 'light.zzz'], 'turn_on')).rejects.toThrow(/no connector/);
+    expect(haCall).not.toHaveBeenCalled();
+    await expect(s.call([], 'turn_on')).rejects.toThrow(/no entity/);
+  });
+
   it('a second connector cannot take over another one’s entity', () => {
     const s = createStore();
     s.addConnector({ id: 'ha', name: 'HA', call: async () => {} }).update([st('light.a', 'on')]);

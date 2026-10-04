@@ -12,6 +12,13 @@ updates:
       dev-dependencies:
         dependency-type: development
         update-types: [minor, patch]
+    # TypeScript waits for typescript-eslint to support the next major; @types/node follows the Node line we target
+    # (22 LTS, .nvmrc). Both move by hand.
+    ignore:
+      - dependency-name: typescript
+        update-types: [version-update:semver-major]
+      - dependency-name: '@types/node'
+        update-types: [version-update:semver-major]
     commit-message:
       prefix: deps
   - package-ecosystem: github-actions
@@ -29,5 +36,9 @@ updates:
     schedule:
       interval: weekly
       day: monday
+    # the build stage stays on the Node LTS line we target (22, .nvmrc); nginx and the rest update as usual
+    ignore:
+      - dependency-name: node
+        update-types: [version-update:semver-major]
     commit-message:
       prefix: docker
