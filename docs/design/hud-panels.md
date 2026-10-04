@@ -57,8 +57,9 @@ URL parameters (`?pins`, `?bp=…`) still win on load.
 
 - The rail becomes a bottom tab bar (5 icons + "more").
 - The dock and inspector become **bottom sheets** with three snap points (peek 96 px, half, full); only one sheet open.
-- The status strip shrinks to the place + one overflow menu.
+- The status strip shrinks to the place, the Walk / Overview switch and one overflow menu.
 - Walk mode gets on-screen controls: a left thumb-stick and look-by-drag on the right half; tap = inspect.
+  (As built: see §11.)
 - Hit targets ≥ 40 px; no hover-only information (tooltips become long-press).
 
 ## 2. Panel kinds and anatomy
@@ -405,6 +406,13 @@ Fallback without `backdrop-filter`: opacity 0.94.
 | `--jv-info` | `#6aa8ff` | Update available, mock data, informational        |
 | `--jv-off`  | `#7a8494` | Off, unknown, not connected                       |
 
+**Badge fills** (a count badge's background, under its label; checked for 4.5:1 in `tests/unit/tokens.test.ts`)
+
+| Token             | Value     | Use                                                          |
+| ----------------- | --------- | ------------------------------------------------------------ |
+| `--jv-bad-fill`   | `#c9372c` | A fault count (white label; `--jv-bad` under white is 3.4:1) |
+| `--jv-badge-fill` | `#2c3c55` | A neutral count (`--jv-text` label)                          |
+
 Status is never colour alone: each has a glyph (✓ ! ↑ ○) as the markers already do.
 
 **Data scales.** Sequential (load tint): 5 steps from `#2b3a55` to `#ffd166` to `#ff6b3d`; categorical (pin
@@ -425,12 +433,16 @@ after click. Selected rows: accent left border plus raised surface.
 
 - Every control reachable by Tab when the pointer isn't locked; the rail is a `toolbar` (arrow keys move), the dock
   and inspector are `region`s with labels; the inspector's sections are disclosure buttons.
-- `F6` cycles regions (rail → dock → inspector → status → canvas); `Esc` closes the innermost (menu, modal,
-  inspector) after releasing pointer lock.
+- `F6` cycles regions (rail → dock → inspector → status → canvas); `Esc` closes the innermost (modal, menu, search)
+  after releasing pointer lock, then cancels a plugin's active tool (its Esc binding), then closes the inspector
+  (`src/core/escape.ts`).
 - Live values announce politely only on user request (no `aria-live` for streaming W); toasts are `aria-live=polite`,
   errors `assertive`.
 - Contrast ≥ 4.5:1 for text and 3:1 for UI boundaries on the surface over a white scene (worst case: the sky).
 - Hit targets ≥ 24 px desktop, 40 px touch. Everything in a tooltip is also in the inspector or help.
+- A screen-reader user on a touch-only device can't walk (the thumb-stick is `aria-hidden`, and W A S D need a
+  keyboard), but walking only moves the camera: everything it can show is reachable without it, through the overview,
+  search and the inspector (§11, touch walk controls).
 
 ## 7. Rendering technology
 
@@ -547,7 +559,28 @@ Screenshots, before → after (taken on a private building, so not in the reposi
 - **Persisted state:** open, pinned and collapsed panels, dock width, section and group collapse, per site. Chips can
   ask to be remembered (`persist`); none of the built-in ones do yet (URL parameters cover the shared cases).
 - **Small screens:** a bottom tab bar (search, four panels, more), one bottom sheet at a time (peek / half / full by
-  dragging or tapping its handle), overview only. No walk controls yet, as decided.
+  dragging or tapping its handle). A phone still opens in the overview (decision 5); the strip keeps the
+  **Walk / Overview** switch (its chips go into ⋯), so walking is one tap away.
+- **Touch walk controls** (`<jv-stick>` in `ui/shell.ts`, `core/touch.ts`): on a touch screen (a coarse pointer, or
+  the last pointer down was a finger: a mouse on a laptop's touch screen brings the pointer lock back), walk mode shows
+  an analog **thumb-stick** bottom left: direction and how far it's pushed (36 px is full speed, a 12 % dead zone),
+  fed to the walker as an analog input next to W A S D. `Hud.stickAt()` places it: on a phone above the tab bar or a
+  peek sheet (hidden behind a half or full one); wider, right of the rail, or right of the dock while a panel is open,
+  hidden when that leaves no room before the inspector. A modal hides it and lets go (no walking behind a dialog);
+  toasts move up above it. **Drag on the view** to look (one finger, anywhere on the canvas, in practice the right
+  thumb; drag right turns right, up looks up; the screen's width is half a turn), at the same time as the stick
+  (Pointer Events with capture, one pointer each; a mode change or a lost capture ends the drag). A **tap** (under
+  10 px and 500 ms) picks at the finger like a click in the overview, through the plugins' `click` event; a drag or a
+  cancelled touch never inspects, and touch never asks for the pointer lock. A tap-inspect while walking on a phone
+  opens the inspector as a peek sheet, so the view and the stick stay usable; the sheet's height comes back when the
+  inspector closes. No crosshair on touch. The canvas and the stick are `touch-action: none`. The stick is
+  `aria-hidden` and not focusable (the keyboard moves with W A S D, so it traps nothing); its knob springs back over
+  `--jv-motion`, which reduced motion sets to 0. The window losing focus lets go of it too (as it does the held keys),
+  so a stick held through an app switch doesn't keep walking. A screen-reader user on a touch-only device can't walk
+  (no stick for them, and no keyboard), but reaches all the information through the overview, search and the
+  inspector. The strip's mode switch has a 40 px tall hit area on small screens.
+  Help lists the touch controls on a touch screen. Not yet on touch: jump and crouch (ghost, on at start, is in the
+  strip's ⋯), running, pinch-to-zoom in walk mode, long-press for hover.
 - **The blink test** (§8) is a confirm modal, then a sticky toast that steps through the bulbs ("Which fixture
   blinked? Aim at it and press T"), then a results modal, rather than one modal flow: the test needs the view, where you
   aim at the fixture that blinked, and a modal would cover it.

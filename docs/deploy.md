@@ -43,6 +43,28 @@ change. To update the viewer, pull a newer image.
 Tags: `<version>` (e.g. `0.2.0`), `<major>.<minor>` (the newest patch of that minor) and `latest`. Images are built
 for linux/amd64 and linux/arm64.
 
+### External plugins and the Content-Security-Policy
+
+The image sends `Content-Security-Policy: script-src 'self' 'unsafe-eval'; worker-src 'self' blob:;
+object-src 'none'; base-uri 'self'`: scripts run only from the viewer's own origin. A site whose external plugins load
+from another origin (one its manifest lists in `pluginOrigins`) needs that origin in the policy too: set
+`JARVIS_PLUGIN_ORIGINS` to a space-separated list of origins (scheme, host and port; no paths) when you start the
+container:
+
+```sh
+docker run -d -p 8080:80 -e JARVIS_PLUGIN_ORIGINS="https://plugins.example.org" \
+  -v ./my-site:/usr/share/nginx/html/site:ro ghcr.io/edspencer/jarvis:latest
+```
+
+**Why `'unsafe-eval'`.** A model's KTX2 (Basis Universal) textures are transcoded by three.js's `basis_transcoder.js`,
+an Emscripten build whose glue code creates functions with `new Function`, in a `blob:` worker that inherits the page's
+policy. Without `'unsafe-eval'` such a model never loads. It lets code already on the page evaluate strings; it doesn't
+let a script from another origin run, which is what the origin list is for.
+
+The policy is what stops a hostile manifest or a redirect from bringing script onto the viewer's origin, whatever the
+viewer's own checks miss ([trust](plugins.md#external-plugins)). An origin is the whole host: a viewer under a
+sub-path trusts every script on it.
+
 ### Home Assistant
 
 The browser talks to Home Assistant directly, so add the viewer's origin (e.g. `http://jarvis.example.lan:8080`) to
@@ -63,10 +85,13 @@ What the server must do:
   compiled while streaming, which needs that type); `.ktx2` as `image/ktx2` if the site has loose textures;
 - not cache stale models: `Cache-Control: no-cache` (with ETags or Last-Modified, so a reload is cheap);
 - ideally gzip JSON, JavaScript and WebAssembly (parts files and device maps shrink 4–8×);
-- for a private building, send `X-Robots-Tag: noindex` and a `robots.txt` that disallows everything.
+- for a private building, send `X-Robots-Tag: noindex` and a `robots.txt` that disallows everything;
+- send the Content-Security-Policy above (`tools/csp.ts` prints it: `script-src 'self' 'unsafe-eval'` plus your
+  plugin origins; the Basis transcoder runs in `blob:` workers and needs `'unsafe-eval'`, see below).
 
-The image's nginx configuration, [`deploy/nginx.conf`](../deploy/nginx.conf), does all of that and works as it is
-with the viewer in `/usr/share/nginx/html` and the site folder in `/usr/share/nginx/html/site`:
+The image's nginx configuration, [`deploy/nginx.conf`](../deploy/nginx.conf), does all of that with the viewer in
+`/usr/share/nginx/html` and the site folder in `/usr/share/nginx/html/site` (it is a template: replace
+`${JARVIS_PLUGIN_ORIGINS}` with your plugin origins, or nothing). In short:
 
 ```nginx
 server {
@@ -75,6 +100,7 @@ server {
     index index.html;
     add_header Cache-Control "no-cache" always;
     add_header X-Robots-Tag "noindex, nofollow" always;
+    add_header Content-Security-Policy "script-src 'self' 'unsafe-eval'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'" always;
     location = /robots.txt { default_type text/plain; return 200 "User-agent: *\nDisallow: /\n"; }
 
     location / { try_files $uri $uri/ @site; }                      # the viewer first,

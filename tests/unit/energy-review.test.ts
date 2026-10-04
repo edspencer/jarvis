@@ -3,6 +3,7 @@
 // mesh's own material where another plugin (the lights) can find it.
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
+import { createMaterialStack } from '../../src/core/material-stack';
 import type { EntityState, ModelInfo } from '../../src/plugin-api';
 import { checkEnergyMap, type MeterSpec } from '../../src/plugins/energy/map';
 import { buildTree, compute, consumers, countable, sumOf, totals } from '../../src/plugins/energy/tree';
@@ -109,7 +110,8 @@ describe('energy mode: the material swap', () => {
     scene.add(root);
     const model = { root, groups: { upper: [] }, rooms: [floor], fixtures: {} } as unknown as ModelInfo;
     const camera = new THREE.PerspectiveCamera();
-    return { es: createEnergyScene({ scene, model, camera }), mesh, floor, own };
+    const materials = createMaterialStack();
+    return { es: createEnergyScene({ scene, model, camera, materials }), mesh, floor, own, materials };
   }
   it('ghosts, tints, and puts every material back', () => {
     const { es, mesh, floor, own } = setup();
@@ -121,21 +123,21 @@ describe('energy mode: the material swap', () => {
     expect(mesh.material).toBe(own);
     expect(floor.material).toBe(floorOwn);
   });
-  it("leaves the mesh's own material in userData.baseMaterial while swapped (the lights read it), and clears it", () => {
-    const { es, mesh, own } = setup();
+  it("keeps the mesh's own material in materials.base() while swapped (the lights read it)", () => {
+    const { es, mesh, own, materials } = setup();
     es.show({ nodes: new Map(), rooms: new Map(), anchors: [] });
-    expect(mesh.userData.baseMaterial).toBe(own);
+    expect(materials.base(mesh)).toBe(own);
     es.hide();
-    expect(mesh.userData.baseMaterial).toBeUndefined();
+    expect(materials.base(mesh)).toBe(own);
+    expect(materials.size()).toBe(0);
   });
-  it("keeps another plugin's swap made meanwhile: re-ghosts it, and puts theirs back", () => {
-    const { es, mesh } = setup();
+  it("keeps another plugin's override made meanwhile under the ghost, and puts theirs back", () => {
+    const { es, mesh, own, materials } = setup();
     es.show({ nodes: new Map(), rooms: new Map(), anchors: [] });
     const theirs = new THREE.MeshStandardMaterial({ name: 'lamp-clone' });
-    mesh.material = theirs; // the lights prepare a fixture while energy mode is on
-    es.show({ nodes: new Map(), rooms: new Map(), anchors: [] });
+    materials.push(mesh, theirs, { priority: -10 }); // the lights prepare a fixture while energy mode is on
     expect(mesh.material).toBe(es.ghost);
-    expect(mesh.userData.baseMaterial).toBe(theirs);
+    expect(materials.base(mesh)).toBe(own);
     es.hide();
     expect(mesh.material).toBe(theirs);
     es.dispose();

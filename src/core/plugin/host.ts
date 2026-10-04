@@ -173,6 +173,9 @@ export function createPluginHost(deps: HostDeps): PluginHost {
       const ctx = deps.context(d, (x) =>
         r.state === 'starting' || r.state === 'running' ? r.disposers.push(x) : x.dispose(),
       );
+      // the plugin's own check of its section first: a problem keeps it off, as a failed setup does
+      const problems = d.validate?.(ctx.config);
+      if (Array.isArray(problems) && problems.length) throw new Error(`plugins.${d.id}: ${problems.join('; ')}`);
       r.instance = await d.setup(ctx);
       if (r.state !== 'starting') {
         // disposed while starting: its own dispose runs now that it exists

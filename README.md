@@ -39,6 +39,8 @@ Done:
   Assistant, lights, faults, equipment pins, wall plates, blueprints, sun
 - the HUD: Lit components (rail, dock, inspector, status strip, search, help generated from the key registry)
 - releases: a container image on GHCR and a static tarball, cut with changesets
+- touch: phones get bottom sheets and a tab bar; walking on a touch screen has a thumb-stick, drag to look and tap to
+  inspect (a phone opens in the overview; the strip's Walk switch walks)
 - the demo house, synthetic, which the tests, CI and the live demo run on
 
 Next:
@@ -48,7 +50,6 @@ Next:
 - a **voice assistant**: an optional assistant server (Claude Agent SDK) that talks, acts through Home Assistant under
   a server-enforced allow / confirm / deny policy, knows the site and drives the view; hold-to-talk first, a wake word
   and Home Assistant voice satellites later. Designed, not built: [docs/design/voice-assistant.md](docs/design/voice-assistant.md)
-- **mobile / touch walk controls**: on a phone the viewer opens in the overview only, for now
 
 ## Develop
 
@@ -147,9 +148,13 @@ More of the manifest, all optional (the [schema](schema/site.schema.json) docume
 ```
 
 A plugin starts only if the manifest has its section under `plugins` (the sun panel and the wall plates start on
-their own; the plates only if the model has some). Everything on screen comes from plugins through one API, the core
-included: see [Writing a plugin](docs/guide/writing-a-plugin.md) and the API reference,
-[docs/plugins.md](docs/plugins.md).
+their own; the plates only if the model has some), and only its code is downloaded. Everything on screen comes from
+plugins through one API, the core included: see [Writing a plugin](docs/guide/writing-a-plugin.md) and the API
+reference, [docs/plugins.md](docs/plugins.md). A plugin of your own needs no fork: build it into one ES module and give
+the site a section that names it (`"measure": { "module": "plugins/measure.js" }`), loaded from the viewer's own origin
+(or one the manifest lists in `pluginOrigins`, and the container's `JARVIS_PLUGIN_ORIGINS` adds to its
+Content-Security-Policy). It runs with the viewer's full rights, so load only code you trust:
+[External plugins](docs/plugins.md#external-plugins).
 
 ### Home Assistant
 
@@ -184,7 +189,8 @@ that runs nothing else. More in [SECURITY.md](SECURITY.md).
 | `npm test` / `npm run test:watch`                 | unit tests (Vitest), once / watching                                                                              |
 | `npm run test:coverage`                           | unit tests with a coverage report in `coverage/`                                                                  |
 | `npm run test:e2e`                                | Playwright smoke tests against a dev server it starts (port 5192) on the site folder, in `?ha=mock`               |
-| `npm run validate-site -- <dir>`                  | check a site folder: manifest, files, models (exit 1 on errors)                                                   |
+| `npm run validate-site -- <dir>`                  | check a site folder: manifest, files, models, external plugins (exit 1 on errors)                                 |
+| `npm run build-plugin -- <plugin.ts> <out.js>`    | bundle a plugin into one ES module a site loads (`plugins.<id>.module`: docs/plugins.md)                          |
 | `npm run demo-site`                               | regenerate the demo house in `examples/demo-site`                                                                 |
 | `npm run screenshots`                             | re-render the docs' pictures of the demo house (this README's, the HUD mockup's backgrounds)                      |
 | `npm run notices`                                 | regenerate `THIRD_PARTY_NOTICES.md` from the build (`npm run build` first; `-- --check` to only compare)          |
@@ -237,8 +243,8 @@ src/
     switches/             wall plates
     energy/               power and energy by meter: the panel, energy mode, the map (map.ts) and its maths (tree.ts)
 schema/site.schema.json   the manifest's JSON Schema; energy.schema.json, the energy map's
-tools/                    the Vite site-folder plugin, the validate-site CLI, the demo-house generator (and
-                          demo-site/), the docs' screenshots
+tools/                    the Vite site-folder plugin, the validate-site CLI, build-plugin (an external plugin's
+                          module), the demo-house generator (and demo-site/), the docs' screenshots
 examples/demo-site/       the demo house (generated: npm run demo-site)
 tests/unit/               Vitest (tests/fixtures/site: a synthetic site)
 tests/e2e/                Playwright
@@ -253,34 +259,40 @@ docs/                     the plugin API, the model format, deploying; examples/
 H shows them all in the viewer (and opens by itself on a first visit). Help is generated from the key registry, so it
 lists only the keys of the plugins that are running.
 
-|                  |                                                                                                        |
-| ---------------- | ------------------------------------------------------------------------------------------------------ |
-| Click            | walk (captures the mouse); click again to inspect what the crosshair is on. In the overview: inspect   |
-| W A S D / arrows | move; Shift runs                                                                                       |
-| Q / E            | turn without the mouse                                                                                 |
-| Space            | jump (walking) · rise (ghost)                                                                          |
-| C (hold)         | crouch and creep (walking) · sink (ghost)                                                              |
-| G                | ghost: fly through walls (on at start); again to walk with collision                                   |
-| Tab              | walk ↔ overview (drag to rotate, right-drag to pan, wheel to zoom)                                     |
-| 1 – 9            | the site's viewpoints                                                                                  |
-| N                | the Navigate panel: rooms by storey, viewpoints, a link to this view                                   |
-| /                | search: rooms, viewpoints, light fixtures, and what the plugins add (equipment, plates, devices)       |
-| H (or ?)         | keys and help                                                                                          |
-| X                | cutaway: hide roofs and ceilings                                                                       |
-| U                | hide the upper storey (and roofs); only on a site with more than one storey                            |
-| O                | show / hide the door leaves (hidden at start, so doors read as open)                                   |
-| the site's own   | its layer toggles (the demo house: K the pergola, F the furniture)                                     |
-| B                | blueprints: show / hide the last sheet chosen                                                          |
-| T, Shift-click   | switch the light under the crosshair (walking) or the mouse (overview)                                 |
-| V / Shift-V      | faults through walls / the healthy devices too (without the faults plugin, V shows unavailable lights) |
-| P / Shift-P      | equipment pins / through walls (dimmed)                                                                |
-| L / Shift-L      | wall plates / through walls                                                                            |
-| J / Shift-J      | energy mode: the house ghosted, metered rooms and objects tinted by load / the Energy panel            |
-| Esc              | release the mouse; then close the innermost menu, the search or the inspector                          |
-| Alt-← / Alt-→    | back / forward through what the inspector has shown                                                    |
-| F6 / Shift-F6    | move between the HUD's regions: the rail, the dock, the inspector, the status strip, the view          |
+|                  |                                                                                                            |
+| ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| Click            | walk (captures the mouse); click again to inspect what the crosshair is on. In the overview: inspect       |
+| W A S D / arrows | move; Shift runs                                                                                           |
+| Q / E            | turn without the mouse                                                                                     |
+| Space            | jump (walking) · rise (ghost)                                                                              |
+| C (hold)         | crouch and creep (walking) · sink (ghost)                                                                  |
+| G                | ghost: fly through walls (on at start); again to walk with collision                                       |
+| Tab              | walk ↔ overview (drag to rotate, right-drag to pan, wheel to zoom)                                         |
+| 1 – 9            | the site's viewpoints                                                                                      |
+| N                | the Navigate panel: rooms by storey, viewpoints, a link to this view                                       |
+| /                | search: rooms, viewpoints, light fixtures, and what the plugins add (equipment, plates, devices)           |
+| H (or ?)         | keys and help                                                                                              |
+| X                | cutaway: hide roofs and ceilings                                                                           |
+| U                | hide the upper storey (and roofs); only on a site with more than one storey                                |
+| O                | show / hide the door leaves (hidden at start, so doors read as open)                                       |
+| the site's own   | its layer toggles (the demo house: K the pergola, F the furniture)                                         |
+| B                | blueprints: show / hide the last sheet chosen                                                              |
+| T, Shift-click   | switch the light under the crosshair (walking) or the mouse (overview)                                     |
+| V / Shift-V      | faults through walls / the healthy devices too (without the faults plugin, V shows unavailable lights)     |
+| P / Shift-P      | equipment pins / through walls (dimmed)                                                                    |
+| L / Shift-L      | wall plates / through walls                                                                                |
+| J / Shift-J      | energy mode: the house ghosted, metered rooms and objects tinted by load / the Energy panel                |
+| Esc              | release the mouse; then close a menu or the search; then cancel a plugin's active tool; then the inspector |
+| Alt-← / Alt-→    | back / forward through what the inspector has shown                                                        |
+| F6 / Shift-F6    | move between the HUD's regions: the rail, the dock, the inspector, the status strip, the view              |
 
 T and V need Home Assistant, live or `?ha=mock`.
+
+On a touch screen: the strip's **Walk / Overview** switch changes the mode (a phone opens in the overview). Walking, the
+thumb-stick bottom left moves (push it further to go faster), a drag on the view looks around (with the stick at the
+same time), and a tap inspects what is under the finger. In the overview, drag to rotate, pinch to zoom, tap to inspect.
+The stick is hidden from screen readers, so a screen-reader user on a touch-only device can't walk; everything walking
+shows is reachable without it, through the overview, search and the inspector.
 
 ## URL parameters
 

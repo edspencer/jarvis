@@ -68,6 +68,7 @@ const FULL: SiteManifest = {
     energy: { map: 'e.json' },
     assistant: { server: 'https://assistant.example.org/assistant', tts: false },
   },
+  pluginOrigins: ['https://plugins.example.org'],
 };
 
 describe('the schema and the types agree', () => {
@@ -317,6 +318,19 @@ describe('finding and loading the manifest', () => {
     const { site, warnings } = await loadSite(BASE, fakeFetch(JSON.stringify(cottageJson())));
     expect(site.name).toBe('Example cottage');
     expect(warnings).toEqual([]);
+  });
+
+  it('resolves against where the manifest came from after redirects (a redirect elsewhere makes it from elsewhere)', async () => {
+    const redirected = (async () => {
+      const r = new Response(JSON.stringify(cottageJson()));
+      Object.defineProperty(r, 'url', { value: 'https://evil.example.net/s/site.json' });
+      return r;
+    }) as typeof fetch;
+    const { site } = await loadSite('https://twin.example.org/go?u=x', redirected);
+    expect(site.url).toBe('https://evil.example.net/s/site.json');
+    expect(site.models.main.url).toBe('https://evil.example.net/s/cottage.glb');
+    // no res.url (a test double): the requested URL
+    expect((await loadSite(BASE, fakeFetch(JSON.stringify(cottageJson())))).site.url).toBe(BASE);
   });
 
   it("loads a manifest with a plugin section this build doesn't have, and says so", async () => {

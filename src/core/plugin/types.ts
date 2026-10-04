@@ -752,6 +752,48 @@ export interface ThreeApi {
   toPlan(v: THREE.Vector3): { X: number; Y: number; Z: number };
   /** metres per plan unit */
   unit: number;
+  /** material overrides: the only way to change what a model mesh is drawn with (see MaterialsApi) */
+  materials: MaterialsApi;
+}
+
+/** an override's material: a fixed one, or one made from the material beneath it (the mesh's own, or a lower layer's;
+ * called again whenever the stack changes, so cache what it makes) */
+export type MaterialLayer = THREE.Material | ((below: THREE.Material, mesh: THREE.Mesh) => THREE.Material);
+
+/** one layer on a set of meshes; dispose takes it off (in any order), and it goes when the plugin stops */
+export interface MaterialOverride extends Disposable {
+  /** change this layer's material; it keeps its place in each mesh's stack */
+  set(m: MaterialLayer): void;
+  /** re-run each of its meshes' whole stack (after you edited a material that a function layer above copies from,
+   * e.g. a light's glow under the blueprint fade) */
+  refresh(): void;
+}
+
+/** the built-in plugins' places in a mesh's material stack (higher on top); a plugin's own default is 0, so energy
+ * mode sits above it rather than tying (a tie goes to whichever pushed later) */
+export const MATERIAL_PRIORITY = {
+  /** the lights: a fixture's glowing copy */
+  glow: -10,
+  /** blueprints: the model faded under a sheet */
+  fade: -5,
+  /** energy mode: the ghost and the load tints */
+  energy: 10,
+} as const;
+
+/** Each mesh shows the top of a stack of overrides over its own material: higher `priority` on top (default 0; see
+ * MATERIAL_PRIORITY), and the later push on top of an equal one. Don't assign `mesh.material` on model meshes
+ * yourself. */
+export interface MaterialsApi {
+  /** cover meshes with a layer; anything that isn't a mesh with one material is skipped (with a warning, once) */
+  push(
+    meshes: THREE.Object3D | Iterable<THREE.Object3D>,
+    m: MaterialLayer,
+    opts?: { priority?: number },
+  ): MaterialOverride;
+  /** the mesh's own material, whatever is drawn over it: what to read a mesh's real material from. Typed as the
+   * mesh's material, so a plain `THREE.Mesh` gives `Material | Material[]` (a mesh with an array is never covered;
+   * narrow it with Array.isArray). The stack also leaves it in `userData.baseMaterial`: internal, not part of the API. */
+  base<M extends THREE.Material | THREE.Material[]>(mesh: THREE.Mesh<THREE.BufferGeometry, M>): M;
 }
 
 export interface ViewApi {
@@ -863,9 +905,18 @@ export interface PluginDef<C = unknown> {
   requires?: string[];
   /** start after these if they are present (soft ordering) */
   after?: string[];
-  /** start even without a manifest section */
+  /** start even without a manifest section (built-in plugins only: an external one starts from its section) */
   autoStart?: boolean;
+  /** the letter keys it binds ('M' for KeyM), so `validate-site` keeps a site layer's key off them and the key
+   * registry warns about a letter it uses but doesn't list (a built-in plugin's are in src/plugins/registry.ts) */
+  keys?: readonly string[];
+  /** check the manifest section before setup: return the problems ('decimals: expected a whole number'), or nothing
+   * when it is fine. A problem stops the plugin, with a toast; `validate-site` runs it too. */
+  validate?(config: unknown): string[] | void;
   setup(ctx: PluginContext<C>): void | PluginInstance | Promise<void | PluginInstance>;
 }
 
+/** Types a plugin, and returns it unchanged. With MATERIAL_PRIORITY's numbers, the API's only run-time exports: a
+ * plugin bundled outside JARVIS inlines both, and needs nothing else from the viewer at run time but `ctx`
+ * (docs/plugins.md, "External plugins"; tests/unit/external-plugins.test.ts keeps it so). */
 export const definePlugin = <C = unknown>(def: PluginDef<C>): PluginDef<C> => def;

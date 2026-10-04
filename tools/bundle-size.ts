@@ -1,10 +1,12 @@
 // npm run bundle-size (after npm run build)
 // The gzip size of what the browser downloads from dist/, against the budgets in tools/bundle-budget.json: the initial
 // JS (index.html's entry script and the chunks it preloads), the CSS it links, and all the JS (the plugins' lazy
-// chunks too). Exits 1 if any is over its budget. In CI the table also goes to the job summary.
+// chunks too). Exits 1 if any is over its budget, or if a built-in plugin's chunk is in the initial JS (a plugin's code
+// is downloaded only for a site that enables it). In CI the table also goes to the job summary.
 import { appendFileSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
+import { BUILTIN_PLUGINS } from '../src/plugins/registry.ts';
 
 const dist = resolve(process.argv[2] || 'dist');
 const budget = JSON.parse(readFileSync(new URL('./bundle-budget.json', import.meta.url), 'utf8')) as Record<
@@ -51,4 +53,12 @@ for (const r of over)
   console.error(
     `${process.env.CI ? '::error::' : ''}${r.name} is ${kB(r.size)} gzipped, over its ${kB(r.max)} budget (tools/bundle-budget.json)`,
   );
-process.exit(over.length ? 1 : 0);
+// a plugin chunk preloaded by index.html would be downloaded on every site
+const eager = initialJs.filter((f) =>
+  Object.keys(BUILTIN_PLUGINS).some((id) => new RegExp(`^assets/${id}-[\\w-]{8}\\.js$`).test(f)),
+);
+if (eager.length)
+  console.error(
+    `${process.env.CI ? '::error::' : ''}plugin chunks in the initial JS (${eager.join(', ')}): a plugin's code should download only when a site enables it`,
+  );
+process.exit(over.length || eager.length ? 1 : 0);

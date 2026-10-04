@@ -1,5 +1,6 @@
 /// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
+import { contentSecurityPolicy } from './tools/csp.ts';
 import { licenceFiles, siteFolder } from './tools/vite-plugins.ts';
 
 // The site folder holds one building: its site.json manifest, the model and the data files it names. It is not part of the
@@ -10,7 +11,12 @@ export default defineConfig({
   base: './',
   plugins: [siteFolder(site), licenceFiles()],
   server: { port: 5173, host: true },
-  preview: { port: 4173, host: true },
+  // the built viewer under the policy the container sends (the dev server has none: Vite's client needs more)
+  preview: {
+    port: 4173,
+    host: true,
+    headers: { 'Content-Security-Policy': contentSecurityPolicy(process.env.JARVIS_PLUGIN_ORIGINS) },
+  },
   build: { target: 'es2022', sourcemap: true, chunkSizeWarningLimit: 1500 },
   test: {
     // server/test/*.test.ts: the assistant server's dependency-free core (policy, gate, hub); server/test/integration

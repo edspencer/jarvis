@@ -54,8 +54,19 @@ export function createKeyRegistry(
   const conflicts: string[] = [];
 
   function add(owner: string, ownerName: string, k: KeyBinding): Disposable {
-    // a clash: the same key already runs something, or the core holds it for movement (help-only entries)
-    const clash = k.run && entries.find((e) => (e.run || e.owner === 'core') && sig(e) === sig(k));
+    // a clash: the same key already runs something, or the core holds it for movement (help-only entries). Bindings
+    // that both have a `when` share the key (Esc to cancel whatever is active): a press runs the first whose `when`
+    // holds, in the order they were added.
+    const shares = (e: KeyEntry) => !!(e.run && e.when && k.when);
+    // Esc goes to a plugin only to cancel something (escape.ts): a binding with no `when` would take every press
+    // meant for the inspector, so one is refused
+    if (k.run && k.code === 'Escape' && !k.when && owner !== 'core') {
+      const m = `keys: Esc (${k.label}, ${owner}) needs a \`when\`: bind Esc only while there is something to cancel; ignored`;
+      conflicts.push(m);
+      warn(m);
+      return { dispose() {} };
+    }
+    const clash = k.run && entries.find((e) => (e.run || e.owner === 'core') && sig(e) === sig(k) && !shares(e));
     if (clash) {
       const m = `keys: ${keyName(k)} (${k.label}, ${owner}) is already ${clash.owner}'s (${clash.label}); ignored`;
       conflicts.push(m);
@@ -66,7 +77,9 @@ export function createKeyRegistry(
     const letter = /^Key([A-Z])$/.exec(k.code)?.[1];
     const declared = opts.declared?.(owner);
     if (letter && k.run && declared && !declared.includes(letter))
-      warn(`keys: ${owner} uses ${letter} but doesn't declare it (src/plugins/registry.ts)`);
+      warn(
+        `keys: ${owner} uses ${letter} but doesn't declare it (src/plugins/registry.ts, or an external plugin's keys)`,
+      );
     const e: KeyEntry = { ...k, owner, ownerName };
     entries.push(e);
     return {

@@ -14,17 +14,20 @@ import { createFlight } from './flight';
 import { CENTRE_NDC, bindInput, type OrbitHolder, type Pointer } from './input';
 import { createPicker } from './inspect';
 import { createLoading, type Loading } from './loading';
+import { createMaterialStack } from './material-stack';
+import { bindTouch } from './touch';
 import { createModel } from './model';
 import { createPlayer, createWalker } from './player';
 import { createBus } from './plugin/events';
 import { createStorage, createUrl } from './plugin/env';
 import { createPluginHost } from './plugin/host';
+import { loadPlugins } from './plugin/load';
 import { createKeyRegistry } from './plugin/keys';
 import { createStore } from './plugin/store';
-import type { PluginDef, Subject, ViewApi } from './plugin/types';
+import type { Subject, ViewApi } from './plugin/types';
 import { createStage } from './stage';
 import { createSunlight } from './sunlight';
-import type { Keys, Mode, ViewState } from './types';
+import type { Analog, Keys, Mode, ViewState } from './types';
 import { P, setPlanUnit, toPlan } from './units';
 
 /** Load the site manifest, then start; a missing or invalid manifest is listed on the loading screen. */
@@ -77,6 +80,7 @@ function startSite(site: Site, loading: Loading): void {
   };
   const player = createPlayer(site.walk);
   const keys: Keys = {};
+  const analog: Analog = { x: 0, y: 0 }; // the touch thumb-stick
   const orbit: OrbitHolder = { controls: null, dragged: false };
   const orbitCam = { pos: site.overviewCamera ? P(...site.overviewCamera) : centre.clone(), target: centre.clone() };
   const pointer: Pointer = { mouse: new THREE.Vector2(), hoverT: 0, hoverAt: null };
@@ -100,7 +104,15 @@ function startSite(site: Site, loading: Loading): void {
 
   const bus = createBus();
   const store = createStore();
-  const keyReg = createKeyRegistry({ declared: (owner) => BUILTIN_PLUGINS[owner]?.keys ?? null });
+  const externalKeys: Record<string, readonly string[]> = {}; // filled in when the external plugins have loaded
+  const keyReg = createKeyRegistry({
+    declared: (owner) =>
+      Object.hasOwn(BUILTIN_PLUGINS, owner)
+        ? BUILTIN_PLUGINS[owner].keys
+        : Object.hasOwn(externalKeys, owner)
+          ? externalKeys[owner]
+          : null,
+  });
   const services = new Map<string, unknown>();
   const extraProgress = new Map<string, { done(): void }>();
   const announced = new Set<string>();
@@ -132,16 +144,19 @@ function startSite(site: Site, loading: Loading): void {
     player,
     state,
     keys,
+    analog,
     camera,
     getCollider: () => model.collider,
     onCrouchChange: () => hud.update('status'),
   });
+  const materials = createMaterialStack();
   const picker = createPicker({
     camera,
     root: model.root,
     parts: model.parts,
     ownerOf: model.ownerOf,
     isGlass: model.isGlass,
+    baseOf: materials.base,
   });
   const flight = createFlight({
     state,
@@ -176,7 +191,7 @@ function startSite(site: Site, loading: Loading): void {
     }
     document.getElementById('cross')?.classList.toggle('hidden', mode !== 'walk');
     hud.setHover(null, null);
-    hud.update('status', 'hover');
+    hud.update('status', 'hover', 'stick');
     bus.emit('mode', { mode });
   }
 
@@ -289,18 +304,23 @@ function startSite(site: Site, loading: Loading): void {
     locked: () => document.pointerLockElement === renderer.domElement,
     mode: () => state.mode,
     setMode,
+    stick: (x, y) => {
+      analog.x = x;
+      analog.y = y;
+    },
   });
   const hudEl = mountHud(hud);
 
-  const three = { THREE, scene, camera, renderer, model, P, toPlan, unit: site.unit };
+  const three = { THREE, scene, camera, renderer, model, P, toPlan, unit: site.unit, materials };
   // a plugin with a manifest section (resolved: the lights plugin also reads the old home-assistant.map)
-  const enabled = (id: string) =>
-    !!(site.plugins as Record<string, unknown>)[id] ||
-    !!(site.manifest.plugins as Record<string, unknown> | undefined)?.[id];
+  const own = (o: object | undefined, id: string) =>
+    !!o && Object.hasOwn(o, id) && !!(o as Record<string, unknown>)[id];
+  const enabled = (id: string) => own(site.plugins, id) || own(site.manifest.plugins, id);
   const twin: Record<string, unknown> = {};
   const makeContext = createContextFactory({
     site,
     three,
+    materials,
     view,
     picker,
     bus,
@@ -330,7 +350,21 @@ function startSite(site: Site, loading: Loading): void {
     here: () => here,
   });
 
-  bindInput({ canvas: renderer.domElement, state, keys, player, keyReg, hud, hudEl, picker, bus, orbit, pointer });
+  const touch = bindTouch({ canvas: renderer.domElement, state, player, hud, picker, bus });
+  bindInput({
+    canvas: renderer.domElement,
+    state,
+    keys,
+    player,
+    keyReg,
+    hud,
+    hudEl,
+    picker,
+    bus,
+    orbit,
+    pointer,
+    lastWasTouch: touch.lastWasTouch,
+  });
   addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
@@ -405,6 +439,7 @@ function startSite(site: Site, loading: Loading): void {
       player,
       state,
       keys,
+      analog,
       teleport: walker.teleport,
       setMode,
       applyVisibility,
@@ -422,6 +457,7 @@ function startSite(site: Site, loading: Loading): void {
       owners: model.owners,
       parts: model.parts,
       root: model.root,
+      materials,
       plants: model.plants,
       extras: model.extras,
       loadExtra: model.loadExtra,
@@ -483,7 +519,7 @@ function startSite(site: Site, loading: Loading): void {
         state.cutaway = true;
         applyVisibility();
       }
-      if (url.has('overview') || hud.small) setMode('orbit'); // phones: overview only, for now
+      if (url.has('overview') || hud.small) setMode('orbit'); // phones start in the overview (the strip's switch walks)
       if (url.get('sun')) {
         const [h, dy] = url.get('sun')!.split(',').map(Number); // ?sun=13.5,172
         sunlight.setSun(h, dy);
@@ -508,24 +544,16 @@ function startSite(site: Site, loading: Loading): void {
       console.error(err);
     });
 
-  // The built-in plugins the site enables (and the autoStart ones), each its own chunk; a module that fails to load
-  // is reported and left out.
+  // The plugins the site enables (and the autoStart ones): only their code is downloaded (plugin/load.ts). One that
+  // fails to load is reported and left out.
   async function startPlugins(): Promise<void> {
-    const ids = Object.keys(BUILTIN_PLUGINS);
     const prog = hud.addProgress('Starting plugins…');
-    const defs: PluginDef[] = [];
-    await Promise.all(
-      ids.map(async (id) => {
-        try {
-          const m = await BUILTIN_PLUGINS[id].load();
-          if (enabled(id) || m.default.autoStart) defs.push(m.default as PluginDef);
-        } catch (err) {
-          console.warn(`plugin ${id} didn't load (${(err as Error).message})`);
-          if (enabled(id)) hud.toast({ text: `The ${id} plugin didn't load`, tone: 'warn' });
-        }
-      }),
-    );
-    defs.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+    const { defs, keys } = await loadPlugins(site, {
+      enabled,
+      page: location.href,
+      failed: (id, why) => hud.toast({ text: `The ${id} plugin didn't load: ${why}`, tone: 'warn', sticky: true }),
+    });
+    Object.assign(externalKeys, keys);
     await host.start(defs);
     bus.emit('ready', {});
     prog.done();

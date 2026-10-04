@@ -140,15 +140,39 @@ async function start(opts: { config?: object; ls?: Storage } = {}) {
 }
 
 describe('the measure example runs', () => {
-  it('claims M and Shift-M, adds the panel, a status item (hidden until measuring) and a group in the scene', async () => {
+  it('claims M, Shift-M and Esc, adds the panel, a status item (hidden until measuring) and a group in the scene', async () => {
     const { keys, panels, items, scene } = await start();
     expect(keys.map((k) => [k.code, !!k.shift])).toEqual([
       ['KeyM', false],
       ['KeyM', true],
+      ['Escape', false],
     ]);
+    expect(measure.keys).toEqual(['M']); // declared: every letter it binds
     expect(panels.map((p) => p.id)).toEqual(['measure']);
     expect(items[0].render()).toBeNull();
     expect(scene.getObjectByName('measure')).toBeTruthy();
+  });
+
+  it('Esc stops measuring, and wants the key only while measuring', async () => {
+    const { key, press, items, click } = await start();
+    expect(key('Escape').when!()).toBe(false);
+    press('KeyM');
+    click(new THREE.Vector3(1, 0, 1)); // half a measurement: dropped
+    expect(key('Escape').when!()).toBe(true);
+    press('Escape');
+    expect(items[0].render()).toBeNull();
+    expect(key('Escape').when!()).toBe(false);
+    expect(click(new THREE.Vector3(0, 0, 0))).toBe(false); // clicks inspect again
+  });
+
+  it('checks its section: unknown fields and wrong types are problems, {} is fine', () => {
+    expect(measure.validate!({})).toEqual([]);
+    expect(measure.validate!({ colour: '#fff', decimals: 1 })).toEqual([]);
+    expect(measure.validate!({ decimal: 1, colour: 3, decimals: 1.5 })).toEqual([
+      'decimal: unknown field (expected colour, decimals)',
+      "colour: expected a CSS colour ('#ffb000')",
+      'decimals: expected a whole number',
+    ]);
   });
 
   it('leaves clicks alone until M is pressed', async () => {

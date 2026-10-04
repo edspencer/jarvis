@@ -80,6 +80,7 @@ export default definePlugin<LightsConfig>({
       scene,
       camera,
       fixtures,
+      materials: ctx.three.materials,
       emitterHints: ctx.config.emitterHints,
       // real lights; tune for fps (8-12); a bare ?halights means none, as before
       poolSize: THREE.MathUtils.clamp(ctx.url.get('halights') === '' ? 0 : ctx.url.num('halights', 10), 0, 32),

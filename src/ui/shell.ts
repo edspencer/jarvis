@@ -9,7 +9,7 @@ import type { ToggleSpec } from '../core/plugin/types';
 import { base, blockStyles } from './styles';
 import { button, dot, glyph, icon, renderBlocks } from './blocks';
 import { iconSvg } from './icons';
-import type { Hud, PanelRec, Region } from './hud';
+import { STICK, type Hud, type PanelRec, type Region } from './hud';
 import { setElementEnv } from './elements';
 
 abstract class RegionElement extends LitElement {
@@ -93,11 +93,12 @@ export class JvRail extends RegionElement {
         font-weight: 700;
         line-height: 16px;
         text-align: center;
-        background: #2c3c55;
+        background: var(--jv-badge-fill);
         color: var(--jv-text);
       }
       .badge.tone-bad {
-        background: var(--jv-bad);
+        /* not --jv-bad: white 10px text on that is 3.4:1 */
+        background: var(--jv-bad-fill);
         color: #fff;
       }
       .badge.tone-warn {
@@ -975,7 +976,18 @@ export class JvStatus extends RegionElement {
           left: var(--jv-gap);
           right: var(--jv-gap);
         }
-        .seg,
+        /* the mode switch stays (walking on a touch screen has the thumb-stick): 28 px buttons in the strip, with a
+           40 px tall hit area */
+        .seg button {
+          position: relative;
+          min-height: 28px;
+          padding: 2px 12px;
+        }
+        .seg button::after {
+          content: '';
+          position: absolute;
+          inset: -6px 0;
+        }
         .chips,
         .sep,
         .item.opt {
@@ -1394,7 +1406,9 @@ export class JvToasts extends RegionElement {
             </button>
           </div>`,
       );
-    return html`<div class="toasts">
+    // above the touch thumb-stick while it's shown
+    const st = h.stickAt();
+    return html`<div class="toasts" style=${st ? `bottom:${st.bottom + STICK + 8}px` : ''}>
       <div role="status" aria-live="polite">${list(false)}</div>
       <div role="alert" aria-live="assertive">${list(true)}</div>
     </div>`;
@@ -1725,6 +1739,127 @@ export class JvHover extends RegionElement {
   }
 }
 
+// ------------------------------------------------------------------ touch thumb-stick
+const TRAVEL = 36; // px: the knob's reach from the stick's centre
+/** Walking on a touch screen: an analog stick (direction and how far it's pushed) bottom left, clear of the tab bar, a
+ * peek sheet, the dock and the inspector (Hud.stickAt places it, or hides it). Pointer Events with capture, so it
+ * works alongside a second finger looking around on the view (core/touch.ts). Hidden from assistive technology and
+ * not focusable: the keyboard's way to move is W A S D. */
+export class JvStick extends RegionElement {
+  readonly region = 'stick';
+  private finger: number | null = null;
+  private x = 0;
+  private y = 0;
+  static override styles = [
+    base,
+    css`
+      .stick {
+        position: fixed;
+        width: ${STICK}px;
+        height: ${STICK}px;
+        border-radius: 50%;
+        background: rgba(18, 21, 27, 0.45);
+        border: 1px solid rgba(255, 255, 255, 0.35);
+        box-shadow: var(--jv-shadow);
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        z-index: 8;
+      }
+      .knob {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: 52px;
+        height: 52px;
+        margin: -26px 0 0 -26px;
+        border-radius: 50%;
+        background: var(--jv-surface-raised);
+        border: 1px solid var(--jv-accent);
+        pointer-events: none;
+        transition: transform var(--jv-motion) ease-out;
+      }
+      .stick.held .knob {
+        transition: none;
+      }
+    `,
+  ];
+  private send(x: number, y: number): void {
+    this.x = x;
+    this.y = y;
+    this.hud.deps.stick?.(x, y);
+    const k = this.renderRoot.querySelector<HTMLElement>('.knob');
+    if (k) k.style.transform = `translate(${x * TRAVEL}px, ${-y * TRAVEL}px)`;
+  }
+  private release(): void {
+    this.finger = null;
+    this.renderRoot.querySelector('.stick')?.classList.remove('held');
+    if (this.x || this.y) this.send(0, 0);
+  }
+  private move(e: PointerEvent): void {
+    // full speed at the knob's full travel (TRAVEL px from the centre), well inside the ring
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    let dx = (e.clientX - (r.left + r.width / 2)) / TRAVEL,
+      dy = -(e.clientY - (r.top + r.height / 2)) / TRAVEL;
+    const len = Math.hypot(dx, dy);
+    if (len > 1) {
+      dx /= len;
+      dy /= len;
+    }
+    // a small dead zone, so a resting thumb doesn't creep
+    this.send(len < 0.12 ? 0 : dx, len < 0.12 ? 0 : dy);
+  }
+  private onDown = (e: PointerEvent) => {
+    if (this.finger !== null) return;
+    e.preventDefault();
+    this.finger = e.pointerId;
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+    (e.currentTarget as HTMLElement).classList.add('held');
+    this.move(e);
+  };
+  private onMove = (e: PointerEvent) => {
+    if (e.pointerId === this.finger) this.move(e);
+  };
+  private onUp = (e: PointerEvent) => {
+    if (e.pointerId === this.finger) this.release();
+  };
+  private onResize = () => this.hud.update('stick');
+  // the window lost focus (an app switch, a notification): let go, as input.ts does the held keys, so a stick held
+  // meanwhile doesn't keep walking; the finger's later moves are ignored until it touches the stick again
+  private onBlur = () => this.release();
+  override connectedCallback(): void {
+    super.connectedCallback();
+    addEventListener('resize', this.onResize);
+    addEventListener('blur', this.onBlur);
+  }
+  override disconnectedCallback(): void {
+    super.disconnectedCallback();
+    removeEventListener('resize', this.onResize);
+    removeEventListener('blur', this.onBlur);
+    this.release();
+  }
+  protected override updated(): void {
+    // hidden (a modal, a tall sheet, the overview): let go, so the walker doesn't keep walking behind it
+    if (!this.hud.stickAt() && (this.finger !== null || this.x || this.y)) this.release();
+  }
+  override render() {
+    const at = this.hud.stickAt();
+    if (!at) return nothing;
+    return html`<div
+      class="stick"
+      aria-hidden="true"
+      style="left:${at.left}px;bottom:${at.bottom}px"
+      @pointerdown=${this.onDown}
+      @pointermove=${this.onMove}
+      @pointerup=${this.onUp}
+      @pointercancel=${this.onUp}
+      @lostpointercapture=${this.onUp}
+    >
+      <div class="knob"></div>
+    </div>`;
+  }
+}
+
 // ------------------------------------------------------------------ the root
 export class JvHud extends LitElement {
   static override properties = { hud: { attribute: false } };
@@ -1750,6 +1885,7 @@ export class JvHud extends LitElement {
   override render() {
     const h = this.hud;
     return html`<jv-hover .hud=${h}></jv-hover>
+      <jv-stick .hud=${h}></jv-stick>
       <jv-rail .hud=${h}></jv-rail>
       <jv-status .hud=${h}></jv-status>
       <jv-dock .hud=${h}></jv-dock>
@@ -1803,6 +1939,7 @@ define('jv-toasts', JvToasts);
 define('jv-modal', JvModal);
 define('jv-search', JvSearch);
 define('jv-hover', JvHover);
+define('jv-stick', JvStick);
 define('jv-hud', JvHud);
 
 /** put the HUD on the page */

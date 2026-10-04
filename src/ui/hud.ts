@@ -33,7 +33,8 @@ import type {
 import { openPanel, sameSubject, sectionsFor, type SectionRec } from './model';
 import type { BlockEnv } from './blocks';
 
-export type Region = 'rail' | 'dock' | 'inspector' | 'status' | 'legend' | 'toasts' | 'modal' | 'search' | 'hover';
+export type Region =
+  'rail' | 'dock' | 'inspector' | 'status' | 'legend' | 'toasts' | 'modal' | 'search' | 'hover' | 'stick';
 
 export interface PanelRec {
   spec: PanelSpec;
@@ -82,6 +83,8 @@ export interface HudDeps {
   locked(): boolean;
   mode(): Mode;
   setMode(m: Mode): void;
+  /** the touch thumb-stick moved: x strafes right, y walks forward, each -1 … 1 (0, 0 when let go) */
+  stick?(x: number, y: number): void;
 }
 
 interface Saved {
@@ -95,6 +98,14 @@ interface Saved {
 }
 
 const SMALL = '(max-width: 719px)';
+const COARSE = '(pointer: coarse)';
+/** the touch thumb-stick's size (CSS px) */
+export const STICK = 120;
+/** a design token's value in px (the stick's placement needs the layout's numbers) */
+function tokenPx(name: string, fallback: number): number {
+  if (typeof getComputedStyle !== 'function' || typeof document === 'undefined') return fallback;
+  return parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name)) || fallback;
+}
 
 export class Hud {
   readonly deps: HudDeps;
@@ -133,8 +144,13 @@ export class Hud {
   expanded = new Set<string>();
   savedToggles: Record<string, boolean> = {};
   small: boolean;
+  /** a touch screen (a coarse pointer, or the last pointer down was a finger): walking gets the thumb-stick, drag to
+   * look and tap to inspect (core/touch.ts) */
+  touch: boolean;
   /** bottom sheet height on small screens */
   sheet: 'peek' | 'half' | 'full' = 'half';
+  /** the sheet height before a tap-inspect made it a peek (put back when the inspector closes) */
+  private sheetBefore: 'peek' | 'half' | 'full' | null = null;
   private seq = 0;
   private queued = new Set<Region>();
   private raf = 0;
@@ -150,6 +166,8 @@ export class Hud {
     this.sectionClosed = s.sections || {};
     this.groups = s.groups || {};
     this.savedToggles = s.toggles || {};
+    const coarse = typeof matchMedia === 'function' ? matchMedia(COARSE) : null;
+    this.touch = !!coarse?.matches;
     const mq = typeof matchMedia === 'function' ? matchMedia(SMALL) : null;
     this.small = !!mq?.matches;
     mq?.addEventListener?.('change', (e) => {
@@ -163,6 +181,10 @@ export class Hud {
   /** redraw some regions (all by default) on the next frame */
   update(...rs: Region[]): void {
     for (const r of rs.length ? rs : ([...this.regions.keys()] as Region[])) this.queued.add(r);
+    // the thumb-stick keeps clear of the dock, the inspector and a bottom sheet, and hides behind a modal; the toasts
+    // keep clear of the stick
+    if (['dock', 'inspector', 'modal'].some((r) => this.queued.has(r as Region))) this.queued.add('stick');
+    if (this.queued.has('stick')) this.queued.add('toasts');
     if (this.raf) return;
     const run = () => {
       this.raf = 0;
@@ -186,6 +208,44 @@ export class Hud {
       toggles: this.savedToggles,
     };
     this.deps.storage.set('state', s);
+  }
+
+  /** a finger or a mouse was used last (a coarse pointer stays touch) */
+  setTouch(on: boolean): void {
+    if (on === this.touch) return;
+    this.touch = on;
+    this.update('stick', 'status');
+  }
+  /** where the touch thumb-stick goes (CSS px from the left and the bottom of the window), or null: hidden (not
+   * walking on a touch screen, a modal, a half or full sheet, or no room between the dock and the inspector) */
+  stickAt(): { left: number; bottom: number } | null {
+    if (!this.touch || this.deps.mode() !== 'walk' || this.modals.length) return null;
+    const gap = tokenPx('--jv-gap', 10);
+    if (this.small) {
+      const up = this.sheetUp();
+      if (up === 'half' || up === 'full') return null;
+      // above the tab bar (52 px), or above a peek sheet (64 + 96 px)
+      return { left: gap + 12, bottom: up === 'peek' ? 64 + 96 + 12 : 52 + gap * 2 + 12 };
+    }
+    // right of the rail, or of the dock when a panel is open; hidden if that runs into the inspector
+    const rail = tokenPx('--jv-rail', 44);
+    const left = this.openPanels().length ? gap * 3 + rail + this.dockWidth + 16 : gap * 2 + rail + 16;
+    const right = this.subject ? innerWidth - gap * 2 - tokenPx('--jv-inspector', 360) : innerWidth - gap;
+    return left + STICK <= right ? { left, bottom: 24 } : null;
+  }
+  /** inspect from a tap while walking on a phone: the sheet opens as a peek, so the view and the stick stay usable;
+   * the height it had comes back when the inspector closes */
+  peekInspect(ref: SubjectRef): void {
+    if (this.small && !this.subject && this.sheet !== 'peek') {
+      this.sheetBefore = this.sheet;
+      this.sheet = 'peek';
+    }
+    this.inspect(ref);
+  }
+  /** a bottom sheet (dock panel or inspector) is up on a small screen, and how high */
+  sheetUp(): 'peek' | 'half' | 'full' | null {
+    if (!this.small || (!this.subject && !this.open.length)) return null;
+    return this.sheet;
   }
 
   // ------------------------------------------------------------------ dock panels
@@ -374,6 +434,10 @@ export class Hud {
     this.subject = s;
     for (const k of [...this.expanded]) if (k.startsWith('inspector:')) this.expanded.delete(k);
     if (s && this.small) this.open = [];
+    if (!s && this.sheetBefore) {
+      if (this.sheet === 'peek') this.sheet = this.sheetBefore; // (unless it was dragged to another height since)
+      this.sheetBefore = null;
+    }
     // (the status strip too: it makes room for the inspector, and must not wait for its next refresh to do so)
     this.update('inspector', 'legend', 'dock', 'rail', 'status');
     if (!sameSubject(prev, s) || prev !== s) this.deps.onSelect(s, prev);
@@ -613,7 +677,7 @@ export class Hud {
       const h = this.modal({
         title: 'Keys and controls',
         wide: true,
-        blocks: () => helpBlocks(this.deps.site, this.deps.keys.list()),
+        blocks: () => helpBlocks(this.deps.site, this.deps.keys.list(), this.touch),
         actions: () => [{ label: 'Close', kind: 'primary', onClick: () => h.close() }],
       });
     });

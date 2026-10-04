@@ -1,10 +1,10 @@
 // Energy mode in the scene: the house ghosted (every mesh gets one faint see-through material), the metered rooms'
 // floors and the metered nodes and fixtures tinted by load, and a marker (a disc that grows with the load, drawn over
 // everything) at each metered registry item, wall plate, fixture and node, which is also what a click picks. The
-// materials are swapped, not edited, and put back when the mode goes off; a mesh whose material someone else swapped
-// meanwhile (the lights plugin preparing a fixture) keeps theirs and is ghosted again on the next update.
+// materials are swapped, not edited, through the core's material overrides (one per mesh, priority 0: over the lights'
+// glowing copies and the blueprint fade), which put back whatever is beneath when the mode goes off.
 import * as THREE from 'three';
-import type { ModelInfo } from '../../plugin-api';
+import { MATERIAL_PRIORITY, type MaterialOverride, type MaterialsApi, type ModelInfo } from '../../plugin-api';
 
 export interface Anchor {
   /** the store reference ('pins:elec.panel.a', 'plates:KIT-O-H', 'fixture:den.lamp', 'node:Furn_fridge') */
@@ -30,10 +30,15 @@ const GHOST = new THREE.MeshBasicMaterial({
 });
 GHOST.name = 'energy.ghost';
 
-export function createEnergyScene(deps: { scene: THREE.Scene; model: ModelInfo; camera: THREE.Camera }) {
-  const { scene, model, camera } = deps;
-  /** mesh -> its own material, while ghosted or tinted */
-  const saved = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
+export function createEnergyScene(deps: {
+  scene: THREE.Scene;
+  model: ModelInfo;
+  camera: THREE.Camera;
+  materials: MaterialsApi;
+}) {
+  const { scene, model, camera, materials } = deps;
+  /** mesh -> its override, while ghosted or tinted */
+  const overrides = new Map<THREE.Mesh, { o: MaterialOverride; m: THREE.Material }>();
   const mats = new Map<string, THREE.MeshBasicMaterial>();
   const mine = new Set<THREE.Material>([GHOST]);
   let on = false;
@@ -82,13 +87,12 @@ export function createEnergyScene(deps: { scene: THREE.Scene; model: ModelInfo; 
   }
 
   function swap(mesh: THREE.Mesh, m: THREE.Material): void {
-    const cur = mesh.material;
-    const ours = Array.isArray(cur) ? cur.every((x) => mine.has(x)) : mine.has(cur);
-    if (!ours) {
-      saved.set(mesh, cur); // first time, or someone swapped it since: theirs is the one to put back
-      mesh.userData.baseMaterial = cur; // what another plugin should read as the mesh's own (the lights)
+    const cur = overrides.get(mesh);
+    if (!cur) overrides.set(mesh, { o: materials.push(mesh, m, { priority: MATERIAL_PRIORITY.energy }), m });
+    else if (cur.m !== m) {
+      cur.m = m;
+      cur.o.set(m);
     }
-    if (mesh.material !== m) mesh.material = m;
   }
 
   /** ghost everything, then tint what has a colour */
@@ -110,12 +114,8 @@ export function createEnergyScene(deps: { scene: THREE.Scene; model: ModelInfo; 
   }
 
   function restore(): void {
-    for (const [mesh, m] of saved) {
-      const cur = mesh.material;
-      if (!Array.isArray(cur) && mine.has(cur)) mesh.material = m;
-      if (mesh.userData.baseMaterial === m) delete mesh.userData.baseMaterial;
-    }
-    saved.clear();
+    for (const { o } of overrides.values()) o.dispose();
+    overrides.clear();
   }
 
   function drawMarkers(list: Anchor[]): void {
