@@ -84,9 +84,10 @@ manifest. A missing or invalid manifest is listed, field by field, on the loadin
 
 The short version; [the guide](docs/guide/your-own-building.md) has the detail.
 
-1. Export the building as glTF (metres, Y up), ideally compressed with `gltfpack -cc -tc`. Name the nodes or write
-   layer rules as the [model format](docs/model-format.md) describes: floors with a `room` extra, roofs, ceilings,
-   doors, light fixtures with a `fixture_id`. A plain model works too; each convention adds a feature.
+1. Export the building as glTF (metres, Y up), ideally compressed with `gltfpack -cc -tc -kn -ke -km` (`-kn -ke -km`
+   keep the node names, extras and materials the viewer reads). Name the nodes or write layer rules as the
+   [model format](docs/model-format.md) describes: floors with a `room` extra, roofs, ceilings, doors, light fixtures
+   with a `fixture_id`. A plain model works too; each convention adds a feature.
 2. Make a folder with the model and a `site.json`. The minimum:
 
    ```json
