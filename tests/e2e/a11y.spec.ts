@@ -13,6 +13,8 @@ test.beforeAll(async ({ browser }) => {
   page = await (await browser.newContext()).newPage(); // axe needs a page from an explicit context
   await openViewer(page, 'ha=mock&hamock=static&noextra&sun=15,276');
   await waitForLayers(page);
+  // the scans read the DOM only: stop drawing frames, which under software WebGL take the main thread from axe
+  await twin(page, 'twin.renderer.setAnimationLoop(null)');
 });
 
 test.afterAll(async () => {
