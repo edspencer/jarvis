@@ -651,8 +651,9 @@ export interface ConnectorSpec {
   name: string;
   /** execute an action under the connector's own allow-list; throws with the reason on refusal or failure */
   call(entityIds: string[], action: StoreAction, data?: Record<string, unknown>): Promise<void>;
-  /** why the action would be refused (null = it may be called); for disabling buttons up front */
-  refusal?(entityIds: string[], action: StoreAction): string | null;
+  /** why the action (with this data) would be refused, null if it may be called: everything call() would refuse it for,
+   * as the store checks every connector's part before it sends any. Also for disabling buttons up front. */
+  refusal?(entityIds: string[], action: StoreAction, data?: Record<string, unknown>): string | null;
   /** mock mode: take made-up states (for testing other plugins against fake data) */
   simulate?(states: EntityState[]): void;
   /** past states of one of its entities between two times (ms), oldest first; read-only */
@@ -706,8 +707,8 @@ export interface Store {
   onChange(fn: (c: StoreChange) => void, filter?: string[] | ((id: string) => boolean)): Disposable;
   /** route an action to the connector that owns these entities (several connectors: split) */
   call(entityIds: string | string[], action: StoreAction, data?: Record<string, unknown>): Promise<void>;
-  /** why call() would be refused, or null */
-  refusal(entityIds: string | string[], action: StoreAction): string | null;
+  /** why call() (with this data) would be refused, or null */
+  refusal(entityIds: string | string[], action: StoreAction, data?: Record<string, unknown>): string | null;
   /** the connector an entity comes from */
   sourceOf(id: string): string | undefined;
   /** the numeric changes seen since the page loaded (the last ~360), for a live sparkline */

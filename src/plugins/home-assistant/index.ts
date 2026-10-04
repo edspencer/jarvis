@@ -46,7 +46,7 @@ export default definePlugin<HAConfig>({
       id: 'home-assistant',
       name: 'Home Assistant',
       call: (ids, action, data) => c.call(ids, action, data),
-      refusal: (ids, action) => c.refusal(ids, action),
+      refusal: (ids, action, data) => c.refusal(ids, action, data),
       simulate: (states) => c.mock?.load(states),
       history: (id, from, to) => c.readHistory(id, from, to),
     });
