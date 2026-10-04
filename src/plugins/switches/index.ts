@@ -9,7 +9,7 @@
 // is never switched from a plate.
 import { human } from '../../core/text';
 import type { SwitchesConfig } from '../../site';
-import { definePlugin, type Blocks, type InlineSpan, type LinkItem, type Subject } from '../../core/plugin/types';
+import { definePlugin, type Blocks, type InlineSpan, type LinkItem, type Subject } from '../../plugin-api';
 import type { Pins } from '../pins/pins';
 import { createSwitches, type Plate, type PlatePosition } from './switches';
 

@@ -99,14 +99,15 @@ export function bindInput({
     if (inHud && CONTROL_KEYS.includes(e.code) && keyboardFocus) return;
     keys[e.code] = true;
     if (['Tab', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
-    if (e.repeat) return;
-    if (keyReg.handle(e)) e.preventDefault();
+    if (keyReg.handle(e)) e.preventDefault(); // (the registry runs a binding once per press: repeats are ignored)
   });
   addEventListener('keyup', (e) => {
     keys[e.code] = false;
+    keyReg.release(e);
   });
   addEventListener('blur', () => {
     for (const k in keys) keys[k] = false;
+    keyReg.releaseAll();
   });
 
   const toNdc = (e: MouseEvent) => mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);

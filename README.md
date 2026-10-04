@@ -122,6 +122,13 @@ fixture map's lights (a `switch.*` only where the map marks it `switch_is_light`
 `fixture_toggle` allows that). A stray call for any other entity (a water heater's or a network switch's plug) is
 refused.
 
+**What the allow-list does and doesn't protect.** The login's tokens are kept in this browser's `localStorage`, as
+Home Assistant's own frontend keeps them, so any code running on the viewer's origin (the browser console, a plugin, a
+script injected by an extension) can read them and call Home Assistant directly with that user's rights. The
+allow-list guards against bugs and misclicks in the viewer and its plugins, not against hostile code on the page.
+**Log the viewer in as a dedicated, non-admin Home Assistant user**, not your own account, and serve it from an origin
+that runs nothing else.
+
 ## Scripts
 
 |                                   |                                                                                                                   |

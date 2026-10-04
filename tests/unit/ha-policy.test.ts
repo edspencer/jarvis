@@ -4,6 +4,7 @@ import {
   buildAllowlist,
   controlCall,
   createSender,
+  planCalls,
   entitiesOf,
   SEND_OK,
   sendRefusal,
@@ -240,6 +241,27 @@ describe('the entity allow-list at send()', () => {
     });
     await expect(send('light', 'turn_off', { entity_id: ['light.cove_1', 'light.cove_2'] })).resolves.toBe('called');
     await expect(send('script', 'turn_on', { entity_id: 'script.bedtime' })).resolves.toBe('called');
+  });
+});
+
+describe('planCalls: one action across domains is all or nothing', () => {
+  const allow = buildAllowlist({
+    controls: [],
+    map: {
+      lamp: { entity_id: ['light.lamp', 'switch.lamp_plug'], switch_is_light: true },
+      x: { entity_id: 'light.x' },
+    },
+    toggle: { light: true },
+  });
+  it('splits by domain', () => {
+    const p = planCalls(['light.lamp', 'light.x'], 'turn_on', { brightness: 200 }, allow);
+    expect(p).toEqual({ calls: [['light', { brightness: 200, entity_id: ['light.lamp', 'light.x'] }]] });
+  });
+  it('refuses the whole action when any domain would be refused, before anything is sent', () => {
+    // switch.lamp_plug isn't allowed (the policy doesn't allow marked switches): the light must not switch alone
+    const p = planCalls(['light.lamp', 'switch.lamp_plug'], 'turn_off', {}, allow);
+    expect(p).toHaveProperty('refused');
+    expect((p as { refused: string }).refused).toMatch(/switch.lamp_plug/);
   });
 });
 

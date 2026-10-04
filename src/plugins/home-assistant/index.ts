@@ -3,8 +3,8 @@
 // (the site's scripts and switches, with the standard confirm), and a "Home Assistant" inspector section on anything
 // the site binds to entities (a fixture, a registry item, a device, a plate). It draws nothing in the scene: the lights
 // and faults feature plugins read the store.
-import type { HomeAssistantConfig, Site } from '../../site';
-import { definePlugin, type Blocks, type InlineSpan, type Subject, type Tone } from '../../core/plugin/types';
+import type { HomeAssistantConfig, LightsConfig, Site } from '../../site';
+import { definePlugin, type Blocks, type InlineSpan, type Subject, type Tone } from '../../plugin-api';
 import { createConnector } from './connector';
 import type { Control, ConnectorStatusLabel } from './types';
 
@@ -48,11 +48,12 @@ export default definePlugin<HAConfig>({
       call: (ids, action, data) => c.call(ids, action, data),
       refusal: (ids, action) => c.refusal(ids, action),
       simulate: (states) => c.mock?.load(states),
+      history: (id, from, to) => c.readHistory(id, from, to),
     });
     const c = createConnector({
       hassUrl: ctx.config.url || '',
       controlsUrl: ctx.config.controls,
-      mapUrl: ctx.site.plugins.lights?.map,
+      mapUrl: (ctx.site.plugins.lights as LightsConfig | null)?.map, // the site's fixture map: part of the allow-list
       mode,
       mockSeed: ctx.url.get('hamock'),
       handle,

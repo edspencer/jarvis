@@ -2,7 +2,7 @@
 // (ha_controls.json).
 
 // the store's entity shape is Home Assistant's state object
-export type { EntityAttributes, EntityState, Entities } from '../../core/plugin/types';
+export type { EntityAttributes, EntityState, Entities } from '../../plugin-api';
 
 /** service call data: always an entity_id (one or several), plus attributes for turn_on */
 export interface ServiceData {

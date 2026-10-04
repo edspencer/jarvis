@@ -1,7 +1,7 @@
 // Types shared by the core and the plugins.
-import type { Intersection, Object3D, Vector3 } from 'three';
-
-export type Mode = 'walk' | 'orbit';
+import type { Object3D, Vector3 } from 'three';
+import type { Mode } from './plugin/types';
+export type { Mode, PickResult } from './plugin/types';
 
 /** the viewer's toggles */
 export interface ViewState {
@@ -49,9 +49,3 @@ export type SeenFn = (p: Vector3) => boolean;
 /** a merged node's part (a parts file): [name, bbox (min xyz, max xyz; three.js m), materials, extras] */
 export type PartEntry = [string, [number, number, number, number, number, number], string[], Record<string, unknown>];
 export type PartsIndex = Record<string, PartEntry[]>;
-
-export interface PickResult {
-  node: Object3D;
-  hit: Intersection;
-  part: { name: string; props: Record<string, unknown> } | null;
-}

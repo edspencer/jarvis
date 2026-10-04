@@ -12,12 +12,13 @@ import type {
   Disposable,
   Entities,
   EntityState,
+  HistoryPoint,
   Store,
   StoreAction,
   StoreChange,
 } from './types';
 
-const HISTORY = 360;
+const RECENT = 360;
 
 interface Conn {
   spec: ConnectorSpec;
@@ -35,17 +36,20 @@ export function createStore(): Store & { scoped(owner: string, collect: (d: Disp
   const bindListeners = new Set<() => void>();
   const bindings = new Map<string, Binding[]>(); // ref -> bindings
   const byEntity = new Map<string, Set<string>>(); // entity -> refs
-  const hist = new Map<string, { t: number; v: number }[]>();
+  const hist = new Map<string, HistoryPoint[]>();
 
   function record(e: EntityState): void {
-    const v = Number(e.state);
-    if (e.state === '' || !Number.isFinite(v)) return;
+    const n = Number(e.state);
+    const v = e.state !== '' && Number.isFinite(n) ? n : null;
     let h = hist.get(e.entity_id);
-    if (!h) hist.set(e.entity_id, (h = []));
+    if (!h) {
+      if (v === null) return; // only entities that have been numbers are kept
+      hist.set(e.entity_id, (h = []));
+    }
     const t = Date.parse(e.last_updated || e.last_changed || '') || Date.now();
-    if (h.length && h[h.length - 1].t === t) h[h.length - 1].v = v;
-    else h.push({ t, v });
-    if (h.length > HISTORY) h.splice(0, h.length - HISTORY);
+    if (h.length && h[h.length - 1].t === t) h[h.length - 1] = { t, state: e.state, v };
+    else h.push({ t, state: e.state, v });
+    if (h.length > RECENT) h.splice(0, h.length - RECENT);
   }
 
   function commit(next: Entities, changed: string[]): void {
@@ -223,7 +227,12 @@ export function createStore(): Store & { scoped(owner: string, collect: (d: Disp
     call,
     refusal,
     sourceOf: (id: string) => owner.get(id),
-    history: (id: string) => hist.get(id) || [],
+    recent: (id: string) => hist.get(id) || [],
+    async history(id: string, from: number, to = Date.now()): Promise<HistoryPoint[]> {
+      const c = conns.get(owner.get(id) ?? '');
+      if (c?.spec.history && c.info.status === 'live') return c.spec.history(id, from, to); // (mock: what the page saw)
+      return (hist.get(id) || []).filter((p) => p.t >= from && p.t <= to);
+    },
     addConnector,
     connectors: () => [...conns.values()].map((c) => c.info),
     live: () => [...conns.values()].some((c) => c.info.status === 'live' || c.info.status === 'mock'),

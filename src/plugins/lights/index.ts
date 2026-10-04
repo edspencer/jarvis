@@ -12,7 +12,7 @@
 // which fixture blinked (aim and press T, or Shift-click); the answers come out as map lines to paste.
 import * as THREE from 'three';
 import type { LightsConfig } from '../../site';
-import { definePlugin, type Blocks, type ButtonSpec, type Subject, type ToastHandle } from '../../core/plugin/types';
+import { definePlugin, type Blocks, type ButtonSpec, type Subject, type ToastHandle } from '../../plugin-api';
 import { cleanName } from '../../core/builtin';
 import { human } from '../../core/text';
 import { DEFAULT_K, combine, kelvinRGB, lookOf } from './look';

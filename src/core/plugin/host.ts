@@ -35,25 +35,64 @@ export interface PluginHost {
   order: string[];
 }
 
-/** Order plugins so each comes after the ones it requires and (if present) those in `after`. Throws on a cycle. */
-export function startOrder(defs: PluginDef[]): PluginDef[] {
+/** Plan the start: each plugin after the ones it requires and (if present) those in `after`. Plugins caught in a
+ * cycle can't be ordered: they are returned apart, with the cycle, and only they fail; the rest still start (one that
+ * requires a cyclic plugin is then skipped, as for any requirement that isn't running). */
+export function planStart(defs: PluginDef[]): { order: PluginDef[]; cyclic: { def: PluginDef; cycle: string[] }[] } {
   const byId = new Map(defs.map((d) => [d.id, d]));
-  const out: PluginDef[] = [];
-  const mark = new Map<string, 'visiting' | 'done'>();
-  const visit = (d: PluginDef, path: string[]) => {
-    const m = mark.get(d.id);
-    if (m === 'done') return;
-    if (m === 'visiting') throw new Error(`plugins: a cycle in requires/after: ${[...path, d.id].join(' -> ')}`);
-    mark.set(d.id, 'visiting');
-    for (const r of [...(d.requires || []), ...(d.after || [])]) {
-      const dep = byId.get(r);
-      if (dep) visit(dep, [...path, d.id]);
+  const deps = (d: PluginDef) =>
+    [...(d.requires || []), ...(d.after || [])].map((r) => byId.get(r)).filter((x): x is PluginDef => !!x);
+  // Tarjan's strongly connected components: a component of two or more, or a plugin naming itself, is a cycle
+  let n = 0;
+  const index = new Map<string, number>(),
+    low = new Map<string, number>(),
+    stack: PluginDef[] = [],
+    on = new Set<string>();
+  const cyclic: { def: PluginDef; cycle: string[] }[] = [];
+  const strong = (d: PluginDef) => {
+    index.set(d.id, n);
+    low.set(d.id, n++);
+    stack.push(d);
+    on.add(d.id);
+    for (const e of deps(d)) {
+      if (!index.has(e.id)) {
+        strong(e);
+        low.set(d.id, Math.min(low.get(d.id)!, low.get(e.id)!));
+      } else if (on.has(e.id)) low.set(d.id, Math.min(low.get(d.id)!, index.get(e.id)!));
     }
-    mark.set(d.id, 'done');
+    if (low.get(d.id) !== index.get(d.id)) return;
+    const comp: PluginDef[] = [];
+    let x: PluginDef;
+    do {
+      x = stack.pop()!;
+      on.delete(x.id);
+      comp.push(x);
+    } while (x !== d);
+    if (comp.length > 1 || deps(d).includes(d)) {
+      const cycle = comp.map((c) => c.id).reverse();
+      for (const c of comp) cyclic.push({ def: c, cycle });
+    }
+  };
+  for (const d of defs) if (!index.has(d.id)) strong(d);
+  const bad = new Set(cyclic.map((c) => c.def.id));
+  // the rest in dependency order (ignoring the cyclic ones, which won't run)
+  const out: PluginDef[] = [];
+  const done = new Set<string>();
+  const visit = (d: PluginDef) => {
+    if (done.has(d.id) || bad.has(d.id)) return;
+    done.add(d.id);
+    for (const e of deps(d)) visit(e);
     out.push(d);
   };
-  for (const d of defs) visit(d, []);
-  return out;
+  for (const d of defs) visit(d);
+  return { order: out, cyclic };
+}
+
+/** The start order; throws if any plugins are in a cycle (see planStart for the forgiving form). */
+export function startOrder(defs: PluginDef[]): PluginDef[] {
+  const { order, cyclic } = planStart(defs);
+  if (cyclic.length) throw new Error(`plugins: a cycle in requires/after: ${cyclic[0].cycle.join(' -> ')}`);
+  return order;
 }
 
 const msg = (err: unknown) => String((err as Error)?.message || err);
@@ -70,13 +109,12 @@ export function createPluginHost(deps: HostDeps): PluginHost {
         }
         return d.autoStart || deps.enabled(d.id);
       });
-      let ordered: PluginDef[];
-      try {
-        ordered = startOrder(enabled);
-      } catch (err) {
-        console.error(err);
-        for (const d of enabled) deps.report(d, msg(err));
-        return;
+      const { order: ordered, cyclic } = planStart(enabled);
+      for (const { def, cycle } of cyclic) {
+        const error = `in a cycle of requires / after: ${[...cycle, cycle[0]].join(' -> ')}`;
+        recs.set(def.id, { def, state: 'failed', error, disposers: [] });
+        console.error(`plugin ${def.id} off: ${error}`);
+        deps.report(def, error);
       }
       host.order = [...host.order, ...ordered.map((d) => d.id)];
       for (const d of ordered) recs.set(d.id, { def: d, state: 'pending', disposers: [] });

@@ -3,7 +3,7 @@
 // sheet again or hides it; a legend names the sheet while one is up. ?bp=<sheet id> opens with a sheet, ?bpfade=20
 // sets the model's opacity.
 import type { BlueprintsConfig } from '../../site';
-import { definePlugin, type Blocks, type PanelHandle } from '../../core/plugin/types';
+import { definePlugin, type Blocks, type PanelHandle } from '../../plugin-api';
 import { createBlueprints, type BlueprintSheet } from './blueprints';
 
 export default definePlugin<BlueprintsConfig>({

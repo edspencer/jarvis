@@ -529,9 +529,16 @@ Screenshots, before → after (the backgrounds are private model renders: replac
   one, rather than a new one; other connectors map into it. Bindings (`store.bind`) are how site mapping files tie
   entities to fixtures, registry items, plates and devices, and why the Home Assistant section appears on all of them.
 - **Lights are a feature plugin** (`plugins.lights`, with the fixture map); Home Assistant is only the connector. The
-  old `plugins["home-assistant"].map` is still read (with a warning) until the house manifest moves.
+  old `plugins["home-assistant"].map` is still read (with a warning), so existing manifests keep working; a site with
+  a `home-assistant` section and no `lights` section gets the lights plugin too.
 - **Allow-list at the choke point:** every call names entities from the controls file or the fixture map (a
-  `switch.*` only when marked as a light). No plugin can widen it at run time.
+  `switch.*` only when marked as a light); an action across domains is checked whole before any part is sent. No
+  plugin can widen it at run time (the console hook is read-only). It guards against bugs and misclicks, not hostile
+  code: the login's tokens are in `localStorage` (see the README).
+- **Public plugin entry:** plugins import from `jarvis/plugin` (`src/plugin-api.ts`) only; its types are narrowed to
+  published shapes (`SiteInfo`, `ModelInfo`, `ViewState`), not the core's internals. Keys can be hold keys
+  (`release`); connectors can serve recorder history (`store.history`). The public custom elements of §7 are
+  `<jv-blocks>`, `<jv-meter>` and `<jv-list>`.
 - **Chips:** rarely used ones (the site's layers, *Hide upper*) live in the strip's ⋯ menu from the start (their keys
   work); others overflow there when the strip is too narrow, chips that are off first. Variants (through walls; plates:
   switches / outlets only) are in a chip's ▾ menu.
@@ -541,6 +548,9 @@ Screenshots, before → after (the backgrounds are private model renders: replac
   ask to be remembered (`persist`); none of the built-in ones do yet (URL parameters cover the shared cases).
 - **Small screens:** a bottom tab bar (search, four panels, more), one bottom sheet at a time (peek / half / full by
   dragging or tapping its handle), overview only. No walk controls yet, as decided.
+- **The blink test** (§8) is a confirm modal, then a sticky toast that steps through the bulbs ("Which fixture
+  blinked? Aim at it and press T"), then a results modal, rather than one modal flow: the test needs the view, where you
+  aim at the fixture that blinked, and a modal would cover it.
 - **Not done:** the overview's larger default dock; loading third-party plugins at run time (the host takes plugin
   definitions, but only the built-in registry feeds it); the `meter` block's live announcements; a light theme.
 

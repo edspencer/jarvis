@@ -9,7 +9,16 @@ import type { PluginHost } from './plugin/host';
 import type { KeyRegistry } from './plugin/keys';
 import { keyName } from './plugin/keys';
 import type { createStore } from './plugin/store';
-import type { Disposable, PluginContext, PluginDef, ThreeApi, UrlApi, ViewApi } from './plugin/types';
+import type {
+  Disposable,
+  KeyBinding,
+  PluginContext,
+  PluginDef,
+  ThreeApi,
+  ToggleSpec,
+  UrlApi,
+  ViewApi,
+} from './plugin/types';
 
 export interface CoreServices {
   site: Site;
@@ -24,6 +33,24 @@ export interface CoreServices {
   url: UrlApi;
   twin: Record<string, unknown>;
   host(): PluginHost;
+}
+
+/** A chip's keys: they do what a click does, and only while the chip shows (its `when`, and the key's own). */
+export function toggleKeys(t: ToggleSpec, on: { toggle(): void; changed(): void }): KeyBinding[] {
+  const both = (w?: () => boolean) => (t.when || w ? () => (!t.when || t.when()) && (!w || w()) : undefined);
+  const out: KeyBinding[] = [];
+  if (t.key) out.push({ ...t.key, when: both(t.key.when), run: () => on.toggle() });
+  for (const v of t.variants || [])
+    if (v.key)
+      out.push({
+        ...v.key,
+        when: both(v.key.when),
+        run: () => {
+          v.set(!v.get());
+          on.changed();
+        },
+      });
+  return out;
 }
 
 export function createContextFactory(core: CoreServices) {
@@ -82,21 +109,10 @@ export function createContextFactory(core: CoreServices) {
         addItem: (i) => keep(hud.addItem(id, i)),
         addToggle: (t) => {
           const d = hud.addToggle(id, t);
-          // a chip's keys run the same as a click
-          const ks = [
-            t.key && core.keys.add(id, def.name, { ...t.key, run: () => hud.setToggle(t, !t.get()) }),
-            ...(t.variants || []).map(
-              (v) =>
-                v.key &&
-                core.keys.add(id, def.name, {
-                  ...v.key,
-                  run: () => {
-                    v.set(!v.get());
-                    hud.update('status', 'legend');
-                  },
-                }),
-            ),
-          ].filter((x): x is Disposable => !!x);
+          const ks = toggleKeys(t, {
+            toggle: () => hud.setToggle(t, !t.get()),
+            changed: () => hud.update('status', 'legend'),
+          }).map((k) => core.keys.add(id, def.name, k));
           return keep({ dispose: () => (d.dispose(), ks.forEach((k) => k.dispose())) });
         },
         progress: (label) => {

@@ -12,7 +12,7 @@ import {
   type LinkItem,
   type PanelHandle,
   type Subject,
-} from '../../core/plugin/types';
+} from '../../plugin-api';
 import { createPins, type PinItem } from './pins';
 
 export default definePlugin<PinsConfig>({

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createPluginHost, startOrder } from '../../src/core/plugin/host';
+import { createPluginHost, planStart, startOrder } from '../../src/core/plugin/host';
 import type { Disposable, PluginContext, PluginDef } from '../../src/core/plugin/types';
 
 /** a host whose context is just the `own` collector, with every plugin enabled unless listed in `off` */
@@ -167,5 +167,46 @@ describe('the plugin host', () => {
     await started;
     expect(log).toEqual(['early', 'late', 'instance']);
     expect(host.running('slow')).toBe(false);
+  });
+
+  it('a cycle stops only the plugins in it; the rest start, and those requiring a cyclic one are skipped', async () => {
+    const { host, reports } = makeHost();
+    const ran: string[] = [];
+    const def = (id: string, o: Partial<PluginDef> = {}): PluginDef => ({
+      id,
+      name: id,
+      setup: () => void ran.push(id),
+      ...o,
+    });
+    await host.start([
+      def('a', { after: ['b'] }),
+      def('b', { requires: ['a'] }),
+      def('loner', { after: ['loner'] }), // names itself
+      def('fine'),
+      def('needsA', { requires: ['a'] }),
+      def('afterA', { after: ['a'] }), // soft: starts anyway
+    ]);
+    expect(ran.sort()).toEqual(['afterA', 'fine']);
+    const state = (id: string) => host.records().find((r) => r.def.id === id)!.state;
+    expect([state('a'), state('b'), state('loner'), state('needsA')]).toEqual([
+      'failed',
+      'failed',
+      'failed',
+      'skipped',
+    ]);
+    expect(
+      reports
+        .filter((r) => /cycle/.test(r))
+        .map((r) => r.split(':')[0])
+        .sort(),
+    ).toEqual(['a', 'b', 'loner']);
+    expect(reports.find((r) => r.startsWith('a:'))).toMatch(/a -> b -> a|b -> a -> b/);
+  });
+
+  it('planStart orders the rest and names each cycle', () => {
+    const d = (id: string, after: string[] = []): PluginDef => ({ id, name: id, after, setup() {} });
+    const { order, cyclic } = planStart([d('x', ['y']), d('y', ['x']), d('z', ['w']), d('w')]);
+    expect(order.map((p) => p.id)).toEqual(['w', 'z']);
+    expect(cyclic.map((c) => c.def.id).sort()).toEqual(['x', 'y']);
   });
 });

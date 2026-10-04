@@ -10,6 +10,7 @@ import { base, blockStyles } from './styles';
 import { button, dot, glyph, icon, renderBlocks } from './blocks';
 import { iconSvg } from './icons';
 import type { Hud, PanelRec, Region } from './hud';
+import { setElementEnv } from './elements';
 
 abstract class RegionElement extends LitElement {
   static override properties = { hud: { attribute: false } };
@@ -1809,6 +1810,7 @@ define('jv-hud', JvHud);
 
 /** put the HUD on the page */
 export function mountHud(hud: Hud, parent: HTMLElement = document.body): JvHud {
+  setElementEnv(hud.env('dock')); // the public elements (<jv-blocks>, <jv-meter>, <jv-list>) open subjects like the HUD
   const el = document.createElement('jv-hud') as JvHud;
   el.hud = hud;
   parent.appendChild(el);

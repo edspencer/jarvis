@@ -388,6 +388,24 @@ test('help is generated from the key registry: the viewpoints, the layer keys, a
   expect(await page.title()).toContain(await twin<string>(page, 'twin.site.name'));
 });
 
+test("the HUD's components work as custom elements for a plugin's own UI (<jv-meter>, <jv-list>, <jv-blocks>)", async () => {
+  await page.evaluate(() => {
+    const box = document.createElement('div');
+    box.id = 'custom-ui';
+    const m = Object.assign(document.createElement('jv-meter'), { spark: [1, 3, 2, 5] });
+    m.setAttribute('value', '1210');
+    m.setAttribute('unit', 'W');
+    const l = Object.assign(document.createElement('jv-list'), { rows: [{ text: 'Coffee machine', value: '900 W' }] });
+    const b = Object.assign(document.createElement('jv-blocks'), { blocks: [{ type: 'kv', rows: [['Today', '3.2 kWh']] }] });
+    box.append(m, l, b);
+    document.body.append(box);
+  });
+  await expect(page.locator('#custom-ui jv-meter')).toContainText('1210');
+  await expect(page.locator('#custom-ui jv-list')).toContainText('Coffee machine');
+  await expect(page.locator('#custom-ui jv-blocks')).toContainText('3.2 kWh');
+  await page.evaluate(() => document.getElementById('custom-ui')!.remove());
+});
+
 test('no console errors after all that', () => {
   expect(errors).toEqual([]);
 });

@@ -1,6 +1,6 @@
 // What an entity's state means for a fixture's glow.
 import * as THREE from 'three';
-import type { EntityState } from '../../core/plugin/types';
+import type { EntityState } from '../../plugin-api';
 
 /** a switch, or a light with no colour: warm white */
 export const DEFAULT_K = 2700;

@@ -22,7 +22,8 @@ import {
   type Connection,
 } from 'home-assistant-js-websocket';
 import type * as THREE from 'three';
-import type { ConnectorHandle, StoreAction } from '../../core/plugin/types';
+import type { ConnectorHandle, HistoryPoint, StoreAction } from '../../plugin-api';
+import { historyMessage, parseHistory } from './history';
 import {
   allowRefusal,
   buildAllowlist,
@@ -31,6 +32,7 @@ import {
   entitiesOf,
   isControlAction,
   type Allowlist,
+  planCalls,
 } from './policy';
 import type { Control, Entities, EntityState, MapEntry, ServiceData, Status, TogglePolicy } from './types';
 
@@ -141,10 +143,14 @@ export function createConnector(d: ConnectorDeps) {
 
   /** the store's call: one send() per domain */
   async function call(ids: string[], action: StoreAction, data: Record<string, unknown> = {}): Promise<void> {
-    const byDomain: Record<string, string[]> = {};
-    for (const e of ids) (byDomain[e.split('.')[0]] ||= []).push(e);
-    for (const [domain, list] of Object.entries(byDomain))
-      await send(domain, action, { ...data, entity_id: list.length === 1 ? list[0] : list });
+    const plan = planCalls(ids, action, data, c.allow); // all or nothing: every domain's call checked first
+    if ('refused' in plan) throw new Error(plan.refused);
+    for (const [domain, sd] of plan.calls) await send(domain, action, sd);
+  }
+  /** past states from Home Assistant's recorder (read-only) */
+  async function readHistory(entityId: string, from: number, to: number): Promise<HistoryPoint[]> {
+    if (!c.conn || c.status !== 'live') throw new Error('not connected to Home Assistant');
+    return parseHistory(await c.conn.sendMessagePromise(historyMessage(entityId, from, to)), entityId);
   }
   function refusal(ids: string[], action: StoreAction): string | null {
     const r = allowRefusal(c.allow, action, { entity_id: ids });
@@ -479,6 +485,7 @@ export function createConnector(d: ConnectorDeps) {
 
   return Object.assign(c, {
     dispose,
+    readHistory,
     start,
     connect,
     disconnect,

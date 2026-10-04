@@ -14,6 +14,24 @@ import type { Player, ViewState } from './types';
 import { FT, toPlan } from './units';
 import { JUMP } from './player';
 
+/** the keys the walker reads while they are held (KeyboardEvent.code) */
+export const MOVEMENT_KEYS = [
+  'KeyW',
+  'KeyA',
+  'KeyS',
+  'KeyD',
+  'KeyQ',
+  'KeyE',
+  'KeyC',
+  'Space',
+  'ArrowUp',
+  'ArrowDown',
+  'ArrowLeft',
+  'ArrowRight',
+  'ShiftLeft',
+  'ShiftRight',
+] as const;
+
 export interface CoreParts {
   resolveRef(ref: string): Subject | null;
   describeObject(s: Extract<Subject, { kind: 'object' }>): SubjectInfo;
@@ -80,9 +98,13 @@ export function installCore({
     },
   ])
     ctx.keys.add({ ...k, group: MOVE });
-  // the rest of the movement keys: held, read by the walker; listed so no plugin takes them
-  for (const code of ['KeyA', 'KeyS', 'KeyD', 'KeyE', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'])
-    ctx.keys.add({ code, label: 'movement', group: MOVE, hidden: true });
+  // Every movement key, alone and with Shift (Shift runs), belongs to the core: they are held and read by the walker,
+  // and listed here (hidden in help) so a plugin that binds one gets a conflict instead of firing on every step.
+  for (const code of MOVEMENT_KEYS)
+    for (const shift of [false, true]) {
+      if (!shift && ['KeyW', 'KeyC', 'KeyQ', 'Space'].includes(code)) continue; // listed above / bound below
+      ctx.keys.add({ code, shift, label: 'movement', group: MOVE, hidden: true });
+    }
   ctx.keys.add({
     code: 'Space',
     label: 'Jump (walking) · rise (ghost)',

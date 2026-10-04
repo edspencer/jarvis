@@ -97,6 +97,32 @@ export function allowRefusal(allow: Allowlist, service: string, data: ServiceDat
   return null;
 }
 
+/** One action on entities of several domains (a fixture with a light and a switch): one call per domain, and
+ * every one of them checked before any is sent, so a refusal never leaves the action half done. */
+export function planCalls(
+  ids: readonly string[],
+  service: string,
+  data: Record<string, unknown>,
+  allow: Allowlist,
+): { calls: [string, ServiceData][] } | { refused: string } {
+  const byDomain = new Map<string, string[]>();
+  for (const e of ids) {
+    const d = domainOf(e);
+    if (!byDomain.has(d)) byDomain.set(d, []);
+    byDomain.get(d)!.push(e);
+  }
+  const calls: [string, ServiceData][] = [...byDomain].map(([d, list]) => [
+    d,
+    { ...data, entity_id: list.length === 1 ? list[0] : list },
+  ]);
+  if (!calls.length) return { refused: 'refused: no entity' };
+  for (const [d, sd] of calls) {
+    const r = sendRefusal(d, service, sd) || allowRefusal(allow, service, sd);
+    if (r) return { refused: r };
+  }
+  return { calls };
+}
+
 export interface SenderDeps<R> {
   /** the entity allow-list (rebuilt when the site's files load) */
   allow: () => Allowlist;

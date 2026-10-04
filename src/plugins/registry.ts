@@ -2,7 +2,7 @@
 // claims. The keys are listed here, not only where the plugin registers them, so the site validator (which runs in
 // Node, without the plugins) keeps a site layer's key off them; the key registry warns if a plugin uses a letter it
 // doesn't declare.
-import type { PluginDef } from '../core/plugin/types';
+import type { PluginDef } from '../plugin-api';
 
 type Loader = () => Promise<{ default: PluginDef<never> }>;
 

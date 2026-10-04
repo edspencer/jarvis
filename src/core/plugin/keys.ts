@@ -5,6 +5,8 @@ import type { Disposable, KeyBinding, KeyEntry, KeySpec } from './types';
 /** Letter keys the core itself uses (movement, view, help, navigate). A site layer can't take them; nor the keys the
  * site's plugins declare (src/plugins/registry.ts). */
 export const CORE_KEYS = [...'WASDQECXUGHN'] as const;
+// (the movement keys, arrows, Space and Shift included, are registered by the core at start-up in every Shift form:
+// see MOVEMENT_KEYS in src/core/builtin.ts; a plugin binding one gets a conflict)
 
 const NAMES: Record<string, string> = {
   Slash: '/',
@@ -34,8 +36,12 @@ export interface KeyRegistry {
   list(): KeyEntry[];
   /** the binding a key event runs (not for typing in a field: the caller checks that), or null */
   match(e: Pick<KeyboardEvent, 'code' | 'shiftKey' | 'altKey' | 'ctrlKey' | 'metaKey'>): KeyEntry | null;
-  /** run the matching binding; true if one ran */
+  /** run the matching binding; true if one ran (key repeat: ignored while that binding's key is held) */
   handle(e: KeyboardEvent): boolean;
+  /** a key went up: the release of whatever its press ran */
+  release(e: KeyboardEvent): void;
+  /** the window lost focus: release every held key */
+  releaseAll(): void;
   /** the conflicts reported so far ('Shift-P: pins and other') */
   conflicts: string[];
 }
@@ -80,16 +86,31 @@ export function createKeyRegistry(
     const exact = find(e.shiftKey);
     if (exact || !e.shiftKey) return exact;
     // Shift held to run: a key with no Shift binding of its own still works (Space jumps, X cuts away)
-    const shifted = entries.some((k) => k.code === e.code && k.shift && !!k.alt === e.altKey);
+    const shifted = entries.some((k) => k.run && k.code === e.code && k.shift && !!k.alt === e.altKey);
     return shifted ? null : find(false);
   }
 
+  /** code -> a hold binding (one with `release`) its press ran, while the key is down */
+  const held = new Map<string, KeyEntry>();
   function handle(e: KeyboardEvent): boolean {
+    if (held.has(e.code)) return true; // a hold key repeating: once per press
     const k = match(e);
     if (!k) return false;
+    if (e.repeat) return true; // key repeat never runs a binding again
+    if (k.release) held.set(e.code, k);
     k.run!(e);
     return true;
   }
+  function release(e: KeyboardEvent): void {
+    const k = held.get(e.code);
+    held.delete(e.code);
+    k?.release?.(e);
+  }
+  function releaseAll(): void {
+    const ks = [...held.values()];
+    held.clear();
+    for (const k of ks) k.release?.(null);
+  }
 
-  return { add, list: () => [...entries], match, handle, conflicts };
+  return { add, list: () => [...entries], match, handle, release, releaseAll, conflicts };
 }

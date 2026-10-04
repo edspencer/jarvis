@@ -6,7 +6,7 @@
 // battery threshold and the stale hours.
 import { human } from '../../core/text';
 import type { FaultsConfig } from '../../site';
-import { definePlugin, type Blocks, type Glyph, type LinkItem, type Subject, type Tone } from '../../core/plugin/types';
+import { definePlugin, type Blocks, type Glyph, type LinkItem, type Subject, type Tone } from '../../plugin-api';
 import type { Pins } from '../pins/pins';
 import type { Switches } from '../switches/switches';
 import { createFaults, COL, NAME, type Device } from './faults';

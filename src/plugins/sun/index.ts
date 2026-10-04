@@ -1,6 +1,6 @@
 // Sun & time: the dock panel that drives the core's sun (time of day, day of the year, now, animate the year), and a
 // status item with the time while it isn't "now". Starts on every site (autoStart).
-import { definePlugin } from '../../core/plugin/types';
+import { definePlugin } from '../../plugin-api';
 import type { Sunlight } from '../../core/sunlight';
 import { utcToLocal } from '../../core/sun';
 

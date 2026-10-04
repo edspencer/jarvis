@@ -78,6 +78,41 @@ describe('the key registry', () => {
     expect(r.match(ev('KeyW'))).toBeNull();
   });
 
+  it("every movement key, with and without Shift, is the core's: a plugin gets a conflict", async () => {
+    const { MOVEMENT_KEYS } = await import('../../src/core/builtin');
+    const warn = vi.fn();
+    const r = createKeyRegistry({ warn });
+    const jump = vi.fn();
+    r.add('core', 'Core', { code: 'Space', label: 'jump', run: jump });
+    for (const code of MOVEMENT_KEYS)
+      for (const shift of [false, true])
+        if (!(code === 'Space' && !shift)) r.add('core', 'Core', { code, shift, label: 'movement' });
+    for (const code of MOVEMENT_KEYS)
+      for (const shift of [false, true]) r.add('plugin', 'Plugin', { code, shift, label: 'mine', run: () => {} });
+    expect(r.conflicts).toHaveLength(MOVEMENT_KEYS.length * 2);
+    // and Space still jumps while Shift is held (a Shift-Space help entry doesn't hide the plain binding)
+    r.handle(ev('Space', { shiftKey: true }));
+    expect(jump).toHaveBeenCalledOnce();
+  });
+
+  it('hold to talk: run once per press however long the key repeats, release once when it goes up or the window blurs', () => {
+    const r = createKeyRegistry();
+    const run = vi.fn(),
+      release = vi.fn();
+    r.add('assistant', 'Assistant', { code: 'KeyJ', label: 'hold to talk', run, release });
+    r.handle(ev('KeyJ'));
+    for (let i = 0; i < 5; i++) r.handle({ ...ev('KeyJ'), repeat: true } as KeyboardEvent);
+    expect(run).toHaveBeenCalledOnce();
+    r.release(ev('KeyJ'));
+    r.release(ev('KeyJ')); // a stray second keyup: nothing
+    expect(release).toHaveBeenCalledOnce();
+    r.handle(ev('KeyJ'));
+    r.releaseAll();
+    expect(run).toHaveBeenCalledTimes(2);
+    expect(release).toHaveBeenCalledTimes(2);
+    expect(release).toHaveBeenLastCalledWith(null);
+  });
+
   it('honours when()', () => {
     const r = createKeyRegistry();
     let ok = false;
@@ -111,6 +146,38 @@ describe('the key registry', () => {
     expect(keyName({ code: 'Slash', shift: true })).toBe('?');
     expect(keyName({ code: 'Digit3' })).toBe('3');
     expect(keyName({ code: 'ArrowLeft', alt: true })).toBe('Alt-←');
+  });
+});
+
+describe("a chip's keys", () => {
+  it('work only while the chip shows: V does nothing while the faults chip is hidden (no connector)', async () => {
+    const { toggleKeys } = await import('../../src/core/context');
+    let live = false,
+      on = false,
+      all = false;
+    const r = createKeyRegistry();
+    for (const k of toggleKeys(
+      {
+        id: 'faults',
+        label: 'Faults',
+        key: { code: 'KeyV', label: 'faults' },
+        when: () => live,
+        get: () => on,
+        set: (v) => (on = v),
+        variants: [
+          { label: 'all', key: { code: 'KeyV', shift: true, label: 'all' }, get: () => all, set: (v) => (all = v) },
+        ],
+      },
+      { toggle: () => (on = !on), changed: () => {} },
+    ))
+      r.add('faults', 'Faults', k);
+    expect(r.handle(ev('KeyV'))).toBe(false);
+    expect(r.handle(ev('KeyV', { shiftKey: true }))).toBe(false);
+    expect([on, all]).toEqual([false, false]);
+    live = true;
+    r.handle(ev('KeyV'));
+    r.handle(ev('KeyV', { shiftKey: true }));
+    expect([on, all]).toEqual([true, true]);
   });
 });
 
@@ -245,7 +312,25 @@ describe('the entity store', () => {
     h.update([{ entity_id: 'sensor.p', state: '100', attributes: {}, last_updated: '2026-10-03T10:00:00Z' }]);
     h.update([{ entity_id: 'sensor.p', state: '250', attributes: {}, last_updated: '2026-10-03T10:00:05Z' }]);
     h.update([{ entity_id: 'sensor.p', state: 'unavailable', attributes: {}, last_updated: '2026-10-03T10:00:09Z' }]);
-    expect(s.history('sensor.p').map((x) => x.v)).toEqual([100, 250]);
+    expect(s.recent('sensor.p').map((x) => x.v)).toEqual([100, 250, null]); // 'unavailable' is a gap, not a number
+  });
+
+  it('history() asks the owning connector, else filters what the page has seen', async () => {
+    const s = createStore();
+    const asked: unknown[] = [];
+    const h = s.addConnector({
+      id: 'ha',
+      name: 'HA',
+      call: async () => {},
+      history: async (id, from, to) => (asked.push([id, from, to]), [{ t: from, state: '1.5', v: 1.5 }]),
+    });
+    h.update([{ entity_id: 'sensor.kwh', state: '3', attributes: {}, last_updated: '2026-10-03T10:00:00Z' }]);
+    const t0 = Date.parse('2026-10-03T00:00:00Z'),
+      t1 = Date.parse('2026-10-03T23:00:00Z');
+    expect((await s.history('sensor.kwh', t0, t1)).map((p) => p.v)).toEqual([3]); // not live yet: what the page saw, filtered
+    h.status('live');
+    expect(await s.history('sensor.kwh', t0, t1)).toEqual([{ t: t0, state: '1.5', v: 1.5 }]);
+    expect(asked).toEqual([['sensor.kwh', t0, t1]]);
   });
 
   it('scoped() collects registrations for a plugin’s disposal', () => {

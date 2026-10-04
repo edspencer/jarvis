@@ -6,11 +6,95 @@
 // listed in `after`, when present). Everything a plugin registers through ctx is disposed with it; a plugin that throws
 // is stopped, reported with a toast, and the walkthrough carries on without it.
 import type * as THREE from 'three';
-import type { Layer, Site } from '../../site';
-import type { Model } from '../model';
-import type { Mode, PickResult, ViewState } from '../types';
 
 // ------------------------------------------------------------------ basics
+
+/** walking (first person) or the overview (orbit) */
+export type Mode = 'walk' | 'orbit';
+
+/** the view's toggles, as plugins see them (read-only: change them through ViewApi) */
+export interface ViewState {
+  readonly mode: Mode;
+  readonly cutaway: boolean;
+  readonly upperHidden: boolean;
+  readonly ghost: boolean;
+  /** layer id -> hidden */
+  readonly hidden: Readonly<Record<string, boolean>>;
+}
+
+/** what the site manifest says, resolved (paths are URLs, defaults filled in) */
+export interface SiteInfo {
+  id: string;
+  name: string;
+  description: string;
+  /** the manifest's own URL: ctx.load() resolves against it */
+  url: string;
+  geo: { lat: number; lon: number; timeZone: string };
+  /** plan units */
+  units: 'ft' | 'm';
+  /** metres per plan unit */
+  unit: number;
+  /** true bearing of plan +Y, degrees */
+  northAzimuth: number;
+  /** the building's centre on the plan */
+  centre: [number, number];
+  /** bottom up */
+  storeys: StoreyInfo[];
+  viewpoints: { name: string; at: [number, number, number]; yaw: number }[];
+  layers: LayerInfo[];
+  /** every plugin's resolved manifest section (null: not configured); your own is ctx.config */
+  plugins: Readonly<Record<string, unknown>>;
+}
+export interface StoreyInfo {
+  name: string;
+  short: string;
+  /** floor level, plan units */
+  z: number;
+  /** a standing position above this is on this storey */
+  from: number;
+  /** an object whose bottom is above this belongs to this storey */
+  objectsFrom: number;
+}
+export interface LayerInfo {
+  id: string;
+  label: string;
+  /** the toggle key's KeyboardEvent.code, or null */
+  code: string | null;
+  key: string | null;
+  help: string;
+  /** hidden at start */
+  hidden: boolean;
+  /** the extra model whose nodes all join it, or null */
+  model: string | null;
+  builtin: boolean;
+}
+
+/** the loaded model, as plugins see it (docs/model-format.md); treat it as read-only */
+export interface ModelInfo {
+  root: THREE.Object3D;
+  /** fixture id -> its node (the lamps of an extra model join when it loads: the `model` event) */
+  fixtures: Record<string, THREE.Object3D>;
+  /** room floor nodes (a `room` extra) */
+  rooms: THREE.Object3D[];
+  /** the top-level nodes */
+  owners: THREE.Object3D[];
+  /** top-level nodes by what hides them: one list per layer, and `upper` (the storeys above the first) */
+  groups: Record<string, THREE.Object3D[]> & { upper: THREE.Object3D[] };
+  /** the main model's wall-plate group (extras layer: switches), or null */
+  switchRoot: THREE.Object3D | null;
+  /** the main model's box, world space */
+  box: THREE.Box3;
+  /** the top-level node a descendant belongs to */
+  ownerOf(o: THREE.Object3D): THREE.Object3D;
+}
+
+/** a model hit */
+export interface PickResult {
+  node: THREE.Object3D;
+  hit: THREE.Intersection;
+  /** a merged node's source object (the parts file), or null */
+  part: { name: string; props: Record<string, unknown> } | null;
+}
 
 export interface Disposable {
   dispose(): void;
@@ -471,6 +555,9 @@ export interface KeySpec {
 export interface KeyBinding extends KeySpec {
   /** omitted: listed in help only (keys the core handles itself, e.g. held movement keys) */
   run?(e: KeyboardEvent): void;
+  /** the key went up again (hold to talk): called once per press, also when the window loses focus while it's
+   * held. Key repeat never runs `run` again while the key is held. */
+  release?(e: KeyboardEvent | null): void;
   /** works but isn't listed in help (another entry describes it: keys 2-6 under '1 – 6') */
   hidden?: boolean;
 }
@@ -567,6 +654,15 @@ export interface ConnectorSpec {
   refusal?(entityIds: string[], action: StoreAction): string | null;
   /** mock mode: take made-up states (for testing other plugins against fake data) */
   simulate?(states: EntityState[]): void;
+  /** past states of one of its entities between two times (ms), oldest first; read-only */
+  history?(entityId: string, from: number, to: number): Promise<HistoryPoint[]>;
+}
+
+/** one past state: when, the state, and its number (null if it isn't one: 'unavailable', 'on') */
+export interface HistoryPoint {
+  t: number;
+  state: string;
+  v: number | null;
 }
 
 export interface ConnectorHandle extends Disposable {
@@ -613,8 +709,11 @@ export interface Store {
   refusal(entityIds: string | string[], action: StoreAction): string | null;
   /** the connector an entity comes from */
   sourceOf(id: string): string | undefined;
-  /** numeric history of an entity's state (the last ~360 changes), for sparklines */
-  history(id: string): { t: number; v: number }[];
+  /** the numeric changes seen since the page loaded (the last ~360), for a live sparkline */
+  recent(id: string): HistoryPoint[];
+  /** an entity's past states between two times (ms since 1970), from the owning connector's recorder if it has one
+   * (Home Assistant's history), else what this page has seen; oldest first */
+  history(id: string, from: number, to?: number): Promise<HistoryPoint[]>;
 
   addConnector(c: ConnectorSpec): ConnectorHandle;
   connectors(): ConnectorInfo[];
@@ -644,7 +743,7 @@ export interface ThreeApi {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   renderer: THREE.WebGLRenderer;
-  model: Model;
+  model: ModelInfo;
   /** plan (X east, Y north, Z up; plan units) -> three.js world (metres, Y up) */
   P(x: number, y: number, z: number): THREE.Vector3;
   /** three.js world -> plan */
@@ -672,7 +771,7 @@ export interface ViewApi {
   addVisibilityRule(fn: () => Iterable<THREE.Object3D>): Disposable;
   applyVisibility(): void;
   toggleLayer(id: string): void;
-  layers(): Layer[];
+  layers(): LayerInfo[];
   requestShadows(): void;
 }
 
@@ -719,7 +818,7 @@ export interface Logger {
 export interface PluginContext<C = unknown> {
   /** this plugin's id */
   id: string;
-  site: Site;
+  site: SiteInfo;
   /** the plugin's manifest section, with its paths resolved to URLs ({} for an autoStart plugin with none) */
   config: C;
   three: ThreeApi;

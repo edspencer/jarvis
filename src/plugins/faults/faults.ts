@@ -20,7 +20,7 @@ import * as THREE from 'three';
 import { storeyOfObject, upperFromY, type FaultsConfig, type Site } from '../../site';
 import type { Fixtures, FlyFn, ViewState } from '../../core/types';
 import { FT } from '../../core/units';
-import type { Entities, EntityState } from '../../core/plugin/types';
+import type { Entities, EntityState } from '../../plugin-api';
 import type { Pins } from '../pins/pins';
 import type { Switches } from '../switches/switches';
 import {
