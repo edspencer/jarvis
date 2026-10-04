@@ -191,7 +191,9 @@ export default definePlugin<EnergyConfig>({
         seriesOf(m, from, to)
           .then(({ s, pts }) => {
             const t0 = Math.max(from, midnight(to));
-            const today = pts.length ? sumAll(pts.map((p) => integrate(p, t0, to))) : null;
+            // only from a history that reaches back to midnight (not just what this page has seen)
+            const covers = pts.length > 0 && pts.every((p) => p.length > 0 && p[0].t <= t0 + 15 * 60e3);
+            const today = covers ? sumAll(pts.map((p) => integrate(p, t0, to))) : null;
             past.set(m.id, { at: Date.now(), series: s, today });
           })
           .catch((e: Error) => {

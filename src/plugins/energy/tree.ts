@@ -243,7 +243,7 @@ export function share(m: Meter, rs: Map<string, Reading>): number | null {
 /** "Panel A · 17+19 · 240 V" */
 export function where(m: Meter): string {
   const parts: string[] = [];
-  const panel = m.panel || (m.parent && !m.parent.isOther ? m.parent.label : null);
+  const panel = (m.panel !== m.label && m.panel) || (m.parent ? m.parent.label : null);
   if (m.isOther) return `unmetered on ${m.parent!.label}`;
   if (panel) parts.push(panel);
   if (m.breaker) parts.push(`breaker ${m.breaker}`);

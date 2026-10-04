@@ -551,6 +551,13 @@ Screenshots, before → after (taken on a private building, so not in the reposi
 - **The blink test** (§8) is a confirm modal, then a sticky toast that steps through the bulbs ("Which fixture
   blinked? Aim at it and press T"), then a results modal, rather than one modal flow: the test needs the view, where you
   aim at the fixture that blinked, and a modal would cover it.
+- **Energy** ([`plugins/energy.md`](../plugins/energy.md)): energy mode is on **J** (Shift-J the panel), not E: Q
+  and E are the core's turn keys and Shift-E is the core's too. The map is JSON, `jarvis-energy/1` with a schema
+  (`plugins.energy.map`), rather than the sketched `energy.yaml`, so the site validator checks it like the other
+  mapping files; feeds name a `registry`, `plate`, `fixture`, `node` or `room`, and a breaker is a number on the
+  circuit rather than an object. List rows have bars but no per-row sparkline (the `list` block has none); the meter
+  and inspector sparklines cover 24 hours rather than one. The site schema interpreter gained `type` arrays (an entity
+  or a list of them) for it.
 - **Not done:** the overview's larger default dock; loading third-party plugins at run time (the host takes plugin
   definitions, but only the built-in registry feeds it); the `meter` block's live announcements; a light theme.
 

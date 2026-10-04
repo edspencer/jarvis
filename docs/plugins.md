@@ -30,16 +30,21 @@ manifest; any other, as written (`ctx.load` resolves a relative path against the
 parallel; one waits only for those named in `requires` and `after`. Plugins caught in a cycle of `requires` / `after`
 don't start (a toast names the cycle); the others do.
 
+**A section for a plugin this build doesn't have** (a site written for a newer viewer) is skipped with a warning in
+the console and from `validate-site`; the rest of the site loads. Inside a known plugin's section, an unknown field is
+still an error.
+
 **When it fails.** If `setup` throws or rejects, or a required plugin isn't running, the plugin is stopped, everything
 it registered so far is disposed, and a toast says so ("Equipment pins is off: registry.json: HTTP 404"). The rest of
 the walkthrough carries on. An event handler that throws later is logged once and reported once; the frame loop keeps
 running.
 
 **Built-in plugins** are listed in [`src/plugins/registry.ts`](../src/plugins/registry.ts), each loaded as its own
-chunk, with the letter keys it claims (the site validator keeps a site layer's key off them; the key registry warns
-if a plugin uses a letter it didn't declare). That list is the only way a plugin is loaded: one of your own is added
-to it, and its section to the manifest schema (`schema/site.schema.json`), whose `plugins` takes no section it doesn't
-name ([the tutorial, step 11](guide/writing-a-plugin.md#11-register-it-and-try-it-on-the-demo-house)).
+chunk, with the letter keys it claims (the site validator keeps a site layer's key off them; the key registry warns if a
+plugin uses a letter it didn't declare). That list is the only way a plugin is loaded: one of your own is added to it,
+and its section to the manifest schema (`schema/site.schema.json`), which names every section it checks ([the tutorial,
+step 11](guide/writing-a-plugin.md#11-register-it-and-try-it-on-the-demo-house)). The energy plugin and its map file
+have their own page, [`plugins/energy.md`](plugins/energy.md).
 
 ## `ctx`: what a plugin gets
 
@@ -119,7 +124,7 @@ know which connector an entity came from.
 - Features read `store.get(id)`, `store.entities()`, `store.onChange(fn, filter?)`, `store.recent(id)` (the changes
   this page has seen, for a live sparkline) and `await store.history(id, from, to)`: past states from the owning
   connector's recorder if it has one (Home Assistant's history, read-only; a connector adds `history()` to its spec),
-  else what the page has seen. Energy's "today" and its 1-hour sparklines come from there.
+  else what the page has seen. Energy's 24-hour sparklines, and today's kWh where no sensor reports it, come from there.
 - **Acting** goes through `store.call(entityIds, 'toggle' | 'turn_on' | 'turn_off', data?)`, which the store routes to
   the owning connector. The connector decides: Home Assistant allows only entities named in the site's controls file or
   its fixture map, at one choke point (`send()` in `src/plugins/home-assistant/policy.ts`), whatever the caller.
@@ -250,10 +255,8 @@ call, and calls exactly that.
 
 ## How the planned plugins fit
 
-- **Energy** (`design/hud-panels.md` §3): a feature plugin. It loads the site's `energy.yaml` with `ctx.load`, reads
-  power and energy entities from the store (`store.history` for today's kWh and the sparklines), binds meters to model objects and plates
-  with `store.bind` (so the Home Assistant section shows the sensors), adds the Energy panel, a section on any subject
-  a meter feeds, a load-tint chip with a legend, a status item and a hover provider. No core change.
+- **Energy** (`design/hud-panels.md` §3) is built: a feature plugin with no core change, described with its site
+  mapping file in [`plugins/energy.md`](plugins/energy.md).
 - **The voice assistant** (`design/voice-assistant.md`): a feature plugin with a dock panel (a custom block for the
   transcript), a hold-to-talk key (`keys.add({ …, run, release })`), a status item and `ctx.confirm` for
   confirmations. Its viewer commands map onto `view.flyTo(subject)`, `inspector.open(subject)`, the chips (`status`

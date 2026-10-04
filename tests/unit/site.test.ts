@@ -65,6 +65,7 @@ const FULL: SiteManifest = {
     },
     switches: { boxIdPattern: '\\b([A-Z]+-\\d+)\\b', source: 'plates/{file}.yaml' },
     blueprints: { index: 'bp/index.json', default: 'A-1' },
+    energy: { map: 'e.json' },
   },
 };
 
@@ -188,6 +189,39 @@ describe('validateManifest: clear messages', () => {
       ),
     ).toContain('storeys[1].z: storeys go from the bottom up: each z above the one before');
   });
+  it("skips a plugin section this build doesn't have, with a warning (a site written for a newer viewer loads)", () => {
+    const v = bad((m) => ((m.plugins as Record<string, unknown>).solarforecast = { url: 'f.json', anything: 1 }));
+    expect(v.ok).toBe(true);
+    expect(v.errors).toEqual([]);
+    expect(v.warnings.map((w) => `${w.path}: ${w.message}`)).toEqual([
+      "plugins.solarforecast: site config for plugin 'solarforecast', which this build doesn't have: skipped",
+    ]);
+    // the rest of the manifest is still checked
+    const both = bad((m) => {
+      (m.plugins as Record<string, unknown>).solarforecast = {};
+      m.geo.lat = 95;
+    });
+    expect(both.ok).toBe(false);
+    expect(both.errors.map((e) => e.path)).toEqual(['geo.lat']);
+    expect(both.warnings.map((w) => w.path)).toEqual(['plugins.solarforecast']);
+  });
+  it('suggests the known plugin a section was meant for', () => {
+    const v = bad((m) => ((m.plugins as Record<string, unknown>).Pins = { registry: 'r.json' }));
+    expect(v.ok).toBe(true);
+    expect(v.warnings[0].message).toMatch(/doesn't have: skipped \(did you mean "pins"\?\)$/);
+    expect(bad((m) => ((m.plugins as Record<string, unknown>).energi = { map: 'e.json' })).warnings[0].message).toMatch(
+      /did you mean "energy"/,
+    );
+  });
+  it("keeps a typo inside a known plugin's section an error", () => {
+    expect(msgs((m) => (m.plugins!.pins = { registry: 'r.json', regsitry: 'x' } as never))).toEqual([
+      'plugins.pins.regsitry: unknown field (expected one of: registry, sourceLink, stripPrefix, categories)',
+    ]);
+    expect(msgs((m) => (m.plugins!.energy = {} as never))).toEqual(['plugins.energy.map: is required']);
+    expect(msgs((m) => (m.plugins!.energy = { map: 'e.json', key: 'J' } as never))).toEqual([
+      'plugins.energy.key: unknown field (expected one of: map)',
+    ]);
+  });
   it('warns about a faults layer without Home Assistant', () => {
     const v = bad((m) => (m.plugins!.faults = { devices: 'd.json' }));
     expect(v.ok).toBe(true);
@@ -279,6 +313,17 @@ describe('finding and loading the manifest', () => {
     const { site, warnings } = await loadSite(BASE, fakeFetch(JSON.stringify(cottageJson())));
     expect(site.name).toBe('Example cottage');
     expect(warnings).toEqual([]);
+  });
+
+  it("loads a manifest with a plugin section this build doesn't have, and says so", async () => {
+    const m = cottageJson();
+    (m.plugins as Record<string, unknown>).newthing = { file: 'n.json' };
+    const { site, warnings } = await loadSite(BASE, fakeFetch(JSON.stringify(m)));
+    expect(site.name).toBe('Example cottage');
+    expect(warnings).toEqual([
+      "plugins.newthing: site config for plugin 'newthing', which this build doesn't have: skipped",
+    ]);
+    expect((site.plugins as Record<string, unknown>).newthing).toBeUndefined();
   });
 
   it('turns every failure into readable lines', async () => {
