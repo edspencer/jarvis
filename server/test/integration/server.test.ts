@@ -215,7 +215,7 @@ describe('assistant server', () => {
       .filter((m) => m.type === 'text.delta')
       .map((m) => (m as { delta: string }).delta)
       .join('');
-    expect(text).toBe("Here's the water heater. It's in the kitchen.");
+    expect(text).toBe("Here's the water heater. It's in the garage.");
     c.ws.close();
   });
 

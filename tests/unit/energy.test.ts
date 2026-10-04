@@ -19,7 +19,7 @@ import {
 } from '../../src/plugins/energy/tree';
 import { fmtKWh, fmtW, IDLE, legendSteps, loadColour, NO_DATA, pct, position } from '../../src/plugins/energy/scale';
 import { downsample, integrate, midnight, sparkline, sumSeries } from '../../src/plugins/energy/history';
-import { mockHistory, mockStates, mockWatts } from '../../src/plugins/energy/mock';
+import { leafWatts, mockHistory, mockStates, mockWatts, profileOf } from '../../src/plugins/energy/mock';
 
 const DEMO = JSON.parse(readFileSync(new URL('../../examples/demo-site/energy.json', import.meta.url), 'utf8'));
 const COTTAGE = (): SiteManifest =>
@@ -566,7 +566,7 @@ describe('energy mock', () => {
       const sum = m.power.reduce((a, e) => a + v(e), 0);
       expect(sum, m.id).toBeCloseTo(w.get(m.id)!, 2);
     }
-    expect(v('sensor.main_panel_balance_power')).toBeCloseTo(w.get('panel.main.other')!, 2);
+    expect(v('sensor.vue2_balance_power')).toBeCloseTo(w.get('panel.main.other')!, 2);
     // and the tree reads them back as the mock meant them
     const rs = compute(tree, (id) => states.find((s) => s.entity_id === id));
     expect(rs.get('panel.main')!.w).toBeCloseTo(w.get('panel.main')!, 1);
@@ -580,17 +580,46 @@ describe('energy mock', () => {
     for (const s of energy) expect(Number(s.state), s.entity_id).toBeGreaterThanOrEqual(0);
   });
 
+  it('picks the most specific profile: a dishwasher is not a washer, an air handler is not a heat pump', () => {
+    expect(profileOf('Dishwasher and disposal')).toBe(profileOf('dishwasher'));
+    expect(profileOf('Dishwasher and disposal')).not.toBe(profileOf('Washer'));
+    expect(profileOf('Air handler and heat strips')).not.toBe(profileOf('Heat pump (outdoor unit)'));
+    // a compressor named with an air handler is still a compressor; an air handler alone is not
+    expect(profileOf('Heat pump and air handler')).toBe(profileOf('Heat pump (outdoor unit)'));
+    expect(profileOf('Condenser / AHU')).toBe(profileOf('Heat pump (outdoor unit)'));
+    expect(profileOf('HVAC air handler')).toBe(profileOf('Air handler and heat strips'));
+    expect(profileOf('HVAC')).toBe(profileOf('Heat pump (outdoor unit)'));
+    expect(profileOf('Pond pump')).not.toBe(profileOf('Pool pump'));
+  });
+
+  it('a load with hours runs only within them (an EV charges overnight), wrapping past midnight', () => {
+    const at = (h: number, m = 0) => new Date(2026, 9, 3, h, m).getTime();
+    const ev = { id: 'circuit.ev', label: 'EV charger' };
+    const day = Array.from({ length: 48 }, (_, i) => leafWatts(ev, at(8 + Math.floor(i / 4), (i % 4) * 15)));
+    expect(Math.max(...day)).toBeLessThan(10); // 08:00-20:00: only its standby
+    const night = Array.from({ length: 16 }, (_, i) => leafWatts(ev, at(23) + i * 900e3)); // 23:00-03:00
+    expect(Math.max(...night)).toBeGreaterThan(5000); // charging at some point around midnight
+  });
+
+  it("an air handler's heat strips come on now and then, on top of its fan", () => {
+    const ah = { id: 'circuit.air_handler', label: 'Air handler and heat strips' };
+    const day = Array.from({ length: 24 * 60 }, (_, i) => leafWatts(ah, T + i * 60e3));
+    const max = Math.max(...day);
+    expect(max).toBeGreaterThan(4000);
+    expect(day.filter((w) => w > 300 && w < 1000).length).toBeGreaterThan(day.filter((w) => w > 4000).length);
+  });
+
   it('mockHistory: a point every step from `from` to `to`', () => {
-    const h = mockHistory(tree, 'sensor.fridge_power', T - 3600e3, T);
+    const h = mockHistory(tree, 'sensor.vue2_fridge_power', T - 3600e3, T);
     expect(h).toHaveLength(13);
     expect(h[1].t - h[0].t).toBe(300e3);
     expect(h[0].t).toBe(T - 3600e3);
     expect(h.at(-1)!.t).toBe(T);
     for (const p of h) expect(p.v).toBeGreaterThanOrEqual(0);
     expect(h.at(-1)!.v).toBe(mockWatts(tree, T).get('circuit.fridge'));
-    expect(mockHistory(tree, 'sensor.fridge_power', T - 3600e3, T, 7, 60e3)).toHaveLength(61);
+    expect(mockHistory(tree, 'sensor.vue2_fridge_power', T - 3600e3, T, 7, 60e3)).toHaveLength(61);
     expect(mockHistory(tree, 'sensor.nothing', T - 3600e3, T)).toEqual([]);
-    const bal = mockHistory(tree, 'sensor.main_panel_balance_power', T - 600e3, T);
+    const bal = mockHistory(tree, 'sensor.vue2_balance_power', T - 600e3, T);
     expect(bal.at(-1)!.v).toBe(mockWatts(tree, T).get('panel.main.other'));
   });
 });
@@ -650,7 +679,7 @@ describe('the site manifest and plugins.energy', () => {
     it('checks the energy map and counts its meters', async () => {
       const r = await checkSite('file:///site/site.json', files(DEMO));
       expect(energyLines(r.errors)).toEqual([]);
-      expect(energyLines(r.notes)).toEqual(['energy map: 20 meters (1 low confidence)']);
+      expect(energyLines(r.notes)).toEqual(['energy map: 22 meters (1 low confidence)']);
     });
 
     it("reports the map's errors and warnings as energy map: …", async () => {

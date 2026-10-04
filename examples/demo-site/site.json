@@ -3,7 +3,7 @@
   "jarvis": "jarvis-site/1",
   "id": "demo-house",
   "name": "Demo house",
-  "description": "A synthetic two-storey house made by tools/make-demo-site.ts.",
+  "description": "A synthetic four-bedroom house with a garage, made by tools/make-demo-site.ts.",
   "geo": {
     "lat": 51.4779,
     "lon": -0.0015,
@@ -13,9 +13,9 @@
     "units": "m",
     "northAzimuth": 12
   },
-  "centre": [6, 5],
+  "centre": [9.5, 4.5],
   "overview": {
-    "camera": [18, -6, 19]
+    "camera": [24, -10, 21]
   },
   "ground": {
     "z": -0.16999999999999998
@@ -49,19 +49,19 @@
   ],
   "viewpoints": [
     {
-      "name": "Front path",
-      "at": [9.5, -6, -0.15],
-      "yaw": 10
+      "name": "Front of the house",
+      "at": [9.4, -14, -0.15],
+      "yaw": 0
     },
     {
       "name": "Living room",
-      "at": [5.6, 0.8, 0],
-      "yaw": 50
+      "at": [2, 4.6, 0],
+      "yaw": 225
     },
     {
       "name": "Kitchen",
       "at": [6.2, 5.6, 0],
-      "yaw": 120
+      "yaw": 45
     },
     {
       "name": "Foot of the stair",
@@ -70,18 +70,23 @@
     },
     {
       "name": "Landing",
-      "at": [11.3, 8.3, 3.2],
-      "yaw": 140
+      "at": [10.2, 4.6, 3.2],
+      "yaw": 90
     },
     {
-      "name": "Bedroom 1",
-      "at": [5.8, 4.2, 3.2],
-      "yaw": 135
+      "name": "Primary bedroom",
+      "at": [6.2, 3.4, 3.2],
+      "yaw": 120
     },
     {
       "name": "Back terrace",
-      "at": [6, 12.4, 0],
-      "yaw": 180
+      "at": [5, 18, -0.15],
+      "yaw": 200
+    },
+    {
+      "name": "Garage",
+      "at": [17.6, 8.4, -0.1],
+      "yaw": 160
     }
   ],
   "startView": 2,

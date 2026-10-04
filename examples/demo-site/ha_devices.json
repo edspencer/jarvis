@@ -12,87 +12,6 @@
   },
   "devices": [
     {
-      "id": "demo-kitchen-pendant-1",
-      "name": "Kitchen pendant 1",
-      "integration": "hue",
-      "make": "Example Lighting",
-      "model": "A19 bulb",
-      "area": "Kitchen",
-      "place": {
-        "src": "fixture",
-        "ref": "kitchen.pendant.1",
-        "plan": [2, 7, 2.7],
-        "room": "Kitchen",
-        "approx": false,
-        "conf": "high",
-        "pos": [2, 2.7, -7],
-        "centre": [3.5, 1.2, -7]
-      },
-      "fixtures": ["kitchen.pendant.1"],
-      "unavailable_means": {
-        "off": "the kitchen pendants wall switch (KT-S-A)",
-        "unless_on": ["light.kitchen_pendant_2", "light.kitchen_pendant_3"]
-      },
-      "health": {
-        "avail": ["light.kitchen_pendant_1"],
-        "update": ["update.kitchen_pendant_1_firmware"]
-      }
-    },
-    {
-      "id": "demo-kitchen-pendant-2",
-      "name": "Kitchen pendant 2",
-      "integration": "hue",
-      "make": "Example Lighting",
-      "model": "A19 bulb",
-      "area": "Kitchen",
-      "place": {
-        "src": "fixture",
-        "ref": "kitchen.pendant.2",
-        "plan": [3.5, 7, 2.7],
-        "room": "Kitchen",
-        "approx": false,
-        "conf": "high",
-        "pos": [3.5, 2.7, -7],
-        "centre": [3.5, 1.2, -7]
-      },
-      "fixtures": ["kitchen.pendant.2"],
-      "unavailable_means": {
-        "off": "the kitchen pendants wall switch (KT-S-A)",
-        "unless_on": ["light.kitchen_pendant_1", "light.kitchen_pendant_3"]
-      },
-      "health": {
-        "avail": ["light.kitchen_pendant_2"],
-        "update": ["update.kitchen_pendant_2_firmware"]
-      }
-    },
-    {
-      "id": "demo-kitchen-pendant-3",
-      "name": "Kitchen pendant 3",
-      "integration": "hue",
-      "make": "Example Lighting",
-      "model": "A19 bulb",
-      "area": "Kitchen",
-      "place": {
-        "src": "fixture",
-        "ref": "kitchen.pendant.3",
-        "plan": [5, 7, 2.7],
-        "room": "Kitchen",
-        "approx": false,
-        "conf": "high",
-        "pos": [5, 2.7, -7],
-        "centre": [3.5, 1.2, -7]
-      },
-      "fixtures": ["kitchen.pendant.3"],
-      "unavailable_means": {
-        "off": "the kitchen pendants wall switch (KT-S-A)",
-        "unless_on": ["light.kitchen_pendant_1", "light.kitchen_pendant_2"]
-      },
-      "health": {
-        "avail": ["light.kitchen_pendant_3"],
-        "update": ["update.kitchen_pendant_3_firmware"]
-      }
-    },
-    {
       "id": "demo-living-dimmer",
       "name": "Living room dimmer",
       "integration": "zwave_js",
@@ -115,6 +34,132 @@
       }
     },
     {
+      "id": "demo-floor-lamp",
+      "name": "Floor lamp bulb",
+      "integration": "hue",
+      "make": "Example Lighting",
+      "model": "E27 bulb",
+      "area": "Living room",
+      "place": {
+        "src": "fixture",
+        "ref": "living.floor_lamp",
+        "plan": [0.55, 4.4, 1.4],
+        "room": "Living room",
+        "approx": false,
+        "conf": "high",
+        "pos": [0.55, 1.4, -4.4],
+        "centre": [3.5, 1.2, -2.5]
+      },
+      "fixtures": ["living.floor_lamp"],
+      "powered_by": "switch.living_outlet",
+      "health": {
+        "avail": ["light.floor_lamp"]
+      }
+    },
+    {
+      "id": "demo-kitchen-pendant-1",
+      "name": "Kitchen pendant 1",
+      "integration": "hue",
+      "make": "Example Lighting",
+      "model": "A19 bulb",
+      "area": "Kitchen",
+      "place": {
+        "src": "fixture",
+        "ref": "kitchen.pendant.1",
+        "plan": [2.05, 6.84, 2.7],
+        "room": "Kitchen",
+        "approx": false,
+        "conf": "high",
+        "pos": [2.05, 2.7, -6.84],
+        "centre": [3.5, 1.2, -7]
+      },
+      "fixtures": ["kitchen.pendant.1"],
+      "unavailable_means": {
+        "off": "the kitchen pendants wall switch (KT-S-A)",
+        "unless_on": ["light.kitchen_pendant_2", "light.kitchen_pendant_3"]
+      },
+      "health": {
+        "avail": ["light.kitchen_pendant_1"],
+        "update": ["update.kitchen_pendant_1_firmware"]
+      }
+    },
+    {
+      "id": "demo-kitchen-pendant-2",
+      "name": "Kitchen pendant 2",
+      "integration": "hue",
+      "make": "Example Lighting",
+      "model": "A19 bulb",
+      "area": "Kitchen",
+      "place": {
+        "src": "fixture",
+        "ref": "kitchen.pendant.2",
+        "plan": [2.65, 6.84, 2.7],
+        "room": "Kitchen",
+        "approx": false,
+        "conf": "high",
+        "pos": [2.65, 2.7, -6.84],
+        "centre": [3.5, 1.2, -7]
+      },
+      "fixtures": ["kitchen.pendant.2"],
+      "unavailable_means": {
+        "off": "the kitchen pendants wall switch (KT-S-A)",
+        "unless_on": ["light.kitchen_pendant_1", "light.kitchen_pendant_3"]
+      },
+      "health": {
+        "avail": ["light.kitchen_pendant_2"],
+        "update": ["update.kitchen_pendant_2_firmware"]
+      }
+    },
+    {
+      "id": "demo-kitchen-pendant-3",
+      "name": "Kitchen pendant 3",
+      "integration": "hue",
+      "make": "Example Lighting",
+      "model": "A19 bulb",
+      "area": "Kitchen",
+      "place": {
+        "src": "fixture",
+        "ref": "kitchen.pendant.3",
+        "plan": [3.25, 6.84, 2.7],
+        "room": "Kitchen",
+        "approx": false,
+        "conf": "high",
+        "pos": [3.25, 2.7, -6.84],
+        "centre": [3.5, 1.2, -7]
+      },
+      "fixtures": ["kitchen.pendant.3"],
+      "unavailable_means": {
+        "off": "the kitchen pendants wall switch (KT-S-A)",
+        "unless_on": ["light.kitchen_pendant_1", "light.kitchen_pendant_2"]
+      },
+      "health": {
+        "avail": ["light.kitchen_pendant_3"],
+        "update": ["update.kitchen_pendant_3_firmware"]
+      }
+    },
+    {
+      "id": "demo-leak-sensor",
+      "name": "Leak sensor (kitchen sink)",
+      "integration": "zha",
+      "make": "Example Sensors",
+      "model": "WL-1",
+      "area": "Kitchen",
+      "place": {
+        "src": "area",
+        "ref": "kitchen",
+        "plan": [2.2, 8.7, 0.1],
+        "room": "Kitchen",
+        "approx": false,
+        "conf": "high",
+        "pos": [2.2, 0.1, -8.7],
+        "centre": [3.5, 1.2, -7]
+      },
+      "health": {
+        "avail": ["binary_sensor.kitchen_leak"],
+        "battery": ["sensor.kitchen_leak_battery"]
+      }
+    },
+    {
       "id": "demo-thermostat",
       "name": "Thermostat",
       "integration": "zwave_js",
@@ -124,11 +169,11 @@
       "place": {
         "src": "registry",
         "ref": "hvac.thermostat",
-        "plan": [7.07, 0.8, 1.5],
+        "plan": [7.6, 3.91, 1.5],
         "room": "Hall",
         "approx": false,
         "conf": "high",
-        "pos": [7.07, 1.5, -0.8],
+        "pos": [7.6, 1.5, -3.91],
         "centre": [9.5, 1.2, -2]
       },
       "health": {
@@ -167,28 +212,6 @@
       }
     },
     {
-      "id": "demo-leak-sensor",
-      "name": "Leak sensor (kitchen sink)",
-      "integration": "zha",
-      "make": "Example Sensors",
-      "model": "WL-1",
-      "area": "Kitchen",
-      "place": {
-        "src": "area",
-        "ref": "kitchen",
-        "plan": [1.5, 8.7, 0.1],
-        "room": "Kitchen",
-        "approx": false,
-        "conf": "high",
-        "pos": [1.5, 0.1, -8.7],
-        "centre": [3.5, 1.2, -7]
-      },
-      "health": {
-        "avail": ["binary_sensor.kitchen_leak"],
-        "battery": ["sensor.kitchen_leak_battery"]
-      }
-    },
-    {
       "id": "demo-router",
       "name": "Router",
       "integration": "mqtt",
@@ -198,12 +221,12 @@
       "place": {
         "src": "registry",
         "ref": "net.router",
-        "plan": [10.1, 8.6, 0.85],
+        "plan": [10.1, 8.72, 0.8],
         "room": "Study",
         "approx": false,
         "conf": "high",
-        "pos": [10.1, 0.85, -8.6],
-        "centre": [8.8, 1.2, -6.5]
+        "pos": [10.1, 0.8, -8.72],
+        "centre": [8.8, 1.2, -7.3]
       },
       "health": {
         "avail": ["device_tracker.router"],
@@ -211,53 +234,46 @@
       }
     },
     {
-      "id": "demo-pond-plug",
-      "name": "Pond pump plug",
+      "id": "demo-desk-plug",
+      "name": "Desk smart plug",
       "integration": "zha",
       "make": "Example Plugs",
-      "model": "SP-1",
-      "area": "Garden",
+      "model": "SP-15",
+      "area": "Study",
       "place": {
-        "src": "area",
-        "ref": "garden",
-        "plan": [-4.5, -3.3, 0.2],
-        "room": "exterior",
-        "approx": true,
-        "conf": "low",
-        "pos": [-4.5, 0.2, 3.3],
-        "centre": null
+        "src": "plate",
+        "ref": "ST-O-A",
+        "plan": [8.4, 9, 0.3],
+        "room": "Study",
+        "approx": false,
+        "conf": "high",
+        "pos": [8.4, 0.3, -9],
+        "centre": [8.8, 1.2, -7.3]
       },
       "health": {
-        "avail": ["switch.pond_pump"],
-        "signal": [
-          {
-            "entity": "sensor.pond_pump_rssi",
-            "kind": "rssi"
-          }
-        ]
+        "avail": ["switch.desk_plug"],
+        "seen": ["sensor.desk_plug_power"]
       }
     },
     {
-      "id": "demo-floor-lamp",
-      "name": "Floor lamp bulb",
-      "integration": "hue",
-      "make": "Example Lighting",
-      "model": "E27 bulb",
-      "area": "Living room",
+      "id": "demo-doorbell",
+      "name": "Doorbell",
+      "integration": "mqtt",
+      "make": "Example Security",
+      "model": "DB-1",
+      "area": "Hall",
       "place": {
-        "src": "fixture",
-        "ref": "living.floor_lamp",
-        "plan": [0.55, 4.4, 1.4],
-        "room": "Living room",
+        "src": "registry",
+        "ref": "security.doorbell",
+        "plan": [10.2, -0.28, 1.25],
+        "room": "exterior",
         "approx": false,
         "conf": "high",
-        "pos": [0.55, 1.4, -4.4],
-        "centre": [3.5, 1.2, -2.5]
+        "pos": [10.2, 1.25, 0.28],
+        "centre": null
       },
-      "fixtures": ["living.floor_lamp"],
-      "powered_by": "switch.living_outlet",
       "health": {
-        "avail": ["light.floor_lamp"]
+        "avail": ["binary_sensor.doorbell"]
       }
     },
     {
@@ -275,7 +291,7 @@
         "approx": false,
         "conf": "high",
         "pos": [9.6, 5.57, -5],
-        "centre": [8.8, 4.4, -6]
+        "centre": [4.75, 4.4, -4.6]
       },
       "health": {
         "avail": ["binary_sensor.smoke_landing"],
@@ -284,15 +300,166 @@
       }
     },
     {
-      "id": "demo-doorbell",
-      "name": "Doorbell",
+      "id": "demo-co-landing",
+      "name": "CO alarm (landing)",
+      "integration": "zwave_js",
+      "make": "Example Safety",
+      "model": "CO-2",
+      "area": "Landing",
+      "place": {
+        "src": "registry",
+        "ref": "safety.co.landing",
+        "plan": [3.4, 4.6, 5.57],
+        "room": "Landing",
+        "approx": false,
+        "conf": "high",
+        "pos": [3.4, 5.57, -4.6],
+        "centre": [4.75, 4.4, -4.6]
+      },
+      "health": {
+        "avail": ["binary_sensor.co_landing"],
+        "node_status": ["sensor.co_landing_node_status"],
+        "battery": ["sensor.co_landing_battery"]
+      }
+    },
+    {
+      "id": "demo-bedroom-fan-control",
+      "name": "Primary bedroom fan and light control",
+      "integration": "zwave_js",
+      "make": "Example Controls",
+      "model": "FC-2",
+      "area": "Primary bedroom",
+      "place": {
+        "src": "plate",
+        "ref": "B1-S-A",
+        "plan": [5.65, 3.94, 4.4],
+        "room": "Primary bedroom",
+        "approx": false,
+        "conf": "high",
+        "pos": [5.65, 4.4, -3.94],
+        "centre": [3.5, 4.4, -2]
+      },
+      "fixtures": ["bedroom_1.ceiling_fan"],
+      "health": {
+        "avail": ["light.bedroom_1", "fan.bedroom_fan"],
+        "node_status": ["sensor.bedroom_fan_node_status"]
+      }
+    },
+    {
+      "id": "demo-energy-monitor",
+      "name": "Energy monitor",
+      "integration": "esphome",
+      "make": "Example Energy",
+      "model": "EM-16",
+      "area": "Garage",
+      "place": {
+        "src": "registry",
+        "ref": "elec.energy-monitor",
+        "plan": [18.66, 5.84, 1.44],
+        "room": "Garage",
+        "approx": false,
+        "conf": "high",
+        "pos": [18.66, 1.44, -5.84],
+        "centre": [15.5, 1.1, -3.3]
+      },
+      "health": {
+        "avail": ["binary_sensor.vue2_status", "sensor.vue2_phase_a_power"],
+        "signal": [
+          {
+            "entity": "sensor.vue2_wifi_signal",
+            "kind": "rssi"
+          }
+        ],
+        "update": ["update.vue2_firmware"]
+      }
+    },
+    {
+      "id": "demo-garage-door",
+      "name": "Garage door opener",
       "integration": "mqtt",
-      "make": "Example Security",
-      "model": "DB-1",
+      "make": "Example Doors",
+      "model": "GO-500",
+      "area": "Garage",
+      "place": {
+        "src": "registry",
+        "ref": "appliance.garage-door",
+        "plan": [15.5, 3.85, 2.38],
+        "room": "Garage",
+        "approx": false,
+        "conf": "high",
+        "pos": [15.5, 2.38, -3.85],
+        "centre": [15.5, 1.1, -3.3]
+      },
+      "health": {
+        "avail": ["cover.garage_door"]
+      }
+    },
+    {
+      "id": "demo-freezer-plug",
+      "name": "Freezer smart plug",
+      "integration": "zha",
+      "make": "Example Plugs",
+      "model": "SP-15",
       "area": null,
       "place": null,
       "health": {
-        "avail": ["binary_sensor.doorbell"]
+        "avail": ["switch.freezer_plug"],
+        "seen": ["sensor.freezer_plug_power"]
+      }
+    },
+    {
+      "id": "demo-laundry-leak",
+      "name": "Leak sensor (laundry)",
+      "integration": "zha",
+      "make": "Example Sensors",
+      "model": "WL-1",
+      "area": "Laundry",
+      "place": {
+        "src": "area",
+        "ref": "laundry",
+        "plan": [13.065, 7.38, -0.08],
+        "room": "Laundry",
+        "approx": false,
+        "conf": "high",
+        "pos": [13.065, -0.08, -7.38],
+        "centre": [13.825, 1.1, -7.8]
+      },
+      "health": {
+        "avail": ["binary_sensor.laundry_leak"],
+        "battery": ["sensor.laundry_leak_battery"],
+        "signal": [
+          {
+            "entity": "sensor.laundry_leak_lqi",
+            "kind": "lqi"
+          }
+        ]
+      }
+    },
+    {
+      "id": "demo-pond-plug",
+      "name": "Pond pump plug",
+      "integration": "zha",
+      "make": "Example Plugs",
+      "model": "SP-1",
+      "area": "Garden",
+      "place": {
+        "src": "plate",
+        "ref": "EX-O-C",
+        "plan": [-0.25, 0.6, 0.45],
+        "room": "exterior",
+        "approx": false,
+        "conf": "high",
+        "pos": [-0.25, 0.45, -0.6],
+        "centre": null
+      },
+      "health": {
+        "avail": ["switch.pond_pump"],
+        "signal": [
+          {
+            "entity": "sensor.pond_pump_rssi",
+            "kind": "rssi"
+          }
+        ]
       }
     }
   ]

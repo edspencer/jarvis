@@ -3,7 +3,7 @@
 // manifest, and runs the real `validate-site` command on the demo and on the guide's broken sites, comparing its
 // output with the guide's, so the guide can't rot.
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -48,8 +48,11 @@ const trimLines = (s: string) =>
 describe('§6: the excerpts of the demo generator', () => {
   // an excerpt may gather lines from several places (the naming conventions), so each line is checked, not the block
   it("each ts line is one of the generator's (tools/make-demo-site.ts and its helpers), indentation aside", () => {
+    const helpers = readdirSync(new URL('tools/demo-site/', ROOT)).filter((f) => f.endsWith('.ts'));
     const lines = new Set(
-      ['tools/make-demo-site.ts', 'tools/demo-site/geometry.ts'].flatMap((f) => trimLines(read(f)).split('\n')),
+      ['tools/make-demo-site.ts', ...helpers.map((f) => `tools/demo-site/${f}`)].flatMap((f) =>
+        trimLines(read(f)).split('\n'),
+      ),
     );
     const ts = blocks(section(6), 'ts');
     expect(ts.length).toBeGreaterThan(4);
@@ -150,7 +153,7 @@ describe('§8: validate-site prints what the guide shows', () => {
 
   it('once the schema passes, the rules', () => {
     const m = demo();
-    m.startView = 8;
+    m.startView = m.viewpoints.length + 1;
     m.layers[1].key = 'X';
     const r = validate(site({ 'site.json': JSON.stringify(m) }), '/tmp/broken-site');
     expect(r.status, r.why).toBe(1);

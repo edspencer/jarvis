@@ -19,7 +19,22 @@ describe('loadSite', () => {
 
   it("takes the rooms from the model's floors, with their storeys", () => {
     expect(site.rooms.map((r) => r.id).sort()).toEqual(
-      ['bathroom', 'bedroom_1', 'bedroom_2', 'hall', 'kitchen', 'landing', 'living_room', 'study'].sort(),
+      [
+        'bedroom_1',
+        'bedroom_2',
+        'bedroom_3',
+        'garage',
+        'hall',
+        'hall_bath',
+        'kitchen',
+        'landing',
+        'laundry',
+        'living_room',
+        'powder_room',
+        'primary_bath',
+        'primary_closet',
+        'study',
+      ].sort(),
     );
     expect(site.rooms.find((r) => r.id === 'living_room')).toMatchObject({
       name: 'Living room',
@@ -30,6 +45,13 @@ describe('loadSite', () => {
       'kitchen.pendant.1',
       'kitchen.pendant.2',
       'kitchen.pendant.3',
+      'kitchen.chandelier',
+      'kitchen.can.1',
+      'kitchen.can.2',
+      'kitchen.can.3',
+      'kitchen.can.4',
+      'kitchen.undercab.1',
+      'kitchen.undercab.2',
     ]);
   });
 
@@ -45,10 +67,10 @@ describe('loadSite', () => {
   });
 
   it('reads the registry, devices and controls', () => {
-    expect(site.registry).toHaveLength(12);
+    expect(site.registry).toHaveLength(32);
     expect(site.registry.find((r) => r.id === 'plumb.water-heater')).toMatchObject({
       name: 'Water heater',
-      room: 'kitchen',
+      room: 'garage',
       placed: true,
     });
     expect(site.registry.find((r) => r.id === 'envelope.gutters')?.placed).toBe(false);

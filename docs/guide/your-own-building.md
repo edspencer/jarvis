@@ -272,13 +272,17 @@ Rooms, doors, windows and fixtures follow the naming conventions:
 ```ts
 m.node(`Floor_${r.id}`, s, { room: r.id, storey: r.storey ? 'first' : 'ground' });
 m.node(`Ceil_${r.id}`, c, { room: r.id });
-m.node(`Door_${o.id}`, s, { door_leaf: true, width_m: +(o.b - o.a).toFixed(2) });
+m.node(`Door_${o.id}`, s, {
+  door_leaf: true,
+  width_m: +(o.b - o.a).toFixed(2),
+  ...(o.panels ? { kind: 'sectional garage door', panels: o.panels } : {}),
+});
 m.node(`Win_${o.id}`, glass, { kind: o.kind === 'glazed' ? 'glazed door' : 'window' });
 m.node(`WinFrame_${o.id}`, frame);
 m.node(
   `Fixture_${f.id}`,
   fxMesh.get(f.kind)!,
-  { fixture_id: f.id, fixture_kind: f.kind, fixture_group: f.group, room: f.room },
+  { fixture_id: f.id, fixture_kind: f.kind.replace(/_/g, ' '), fixture_group: f.group, room: f.room },
   { at: f.at, yaw: f.yaw },
 );
 ```
@@ -322,11 +326,11 @@ complete and check it if the manifest names it (`"$schema"`, ignored by the view
   "jarvis": "jarvis-site/1",
   "id": "demo-house",
   "name": "Demo house",
-  "description": "A synthetic two-storey house made by tools/make-demo-site.ts.",
+  "description": "A synthetic four-bedroom house with a garage, made by tools/make-demo-site.ts.",
   "geo": { "lat": 51.4779, "lon": -0.0015, "timeZone": "Europe/London" },
   "frame": { "units": "m", "northAzimuth": 12 },
-  "centre": [6, 5],
-  "overview": { "camera": [18, -6, 19] },
+  "centre": [9.5, 4.5],
+  "overview": { "camera": [24, -10, 21] },
   "ground": { "z": -0.17 },
 ```
 
@@ -371,9 +375,9 @@ Without `storeys` there is one, the ground floor at 0, and no U.
 
 ```json
   "viewpoints": [
-    { "name": "Front path", "at": [9.5, -6, -0.15], "yaw": 10 },
-    { "name": "Living room", "at": [5.6, 0.8, 0], "yaw": 50 },
-    { "name": "Landing", "at": [11.3, 8.3, 3.2], "yaw": 140 }
+    { "name": "Front of the house", "at": [9.4, -14, -0.15], "yaw": 0 },
+    { "name": "Living room", "at": [2.0, 4.6, 0], "yaw": 225 },
+    { "name": "Landing", "at": [10.2, 4.6, 3.2], "yaw": 90 }
   ],
   "startView": 2,
 ```
@@ -482,14 +486,14 @@ It exits 1 on errors; warnings alone pass. The demo:
 
 ```
 /…/examples/demo-site/site.json: Demo house (demo-house)
-  · main model: demo.glb: 98 top-level nodes, 16 fixtures, 8 rooms, 7 merged keys, 120.0 × 114.0 m
-  · model furniture: furniture.glb: 13 top-level nodes, 1 fixtures, 0 rooms, 1 merged keys, 10.0 × 8.6 m
+  · main model: demo.glb: 200 top-level nodes, 40 fixtures, 14 rooms, 16 merged keys, 120.0 × 114.0 m
+  · model furniture: furniture.glb: 48 top-level nodes, 8 fixtures, 0 rooms, 4 merged keys, 17.8 × 9.1 m
   · blueprints: 2 sheets
-  · energy map: 20 meters (1 low confidence)
+  · energy map: 22 meters (1 low confidence)
 ok
 ```
 
-(The 120 × 114 m is the lawn; the house is 12 × 9.) A copy with mistakes in the manifest:
+(The 120 × 114 m is the lawn; the house is 12 × 9, 19 × 9.5 with the garage.) A copy with mistakes in the manifest:
 
 ```
 /tmp/broken-site/site.json
@@ -504,7 +508,7 @@ Once the schema passes, the rules:
 
 ```
 /tmp/broken-site/site.json
-  error site.json: startView: there are only 7 viewpoints
+  error site.json: startView: there are only 8 viewpoints
   error site.json: layers[1].key: X is one of the viewer's own keys (A B C D E G H J L N P Q S T U V W X)
 2 errors
 ```

@@ -120,7 +120,7 @@ test('"where is …" flies there and opens it in the inspector', async () => {
   await send('where is the water heater?');
   await expect(insp()).toContainText('Water heater');
   await expect(chip('Showing Water heater')).toHaveAttribute('data-status', 'done');
-  await expect(panel().locator('.a').last()).toContainText("That's the water heater, in the kitchen.");
+  await expect(panel().locator('.a').last()).toContainText("That's the water heater, in the garage.");
   const views = await twin<{ op: string; ok: boolean; args: { subject?: string } }[]>(page, 'twin.assistant.views()');
   expect(views.at(-1)).toMatchObject({ op: 'fly', ok: true, args: { subject: 'pins:plumb.water-heater' } });
   await idle();
