@@ -1,0 +1,129 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "JARVIS energy map (jarvis-energy/1)",
+  "description": "The energy plugin's site mapping file (plugins.energy.map): a hierarchy of meters (feed → panel → circuit → device) with their power and energy entities, and what each one feeds in the model. docs/plugins/energy.md explains it.",
+  "type": "object",
+  "required": ["jarvis", "meters"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "An editor hint; ignored."
+    },
+    "jarvis": {
+      "type": "string",
+      "const": "jarvis-energy/1",
+      "description": "The file format."
+    },
+    "scale": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The load tint's log scale.",
+      "properties": {
+        "idle": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "W at or below which a meter is idle (blue). Default 5."
+        },
+        "max": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "description": "W that gets the full red. Default 5000."
+        }
+      }
+    },
+    "meters": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/meter" }
+    }
+  },
+  "$defs": {
+    "entity": {
+      "type": "string",
+      "pattern": "^[a-z_]+\\.[A-Za-z0-9_]+$",
+      "description": "An entity id in the store: sensor.kitchen_power."
+    },
+    "entities": {
+      "type": ["string", "array"],
+      "pattern": "^[a-z_]+\\.[A-Za-z0-9_]+$",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/entity" },
+      "description": "One entity, or several summed (the two legs of a 240 V circuit)."
+    },
+    "feed": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One thing in the model a meter feeds. Exactly one of registry, plate, fixture, node, room.",
+      "properties": {
+        "registry": { "type": "string", "minLength": 1, "description": "A registry (equipment pin) id: pins:<id>." },
+        "plate": { "type": "string", "minLength": 1, "description": "A wall plate's box id: plates:<box>." },
+        "fixture": { "type": "string", "minLength": 1, "description": "A light fixture id in the model." },
+        "node": { "type": "string", "minLength": 1, "description": "A node name in the model." },
+        "room": { "type": "string", "minLength": 1, "description": "A room id (its Floor_ node's room)." },
+        "conf": { "type": "string", "description": "How sure this binding is." },
+        "src": { "type": "string", "description": "Where it comes from." }
+      }
+    },
+    "meter": {
+      "type": "object",
+      "required": ["id"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]*$",
+          "description": "Unique in the file: energy:<id> is its subject."
+        },
+        "label": { "type": "string", "minLength": 1, "description": "Its name (default: the id)." },
+        "kind": {
+          "type": "string",
+          "enum": ["load", "source", "storage"],
+          "description": "load (default) is summed into the house's load; a source (PV) or storage (a battery) is signed and shown apart."
+        },
+        "power": {
+          "$ref": "#/$defs/entities",
+          "description": "Power (W or kW, from the entity's unit). Several are summed. Without it, the meter's power is its children's sum."
+        },
+        "legs": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "A label per power entity: [\"L1\", \"L2\"]."
+        },
+        "energy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "today": { "$ref": "#/$defs/entities", "description": "Energy since midnight (kWh or Wh)." },
+            "month": { "$ref": "#/$defs/entities", "description": "Energy this month (kWh or Wh)." }
+          }
+        },
+        "remainder": {
+          "$ref": "#/$defs/entity",
+          "description": "A sensor that reports this meter's unmetered remainder (a monitor's Balance): used for Other instead of the computed one."
+        },
+        "panel": { "type": "string", "description": "The panel it's on, as people say it: Panel A." },
+        "breaker": {
+          "type": ["string", "integer", "array"],
+          "items": { "type": ["integer", "string"] },
+          "description": "Breaker position(s): 12, [17, 19] or \"17+19\"."
+        },
+        "volts": { "type": "number", "exclusiveMinimum": 0, "description": "120, 240…" },
+        "feeds": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/feed" },
+          "description": "What it feeds in the model: the first one is where the meter is (flown to, drawn)."
+        },
+        "conf": { "type": "string", "description": "high, medium or low: how sure the mapping is." },
+        "src": { "type": "string", "description": "Where the mapping comes from." },
+        "question": { "type": "string", "description": "An open question about this meter (shown with it)." },
+        "note": { "type": "string" },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/meter" },
+          "description": "Meters downstream of this one; the remainder is shown as Other."
+        }
+      }
+    }
+  }
+}

@@ -19,10 +19,13 @@ export interface ValidationResult {
   warnings: Issue[];
 }
 
-/** the JSON Schema subset the manifest schema uses */
-interface Schema {
+type SchemaType = 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean';
+
+/** the JSON Schema subset the manifest (and the plugins' file) schemas use */
+export interface Schema {
   $ref?: string;
-  type?: 'object' | 'array' | 'string' | 'number' | 'integer' | 'boolean';
+  /** one type, or several (a string or an array of them) */
+  type?: SchemaType | SchemaType[];
   properties?: Record<string, Schema>;
   required?: string[];
   additionalProperties?: boolean | Schema;
@@ -66,40 +69,69 @@ const join = (path: string, key: string | number): string =>
 const typeName = (v: unknown): string =>
   v === null ? 'null' : Array.isArray(v) ? 'an array' : typeof v === 'object' ? 'an object' : `a ${typeof v}`;
 
-function resolveRef(ref: string): Schema {
+function resolveRef(ref: string, root: Schema): Schema {
   const m = /^#\/\$defs\/(.+)$/.exec(ref);
-  const s = m && ROOT.$defs?.[m[1]];
+  const s = m && root.$defs?.[m[1]];
   if (!s) throw new Error(`schema: unknown $ref ${ref}`);
   return s;
 }
 
-/** Validate `value` against a schema node, appending to `out`. */
-export function checkSchema(value: unknown, node: Schema = ROOT, path = '', out: Issue[] = []): Issue[] {
-  const s = node.$ref ? { ...resolveRef(node.$ref), ...node, $ref: undefined } : node;
+const isType = (v: unknown, t: SchemaType): boolean =>
+  t === 'object'
+    ? typeof v === 'object' && v !== null && !Array.isArray(v)
+    : t === 'array'
+      ? Array.isArray(v)
+      : t === 'number'
+        ? typeof v === 'number' && Number.isFinite(v)
+        : t === 'integer'
+          ? typeof v === 'number' && Number.isInteger(v)
+          : typeof v === t;
+const TYPE_NAME: Record<SchemaType, string> = {
+  object: 'an object',
+  array: 'an array',
+  string: 'a string',
+  number: 'a number',
+  integer: 'a whole number',
+  boolean: 'true or false',
+};
+
+/** Validate `value` against a schema node, appending to `out`. `root` holds the $defs ($ref: '#/$defs/<name>'). */
+export function checkSchema(
+  value: unknown,
+  node: Schema = ROOT,
+  path = '',
+  out: Issue[] = [],
+  root: Schema = ROOT,
+): Issue[] {
+  const s = node.$ref ? { ...resolveRef(node.$ref, root), ...node, $ref: undefined } : node;
   const err = (message: string) => out.push({ path, message });
-  switch (s.type) {
-    case 'object':
-      if (typeof value !== 'object' || value === null || Array.isArray(value))
-        return (err(`expected an object, got ${typeName(value)}`), out);
-      break;
-    case 'array':
-      if (!Array.isArray(value)) return (err(`expected an array, got ${typeName(value)}`), out);
-      break;
-    case 'string':
-      if (typeof value !== 'string') return (err(`expected a string, got ${typeName(value)}`), out);
-      break;
-    case 'number':
-      if (typeof value !== 'number' || !Number.isFinite(value))
-        return (err(`expected a number, got ${typeName(value)}`), out);
-      break;
-    case 'integer':
-      if (typeof value !== 'number' || !Number.isInteger(value))
-        return (err(`expected a whole number, got ${JSON.stringify(value)}`), out);
-      break;
-    case 'boolean':
-      if (typeof value !== 'boolean') return (err(`expected true or false, got ${typeName(value)}`), out);
-      break;
-  }
+  if (Array.isArray(s.type)) {
+    if (!s.type.some((t) => isType(value, t)))
+      return (err(`expected ${s.type.map((t) => TYPE_NAME[t]).join(' or ')}, got ${typeName(value)}`), out);
+  } else
+    switch (s.type) {
+      case 'object':
+        if (typeof value !== 'object' || value === null || Array.isArray(value))
+          return (err(`expected an object, got ${typeName(value)}`), out);
+        break;
+      case 'array':
+        if (!Array.isArray(value)) return (err(`expected an array, got ${typeName(value)}`), out);
+        break;
+      case 'string':
+        if (typeof value !== 'string') return (err(`expected a string, got ${typeName(value)}`), out);
+        break;
+      case 'number':
+        if (typeof value !== 'number' || !Number.isFinite(value))
+          return (err(`expected a number, got ${typeName(value)}`), out);
+        break;
+      case 'integer':
+        if (typeof value !== 'number' || !Number.isInteger(value))
+          return (err(`expected a whole number, got ${JSON.stringify(value)}`), out);
+        break;
+      case 'boolean':
+        if (typeof value !== 'boolean') return (err(`expected true or false, got ${typeName(value)}`), out);
+        break;
+    }
   if (s.const !== undefined && value !== s.const)
     err(`must be ${JSON.stringify(s.const)}, got ${JSON.stringify(value)}`);
   if (s.enum && !s.enum.includes(value))
@@ -132,14 +164,14 @@ export function checkSchema(value: unknown, node: Schema = ROOT, path = '', out:
           ? `expected ${s.maxItems} items, got ${value.length}`
           : `expected at most ${s.maxItems} items, got ${value.length}`,
       );
-    if (s.items) value.forEach((v, i) => checkSchema(v, s.items, join(path, i), out));
+    if (s.items) value.forEach((v, i) => checkSchema(v, s.items, join(path, i), out, root));
   }
-  if (s.type === 'object' && value && typeof value === 'object' && !Array.isArray(value)) {
+  if (isType(value, 'object') && (s.type === 'object' || (Array.isArray(s.type) && s.type.includes('object')))) {
     const obj = value as Record<string, unknown>;
     for (const k of s.required || []) if (!(k in obj)) out.push({ path: join(path, k), message: 'is required' });
     for (const [k, v] of Object.entries(obj)) {
       const p = s.properties?.[k];
-      if (p) checkSchema(v, p, join(path, k), out);
+      if (p) checkSchema(v, p, join(path, k), out, root);
       else if (s.additionalProperties === false) {
         const known = Object.keys(s.properties || {});
         const near = known.find((x) => x.toLowerCase() === k.toLowerCase());
@@ -147,7 +179,7 @@ export function checkSchema(value: unknown, node: Schema = ROOT, path = '', out:
           path: join(path, k),
           message: `unknown field${near ? ` (did you mean "${near}"?)` : known.length ? ` (expected one of: ${known.join(', ')})` : ''}`,
         });
-      } else if (typeof s.additionalProperties === 'object') checkSchema(v, s.additionalProperties, join(path, k), out);
+      } else if (typeof s.additionalProperties === 'object') checkSchema(v, s.additionalProperties, join(path, k), out, root);
     }
   }
   return out;
@@ -241,7 +273,7 @@ export function checkRules(m: SiteManifest): ValidationResult {
           : `moved to plugins.lights.${k} (read from here for now)`,
       });
   // the features read the entity store, which a connector fills (Home Assistant is the one that ships)
-  for (const f of ['faults', 'lights'] as const)
+  for (const f of ['faults', 'lights', 'energy'] as const)
     if (p[f] && !p['home-assistant'])
       warnings.push({
         path: `plugins.${f}`,

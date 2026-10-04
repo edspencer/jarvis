@@ -6,6 +6,7 @@ import { checkModel, checkParts, readGltfJson, type ModelReport } from './model-
 import { resolveSite, type Site } from './resolve.ts';
 import { formatIssues, validateManifest } from './validate.ts';
 import type { SiteManifest } from './manifest.ts';
+import { checkEnergyMap, type EnergyMap, type MeterSpec } from '../plugins/energy/map.ts';
 
 export type Reader = (url: string) => Promise<Uint8Array | null>;
 
@@ -154,6 +155,26 @@ export async function checkSite(manifestUrl: string, read: Reader): Promise<Site
         if (p.blueprints.default && !idx.sheets.some((s) => s.id === p.blueprints!.default))
           warnings.push(`plugins.blueprints.default: no sheet "${p.blueprints.default}" in the index`);
         notes.push(`blueprints: ${idx.sheets.length} sheets`);
+      }
+    }
+  }
+  if (p.energy) {
+    const d = await jsonFile(p.energy.map, 'energy map');
+    if (d !== undefined) {
+      const v = checkEnergyMap(d);
+      errors.push(...formatIssues(v.errors).map((l) => `energy map: ${l}`));
+      warnings.push(...formatIssues(v.warnings).map((l) => `energy map: ${l}`));
+      if (v.ok) {
+        let n = 0,
+          low = 0;
+        const count = (ms: MeterSpec[]) =>
+          ms.forEach((x) => {
+            n++;
+            if (x.conf === 'low') low++;
+            count(x.children || []);
+          });
+        count((d as EnergyMap).meters);
+        notes.push(`energy map: ${n} meters${low ? ` (${low} low confidence)` : ''}`);
       }
     }
   }
