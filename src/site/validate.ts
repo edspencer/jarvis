@@ -5,7 +5,7 @@
 import schema from '../../schema/site.schema.json' with { type: 'json' };
 import { MANIFEST_VERSION, type SiteManifest } from './manifest.ts';
 import { CORE_KEYS } from '../core/plugin/keys.ts';
-import { pluginKeys } from '../plugins/registry.ts';
+import { BUILTIN_PLUGINS, pluginKeys } from '../plugins/registry.ts';
 
 export interface Issue {
   /** where in the manifest, e.g. 'layers[1].key' ('' = the whole manifest) */
@@ -288,8 +288,10 @@ export function checkRules(m: SiteManifest): ValidationResult {
   return { ok: !errors.length, errors, warnings };
 }
 
-/** the plugin sections this build knows (the schema's plugins.properties) */
-export const KNOWN_PLUGINS: readonly string[] = Object.keys(ROOT.properties?.plugins?.properties || {});
+/** the plugin sections this build knows: the schema's, and the built-in plugins (sun has no section of its own) */
+export const KNOWN_PLUGINS: readonly string[] = [
+  ...new Set([...Object.keys(ROOT.properties?.plugins?.properties || {}), ...Object.keys(BUILTIN_PLUGINS)]),
+];
 
 /** edit distance, for "did you mean" (small strings only) */
 function distance(a: string, b: string): number {
@@ -306,27 +308,34 @@ function distance(a: string, b: string): number {
  * warning, not an error: the plugin is skipped and the rest of the site loads. A typo inside a known plugin's section
  * is still an error (the schema). Returns the manifest without those sections, and the warnings.
  */
-function splitUnknownPlugins(value: unknown): { value: unknown; warnings: Issue[] } {
+function splitUnknownPlugins(value: unknown): { value: unknown; errors: Issue[]; warnings: Issue[] } {
   const v = value as { plugins?: unknown } | null;
   const p = v?.plugins;
-  if (!p || typeof p !== 'object' || Array.isArray(p)) return { value, warnings: [] };
+  if (!p || typeof p !== 'object' || Array.isArray(p)) return { value, errors: [], warnings: [] };
   const unknown = Object.keys(p).filter((k) => !KNOWN_PLUGINS.includes(k));
-  if (!unknown.length) return { value, warnings: [] };
-  const warnings = unknown.map((k) => {
-    const near = KNOWN_PLUGINS.find((x) => x.toLowerCase() === k.toLowerCase() || distance(x, k.toLowerCase()) <= 2);
-    return {
-      path: join('plugins', k),
-      message: `site config for plugin '${k}', which this build doesn't have: skipped${near ? ` (did you mean "${near}"?)` : ''}`,
-    };
-  });
+  if (!unknown.length) return { value, errors: [], warnings: [] };
+  const errors: Issue[] = [],
+    warnings: Issue[] = [];
+  for (const k of unknown) {
+    // a near miss of a known plugin ('Pins', 'light') is a typo: an error, as a typo in a known field is
+    const near = KNOWN_PLUGINS.find(
+      (x) => x.toLowerCase() === k.toLowerCase() || (k.length >= 4 && distance(x, k.toLowerCase()) <= 1),
+    );
+    if (near) errors.push({ path: join('plugins', k), message: `unknown plugin (did you mean "${near}"?)` });
+    else
+      warnings.push({
+        path: join('plugins', k),
+        message: `site config for plugin '${k}', which this build doesn't have: skipped`,
+      });
+  }
   const kept = Object.fromEntries(Object.entries(p).filter(([k]) => KNOWN_PLUGINS.includes(k)));
-  return { value: { ...v, plugins: kept }, warnings };
+  return { value: { ...v, plugins: kept }, errors, warnings };
 }
 
 /** Schema, then rules. `value` is the parsed JSON. A plugins section this build doesn't know is only a warning. */
 export function validateManifest(value: unknown): ValidationResult {
   const split = splitUnknownPlugins(value);
-  const errors = checkSchema(split.value);
+  const errors = [...split.errors, ...checkSchema(split.value)];
   if (!errors.length && (value as { jarvis?: string }).jarvis !== MANIFEST_VERSION)
     errors.push({ path: 'jarvis', message: `this viewer reads ${MANIFEST_VERSION}` });
   if (errors.length) return { ok: false, errors, warnings: split.warnings };

@@ -205,13 +205,16 @@ describe('validateManifest: clear messages', () => {
     expect(both.errors.map((e) => e.path)).toEqual(['geo.lat']);
     expect(both.warnings.map((w) => w.path)).toEqual(['plugins.solarforecast']);
   });
-  it('suggests the known plugin a section was meant for', () => {
-    const v = bad((m) => ((m.plugins as Record<string, unknown>).Pins = { registry: 'r.json' }));
-    expect(v.ok).toBe(true);
-    expect(v.warnings[0].message).toMatch(/doesn't have: skipped \(did you mean "pins"\?\)$/);
-    expect(bad((m) => ((m.plugins as Record<string, unknown>).energi = { map: 'e.json' })).warnings[0].message).toMatch(
-      /did you mean "energy"/,
-    );
+  it('keeps a near miss of a known plugin an error (a typo, not a newer plugin)', () => {
+    expect(msgs((m) => ((m.plugins as Record<string, unknown>).Pins = { registry: 'r.json' }))).toEqual([
+      'plugins.Pins: unknown plugin (did you mean "pins"?)',
+    ]);
+    expect(msgs((m) => ((m.plugins as Record<string, unknown>).energi = { map: 'e.json' }))).toEqual([
+      'plugins.energi: unknown plugin (did you mean "energy"?)',
+    ]);
+  });
+  it("doesn't skip a built-in plugin's name: sun takes no section, so one is an error, as before", () => {
+    expect(msgs((m) => ((m.plugins as Record<string, unknown>).sun = {}))[0]).toMatch(/^plugins\.sun: unknown field/);
   });
   it("keeps a typo inside a known plugin's section an error", () => {
     expect(msgs((m) => (m.plugins!.pins = { registry: 'r.json', regsitry: 'x' } as never))).toEqual([

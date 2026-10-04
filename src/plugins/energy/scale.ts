@@ -33,9 +33,10 @@ export function position(w: number | null, o: ScaleOpts = {}): number | null {
 
 /** '#rrggbb' for a load in W */
 export function loadColour(w: number | null, o: ScaleOpts = {}): string {
-  const t = position(w, o);
+  let t = position(w, o);
   if (t === null) return NO_DATA;
   if (t < 0) return IDLE;
+  t = Math.round(t * 48) / 48; // 49 colours: the scene keeps one material per colour
   let i = 1;
   while (i < STOPS.length - 1 && t > STOPS[i][0]) i++;
   const [t0, c0] = STOPS[i - 1],

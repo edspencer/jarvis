@@ -214,7 +214,7 @@ out its `power` so that it is the sum of its children.
 leg makes a 240 V circuit unknown rather than half its load. A meter without power entities is the sum of its children
 of the same kind, and is marked partial (a note in the inspector) when some of them have no data.
 
-**Other.** A meter with children and its own power (or a `remainder` entity) gets an _Other_ child: its unmetered
+**Other.** A meter with children and its own power gets an _Other_ child: its unmetered
 remainder. A reported remainder is used when it has data; otherwise it is the meter's power less its children's, and
 is no data if any of them is missing or partial. A remainder slightly below zero is the meters disagreeing, not a
 negative load, so it is clamped at 0.
@@ -223,11 +223,14 @@ negative load, so it is clamped at 0.
 says "some meters have no data" and its header adds a "+".
 
 **Consumers** are the load meters without children: the leaves, and every _Other_. A parent is never listed with its
-children, so the consumers add up to the house's load without counting anything twice. Top consumers is the eight
-biggest of them.
+children, so the consumers add up to the house's load without counting anything twice (give or take an _Other_
+clamped at 0). Top consumers is the eight biggest of them. In the _Today_ view, a consumer without an `energy.today`
+entity gets its kilowatt-hours from its power history (fetched when the view is shown); an _Other_ has none.
 
 **Several meters on one thing.** When several meters feed the same object or room, a meter counts only if none of its
-ancestors also feeds it (a circuit and the plug on it both feed the kitchen: the kitchen gets the circuit's power).
+ancestors with data also feeds it (a circuit and the plug on it both feed the kitchen: the kitchen gets the circuit's
+power, or the plug's while the circuit's sensor is down). If one of the counted meters has no data, the sum is marked
+partial (in the inspector, and "(partial)" in the hover label).
 The inspector lists the others as "counted in its parent".
 
 **Sources and storage** are signed (storage positive while charging), never summed into the load, and shown on their
@@ -243,9 +246,13 @@ orange to red at `scale.max` (5000 W) and beyond. The legend shows no data, idle
 ## Bindings and subjects
 
 Each meter's entities (power, energy, remainder) are bound with `store.bind` to its own reference, `energy:<id>`, and
-to every reference it feeds (`pins:<id>`, `plates:<box>`, `fixture:<id>`, `room:<id>`; a node has no store
-reference), with the meter's `conf` and `src`. So the Home Assistant section, or any connector's, shows the sensors on
-the panel, plate, fixture or room they measure. A meter's subject is `energy:<meter id>` (an _Other_ is
+to every registry item, plate and room it feeds (`pins:<id>`, `plates:<box>`, `room:<id>`), with the meter's `conf`
+and `src`. So the Home Assistant section, or any connector's, shows the sensors on the panel, plate or room they
+measure. Not onto a fixture (a fixture's bindings are its light entities, which the lights plugin reads) nor a node
+(which has no store reference); the Energy section still shows on both.
+
+While energy mode is on, a mesh's own material is kept in `mesh.userData.baseMaterial`, so a plugin that prepares
+materials meanwhile (the lights) starts from the real one, not the ghost. A meter's subject is `energy:<meter id>` (an _Other_ is
 `energy:<parent id>.other`); its rows and links fly to the first thing it feeds that the viewer knows, else to its own
 subject.
 
@@ -253,9 +260,10 @@ subject.
 
 `npm run validate-site -- <site folder>` checks the map named in the manifest against the schema, then the rules a
 schema can't say. Errors: an id used twice; a feed that names no target or more than one; `legs` that don't match the
-number of power entities; a meter with neither power nor children; `scale.idle` not below `scale.max`. Warnings: an
-entity used as power by two meters (it would be counted twice); a `remainder` on a meter without children (there is no
-_Other_ to show); a source or storage meter under a load. It also reports how many meters there are and how many are
+number of power entities; a meter with neither power nor children; an id ending in `.other` (the plugin's own, for a
+parent's _Other_); `scale.idle` not below `scale.max`. Warnings: an entity used as power by two meters (it would be
+counted twice); a `remainder` on a meter without children, or without power of its own (there is no _Other_ to show:
+its power is its children's sum); a source or storage meter under a load. It also reports how many meters there are and how many are
 low confidence. The viewer runs the same check when it loads the map: errors stop the plugin (a toast says why), and
 warnings go to the console.
 
@@ -263,7 +271,8 @@ warnings go to the console.
 
 A sensor that is unavailable shows as "No data" in the inspector (naming the entities) and grey in the scene; a parent
 summed from children that are partly missing says so rather than showing a smaller number as if it were whole. History
-that can't be fetched leaves the sparkline out. Updates are coalesced: however fast the readings arrive, the plugin
+that can't be fetched leaves the sparkline out (as does an _Other_, which has no history of its own), and history is
+only read for an entity whose unit is a power unit. Updates are coalesced: however fast the readings arrive, the plugin
 recomputes at most once a second, and the HUD re-renders only what changed.
 
 ## Not done yet

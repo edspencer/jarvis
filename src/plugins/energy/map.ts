@@ -96,6 +96,8 @@ export function checkEnergyMap(value: unknown): ValidationResult {
     list.forEach((x, i) => {
       const p = `${path}[${i}]`;
       if (ids.has(x.id)) errors.push({ path: `${p}.id`, message: `"${x.id}" is already ${ids.get(x.id)}` });
+      else if (x.id.endsWith('.other'))
+        errors.push({ path: `${p}.id`, message: "ids ending in .other are the plugin's own (a parent's Other)" });
       else ids.set(x.id, p);
       const power = asList(x.power);
       if (!power.length && !x.children?.length)
@@ -119,6 +121,12 @@ export function checkEnergyMap(value: unknown): ValidationResult {
       });
       if (x.remainder && !x.children?.length)
         warnings.push({ path: `${p}.remainder`, message: 'a remainder without children: there is no Other to show' });
+      else if (x.remainder && !power.length)
+        warnings.push({
+          path: `${p}.remainder`,
+          message:
+            "a remainder on a meter without power: ignored (its power is its children's sum, so there is no Other)",
+        });
       if (parent && (parent.kind ?? 'load') === 'load' && x.kind && x.kind !== 'load')
         warnings.push({ path: `${p}.kind`, message: `a ${x.kind} under a load: it is not summed into the load` });
       if (x.children) walk(x.children, `${p}.children`, x);

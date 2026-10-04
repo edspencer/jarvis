@@ -12,7 +12,6 @@ import { formatIssues, type EnergyConfig } from '../../site';
 import {
   definePlugin,
   type Blocks,
-  type EntityState,
   type HistoryPoint,
   type InlineSpan,
   type LinkItem,
@@ -28,6 +27,7 @@ import {
   kwh,
   parents,
   powerOf,
+  sumOf,
   share,
   sumAll,
   top,
@@ -90,7 +90,8 @@ export default definePlugin<EnergyConfig>({
       const entities = [...m.power, ...m.today, ...m.month, ...(m.spec.remainder ? [m.spec.remainder] : [])];
       const b = { entities, conf: m.spec.conf, src: m.spec.src, meta: { meter: m.id } };
       ctx.store.bind({ ref: `energy:${m.id}`, ...b });
-      for (const r of m.refs) if (!r.startsWith('node:')) ctx.store.bind({ ref: r, ...b });
+      // not onto nodes (no reference) nor fixtures: a fixture's bindings are the lights plugin's (its light entities)
+      for (const r of m.refs) if (!r.startsWith('node:') && !r.startsWith('fixture:')) ctx.store.bind({ ref: r, ...b });
     }
 
     // ------------------------------------------------------------------ subjects: meters, and what they feed
@@ -162,13 +163,18 @@ export default definePlugin<EnergyConfig>({
 
     // ------------------------------------------------------------------ history: sparklines and today's kWh
     const past = new Map<string, Past>();
+    let disposed = false;
     const pending = new Set<string>();
-    const factor = (e: string) => watts({ ...(get(e) || dummy(e)), state: '1' }) ?? 1;
-    const dummy = (e: string): EntityState => ({ entity_id: e, state: '1', attributes: {} });
+    /** W per unit of an entity's history (from its unit now); null: not in the store, or not a power unit */
+    const factor = (e: string): number | null => {
+      const st = get(e);
+      return st ? watts({ ...st, state: '1' }) : null;
+    };
     const mocking = () => store.mock() && ctx.url.get('energymock') !== 'off';
     const historyOf = async (e: string, from: number, to: number): Promise<HistoryPoint[]> => {
       if (mocking()) return mockHistory(tree, e, from, to, seed());
       const f = factor(e);
+      if (f === null) return [];
       return (await store.history(e, from, to)).map((p) => ({ ...p, v: p.v === null ? null : p.v * f }));
     };
     /** the 24-hour series of a meter: its power entities summed, or its children's */
@@ -202,6 +208,7 @@ export default definePlugin<EnergyConfig>({
           })
           .finally(() => {
             pending.delete(m.id);
+            if (disposed) return;
             ctx.inspector.refresh((s) => metersOf(s).includes(m));
             panel.refresh();
           });
@@ -217,7 +224,7 @@ export default definePlugin<EnergyConfig>({
     const es = createEnergyScene({ scene, model, camera });
     const anchorCache = new Map<string, THREE.Vector3 | null>();
     function anchorAt(ref: string): THREE.Vector3 | null {
-      if (anchorCache.get(ref)) return anchorCache.get(ref)!;
+      if (anchorCache.has(ref)) return anchorCache.get(ref)!;
       const [kind, ...rest] = ref.split(':');
       const id = rest.join(':');
       let at: THREE.Vector3 | null = null;
@@ -353,6 +360,7 @@ export default definePlugin<EnergyConfig>({
               { type: 'empty', text: 'No live data: connect a data source (the status strip) to see the loads.' },
             ];
           const load = tot.load;
+          if (view === 'today') for (const m of top(tree, rs)) if (!m.today.length) wantPast(m);
           const consumers =
             view === 'today'
               ? top(tree, rs)
@@ -491,7 +499,7 @@ export default definePlugin<EnergyConfig>({
             m.spec.src ? ['Source', m.spec.src] : null,
           ],
         },
-        p === null && { type: 'text', text: { text: 'Loading the last 24 hours…', muted: true } },
+        p === null && !m.isOther && { type: 'text', text: { text: 'Loading the last 24 hours…', muted: true } },
         m.spec.question && { type: 'callout', tone: 'warn', text: `Open question: ${m.spec.question}` },
         m.spec.note && { type: 'note', text: m.spec.note },
         m.parent && { type: 'links', title: 'On', items: [subjectOf(m.parent)] },
@@ -509,12 +517,15 @@ export default definePlugin<EnergyConfig>({
         if (!ms.length) return null;
         if (ms.length === 1) return { blocks: detail(ms[0]) };
         // several meters feed it (a room on two circuits): their sum, then each one
-        const counted = countable(ms);
-        const ws = counted.map((m) => rs.get(m.id)?.w ?? null);
-        const sum = ws.some((w) => w !== null) ? ws.reduce<number>((a, w) => a + (w ?? 0), 0) : null;
+        const counted = countable(ms, rs);
+        const { w: sum, partial } = sumOf(ms, rs);
         return {
           blocks: [
             { type: 'meter', value: meterValue(sum), unit: unitOf(sum) },
+            partial && {
+              type: 'text',
+              text: { text: 'Some of its meters have no data: the sum is partial', tone: 'warn' },
+            },
             {
               type: 'list',
               title: `${ms.length} meters`,
@@ -535,10 +546,10 @@ export default definePlugin<EnergyConfig>({
     ctx.hover.add({
       id: 'energy',
       label: (s) => {
-        const ms = countable(metersOf(s));
+        const ms = metersOf(s);
         if (!ms.length) return null;
-        const ws = ms.map((m) => rs.get(m.id)?.w ?? null).filter((w): w is number => w !== null);
-        return ws.length ? fmtW(ws.reduce((a, b) => a + b, 0)) : 'no data';
+        const { w, partial } = sumOf(ms, rs);
+        return w === null ? 'no data' : `${fmtW(w)}${partial ? ' (partial)' : ''}`;
       },
     });
     ctx.search.add({
@@ -612,6 +623,11 @@ export default definePlugin<EnergyConfig>({
       },
       scene: es,
     });
-    return { dispose: () => es.dispose() };
+    return {
+      dispose: () => {
+        disposed = true;
+        es.dispose();
+      },
+    };
   },
 });

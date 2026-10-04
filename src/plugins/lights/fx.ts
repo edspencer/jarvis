@@ -91,7 +91,8 @@ export function createLightFx({
     node.traverse((o) => {
       if (isMesh(o)) meshes.push(o);
     });
-    const matOf = (o: THREE.Mesh) => o.material as THREE.MeshStandardMaterial;
+    // a plugin that swaps in a temporary material (energy mode's ghost) keeps the mesh's own in userData.baseMaterial
+    const matOf = (o: THREE.Mesh) => (o.userData.baseMaterial ?? o.material) as THREE.MeshStandardMaterial;
     const isEm = (m: THREE.MeshStandardMaterial) =>
       m.emissive && (m.emissive.r + m.emissive.g + m.emissive.b) * (m.emissiveIntensity ?? 1) > 0.01;
     let em = meshes.filter((o) => isEm(matOf(o)) || EMIT_NAME.test(matOf(o).name || ''));

@@ -71,7 +71,7 @@ export function buildTree(map: Pick<EnergyMap, 'meters'>): Tree {
     all.push(m);
     byId[m.id] = m;
     m.children = (s.children || []).map((c) => make(c, m, depth + 1));
-    if (m.children.length && (m.power.length || s.remainder)) {
+    if (m.children.length && m.power.length) {
       const o: Meter = {
         ...m,
         id: `${m.id}.other`,
@@ -222,15 +222,27 @@ export function isAncestor(a: Meter, m: Meter): boolean {
 
 /** The meters that count for something several of them feed: those with no ancestor among them (a circuit and the plug
  * on it both feed the kitchen: the kitchen gets the circuit's power, not both). */
-export function countable(ms: Meter[]): Meter[] {
-  return ms.filter((m) => !ms.some((a) => a !== m && isAncestor(a, m)));
+export function countable(ms: Meter[], rs?: Map<string, Reading>): Meter[] {
+  // with readings: an ancestor with no data doesn't hide a descendant that has some
+  const has = (m: Meter) => !rs || (rs.get(m.id)?.w ?? null) !== null;
+  return ms.filter((m) => !ms.some((a) => a !== m && has(a) && isAncestor(a, m)));
+}
+
+/** the power of several meters feeding one thing, without double counting; partial when one of them has no data
+ * (null: none has data) */
+export function sumOf(ms: Meter[], rs: Map<string, Reading>): Reading {
+  const counted = countable(ms, rs);
+  const rds = counted.map((m) => rs.get(m.id) ?? { w: null, partial: false });
+  const known = rds.filter((r) => r.w !== null);
+  return {
+    w: known.length ? known.reduce((a, r) => a + r.w!, 0) : null,
+    partial: known.length < rds.length || known.some((r) => r.partial),
+  };
 }
 
 /** the power of everything bound to a reference, without double counting (null: no meter, or none has data) */
 export function powerOf(tree: Tree, rs: Map<string, Reading>, ref: string): number | null {
-  const ms = countable(tree.byRef.get(ref) || []);
-  const ws = ms.map((m) => rs.get(m.id)?.w ?? null).filter((w): w is number => w !== null);
-  return ws.length ? ws.reduce((a, b) => a + b, 0) : null;
+  return sumOf(tree.byRef.get(ref) || [], rs).w;
 }
 
 /** a meter's share of its parent's power (0-1), or null */

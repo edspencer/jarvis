@@ -84,7 +84,10 @@ export function createEnergyScene(deps: { scene: THREE.Scene; model: ModelInfo; 
   function swap(mesh: THREE.Mesh, m: THREE.Material): void {
     const cur = mesh.material;
     const ours = Array.isArray(cur) ? cur.every((x) => mine.has(x)) : mine.has(cur);
-    if (!ours) saved.set(mesh, cur); // first time, or someone swapped it since: theirs is the one to put back
+    if (!ours) {
+      saved.set(mesh, cur); // first time, or someone swapped it since: theirs is the one to put back
+      mesh.userData.baseMaterial = cur; // what another plugin should read as the mesh's own (the lights)
+    }
     if (mesh.material !== m) mesh.material = m;
   }
 
@@ -110,6 +113,7 @@ export function createEnergyScene(deps: { scene: THREE.Scene; model: ModelInfo; 
     for (const [mesh, m] of saved) {
       const cur = mesh.material;
       if (!Array.isArray(cur) && mine.has(cur)) mesh.material = m;
+      if (mesh.userData.baseMaterial === m) delete mesh.userData.baseMaterial;
     }
     saved.clear();
   }
