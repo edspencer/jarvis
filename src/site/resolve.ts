@@ -5,6 +5,7 @@ import type {
   FaultsConfig,
   Geo,
   HomeAssistantConfig,
+  LightsConfig,
   LayerDef,
   LayerMatch,
   PinsConfig,
@@ -80,6 +81,7 @@ export interface Site {
   walk: { eyeHeight: number; crouchEyeHeight: number; radius: number; maxStep: number };
   plugins: {
     'home-assistant': (Required<Pick<HomeAssistantConfig, 'url'>> & Omit<HomeAssistantConfig, 'url'>) | null;
+    lights: LightsConfig | null;
     faults: FaultsConfig | null;
     pins: PinsConfig | null;
     switches: SwitchesConfig | null;
@@ -196,10 +198,19 @@ export function resolveSite(m: SiteManifest, url: string): Site {
         ? {
             ...ha,
             url: (ha.url || '').replace(/\/+$/, ''),
-            map: rOpt(ha.map) || undefined,
             controls: rOpt(ha.controls) || undefined,
+            map: undefined,
+            emitterHints: undefined,
           }
         : null,
+      // the fixture map used to be the home-assistant section's (map, emitterHints): read that as a lights section
+      // with Home Assistant and no lights section, the lights still start (with no map, ?ha=mock makes up entities); the
+      // fixture map used to be the home-assistant section's (map, emitterHints): read that as the lights section
+      lights: p.lights
+        ? { ...p.lights, map: rOpt(p.lights.map) || undefined }
+        : ha
+          ? { map: rOpt(ha.map) || undefined, emitterHints: ha.emitterHints }
+          : null,
       faults: p.faults ? { ...p.faults, devices: r(p.faults.devices) } : null,
       pins: p.pins ? { ...p.pins, registry: r(p.pins.registry) } : null,
       switches: p.switches || null,

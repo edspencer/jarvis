@@ -118,8 +118,10 @@
   "plugins": {
     "home-assistant": {
       "url": "https://homeassistant.example.org",
-      "map": "ha_map.json",
       "controls": "ha_controls.json"
+    },
+    "lights": {
+      "map": "ha_map.json"
     },
     "faults": {
       "devices": "ha_devices.json",

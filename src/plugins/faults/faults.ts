@@ -5,24 +5,22 @@
 // - The devices and where they are: the site's device map (plugins.faults.devices). A device's place is a registry item, a switch plate, a light
 //   fixture (resolved here from the model, so a lamp in an extra model lands on the lamp) or its HA area's room centroid
 //   (approx: drawn hollow).
-// - Health (health.ts), from the live state stream the HA layer already subscribes to (read-only; this file never calls
-//   a service).
+// - Health (health.ts), from the entity store's live states (read-only; this file never calls a service).
 // - Drawing: one THREE.Points for every marker (one draw call), no depth test, after everything else. A small shader
 //   sizes them in pixels, picks the glyph (! fault, ↑ update, ✓ ok) from a one-row atlas, pulses red ones and the
 //   selected one. Hollow = placed by its area only.
-// - The fault list (top left, while V is on): counts by severity (click to filter), the devices grouped by room, click
-//   to fly there and open the inspect panel; devices with no place are listed at the end (panel only).
-// - Off when Home Assistant isn't connected (no states: nothing to show). ?ha=mock adds made-up healthy states for
+// - The plugin (index.ts) puts the HUD round it: the Faults chip (V), the panel grouped by room, the legend, the
+//   Device health section.
+// - Off when no connector is delivering states (nothing to show). With mock data, this adds made-up healthy states for
 //   every device entity the light mock lacks, then a fixed set of faults to test with (dead Z-Wave nodes, low
 //   batteries, stale and weak Zigbee devices, offline devices, updates, a bulb off at its wall switch); ?hamock=<seed>
 //   varies them.
 // URL: ?haall shows every device; ?habatt=30 sets the battery threshold; ?hastale=12 the stale hours.
 import * as THREE from 'three';
 import { storeyOfObject, upperFromY, type FaultsConfig, type Site } from '../../site';
-import type { DomLookup, Escape, Fixtures, FlyFn, ViewState } from '../../core/types';
+import type { Fixtures, FlyFn, ViewState } from '../../core/types';
 import { FT } from '../../core/units';
-import type { HA } from '../home-assistant/ha';
-import type { Entities, EntityState } from '../home-assistant/types';
+import type { Entities, EntityState } from '../../plugin-api';
 import type { Pins } from '../pins/pins';
 import type { Switches } from '../switches/switches';
 import {
@@ -36,8 +34,8 @@ import {
   type Thresholds,
 } from './health';
 
-const COL: Record<Severity, string> = { red: '#ff3b30', amber: '#ffb020', blue: '#4ea3ff', ok: '#57d17a' };
-const NAME: Record<Severity, string> = { red: 'faulty', amber: 'needs attention', blue: 'update', ok: 'ok' };
+export const COL: Record<Severity, string> = { red: '#ff3b30', amber: '#ffb020', blue: '#4ea3ff', ok: '#57d17a' };
+export const NAME: Record<Severity, string> = { red: 'faulty', amber: 'needs attention', blue: 'update', ok: 'ok' };
 const GLYPHS = ['!', '↑', '✓'];
 const GLYPH: Record<Severity, number> = { red: 0, amber: 0, blue: 1, ok: 2 };
 const HOLLOW = 1,
@@ -75,15 +73,18 @@ export interface FaultsDeps {
   camera: THREE.Camera;
   renderer: THREE.WebGLRenderer;
   fixtures: Fixtures;
-  $: DomLookup;
-  esc: Escape;
   state: ViewState;
   fly: FlyFn;
-  getHA: () => HA | null;
+  /** the store's entities */
+  entities: () => Entities;
+  /** a connector is delivering states */
+  active: () => boolean;
+  /** mock data: hand made-up states to the mock connector */
+  isMock: () => boolean;
+  simulate: (states: EntityState[]) => void;
   getPins: () => Pins | null;
   getSwitches: () => Switches | null;
-  /** a device panel replaced the inspect panel */
-  onShow?: () => void;
+  /** health, counts or what is drawn changed */
   onChange?: () => void;
 }
 
@@ -94,14 +95,14 @@ export function createFaults({
   camera,
   renderer,
   fixtures,
-  $,
-  esc,
   state,
   fly,
-  getHA,
+  entities,
+  active,
+  isMock,
+  simulate,
   getPins,
   getSwitches,
-  onShow,
   onChange,
 }: FaultsDeps) {
   const q = new URLSearchParams(location.search);
@@ -116,17 +117,16 @@ export function createFaults({
     drawn: [] as Device[],
     counts: { red: 0, amber: 0, blue: 0, ok: 0, off: 0 } as Counts,
     th: null as Thresholds | null,
-    open: true,
     active: false,
+    /** the overlay: markers through walls (V) */
+    on: q.has('hawall'),
   };
   let pts: THREE.Points<THREE.BufferGeometry, THREE.ShaderMaterial> | null = null,
     dirty = true,
-    listT = 0,
     resolveT = 0,
     healthT = 0,
     resolveUntil = 0,
     drawnOn = false; // whether the last redraw had the wall hack on
-  const ha = () => getHA?.();
   const UPPER_Y = upperFromY(site);
   /** the floor (world Y) of the storey a point at world Y belongs to */
   const floorYOf = (y: number) => storeyOfObject(site, y / site.unit).storey.z * site.unit;
@@ -260,7 +260,6 @@ export function createFaults({
     index();
     pts = makePoints(F.devices.length);
     resolveUntil = performance.now() + 90e3; // an extra model's lamps and the plates arrive after this
-    buildUI();
   }
   function index(): void {
     F.byEntity = {};
@@ -313,8 +312,7 @@ export function createFaults({
   const ago = (t: number | null) => (t ? `${hours(Date.now() - t)} ago` : '');
 
   function recompute(list: Iterable<Device>): void {
-    const h = ha();
-    const ents = h?.entities || {},
+    const ents = entities(),
       now = Date.now();
     for (const d of list) {
       const r = health(d, ents, now, F.th!);
@@ -338,19 +336,17 @@ export function createFaults({
   // ------------------------------------------------------------------ drawing
   const rgb = (hex: string): [number, number, number] =>
     [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255) as [number, number, number];
-  const isActive = (h: HA | null | undefined): boolean =>
-    !!(h?.engaged && (h.status === 'live' || h.status === 'mock') && Object.keys(h.entities).length);
+  const isActive = (): boolean => active() && Object.keys(entities()).length > 0;
   function redraw(): void {
     dirty = false;
-    const h = ha();
-    F.active = isActive(h);
+    F.active = isActive();
     const c: Counts = { red: 0, amber: 0, blue: 0, ok: 0, off: 0 };
     for (const d of F.devices) {
       if (d.off) c.off++;
       c[d.sev]++;
     }
     F.counts = c;
-    const on = F.active && !!h?.wallhack;
+    const on = F.active && F.on;
     drawnOn = on;
     F.drawn = on
       ? F.devices.filter(
@@ -372,7 +368,7 @@ export function createFaults({
     pts!.geometry.setDrawRange(0, F.drawn.length);
     for (const k of ['position', 'color', 'glyph', 'flags'] as const) a[k].needsUpdate = true;
     pts!.visible = on && F.drawn.length > 0;
-    listT = 0;
+    onChange?.();
   }
 
   // ------------------------------------------------------------------ picking (screen space, like pins; always through walls)
@@ -400,134 +396,6 @@ export function createFaults({
     return best;
   }
 
-  // ------------------------------------------------------------------ the inspect panel
-  const human = (s: unknown) => String(s ?? '').replace(/_/g, ' ');
-  const dot = (sev: Severity, off?: string | null | boolean) =>
-    `<span class="fdot" style="background:${off && sev === 'ok' ? '#8a93a3' : COL[sev]}"></span>`;
-  function placeText(d: Device): string {
-    const pl = d.place;
-    if (!pl) return '<span class="pinnote">not placed (no HA area, no placement hint)</span>';
-    const how = (
-      {
-        registry: 'at its registry item',
-        plate: 'at its wall plate',
-        fixture: 'at the light fixture it is in',
-        area: "its HA area's room centroid (approx)",
-      } as Record<string, string>
-    )[pl.src];
-    return (
-      `${esc(human(pl.room))} · ${esc(how)}${pl.approx && pl.src !== 'area' ? ' (approx)' : ''} · conf ${esc(pl.conf || '?')}` +
-      (pl.why ? `<br><span class="pinnote">${esc(pl.why)}</span>` : '')
-    );
-  }
-  function links(d: Device): string {
-    const pl = d.place || ({} as NonNullable<Device['place']>),
-      out: string[] = [];
-    const pins = getPins?.(),
-      sw = getSwitches?.();
-    if (pl.src === 'registry') out.push(pins?.link ? pins.link(pl.ref as string) : `<code>${esc(pl.ref)}</code>`);
-    if (pl.src === 'plate') {
-      const ref = pl.ref as string;
-      const p = sw?.byId[ref];
-      out.push(
-        p
-          ? `<a href="#" data-swplate="${esc(ref)}" title="fly to the plate and open it">plate ${esc(p.box || ref.replace(/_/g, ' '))}</a>`
-          : `plate <code>${esc(ref)}</code>`,
-      );
-    }
-    const fx = pl.src === 'fixture' ? refs(pl.ref) : d.fixtures || [];
-    if (fx.length) {
-      const known = fx.filter((f) => fixtures[f]);
-      out.push(
-        `${known.length ? `<a href="#" data-swfix="${esc(known.join(' '))}" title="fly to the fixture${known.length > 1 ? 's' : ''}">` : ''}` +
-          `${fx.length} fixture${fx.length > 1 ? 's' : ''}${known.length ? '</a>' : ''} <span class="pinnote">(${esc(fx.join(', '))})</span>`,
-      );
-    }
-    const reg = fx.map((f) => pins?.byFixture?.(f)).find(Boolean);
-    if (reg && pl.src !== 'registry') out.push(pins!.link(reg.id));
-    // a link to the device's page in the site's Home Assistant
-    const hass = ha()?.hassUrl;
-    if (hass)
-      out.push(
-        `<a href="${esc(hass)}/config/devices/device/${esc(d.id)}" target="_blank" rel="noopener">open in Home Assistant</a>`,
-      );
-    return out.join('<br>');
-  }
-  function show(d: Device | null): void {
-    const el = $('info'),
-      h = ha();
-    if (!d) return;
-    onShow?.();
-    getPins?.()?.select(null);
-    getSwitches?.()?.select(null);
-    const ents = h?.entities || {};
-    const row = (k: string, val: string | null | undefined, cls = '') =>
-      val === null || val === undefined || val === ''
-        ? ''
-        : `<tr class="${cls}"><td>${esc(k)}</td><td>${val}</td></tr>`;
-    const rows: string[] = [];
-    const status = !F.active
-      ? '<span class="pinnote">not connected to Home Assistant</span>'
-      : d.why.length
-        ? d.why
-            .map(
-              (r) =>
-                `${dot(r.sev)}<b>${esc(r.text)}</b>${r.since ? ` <span class="pinnote">since ${esc(new Date(r.since).toLocaleString('en-GB'))} (${esc(ago(r.since))})</span>` : ''}`,
-            )
-            .join('<br>')
-        : d.off
-          ? `${dot('ok', true)}${esc(d.off)}`
-          : d.known
-            ? `${dot('ok')}ok`
-            : '<span class="pinnote">no state for its entities</span>';
-    rows.push(row('status', status, 'ha'));
-    rows.push(row('model', esc([d.make, d.model].filter(Boolean).join(' ') || 'unknown')));
-    rows.push(row('integration', esc(d.integration)));
-    rows.push(row('HA area', esc(d.area || 'none')));
-    rows.push(row('where', placeText(d)));
-    rows.push(row('links', links(d), 'conn'));
-    // its health entities, failing ones first, with their live state
-    const failing = new Set(d.why.flatMap((r) => r.entities || []));
-    const list = [...new Set(healthEntities(d))]
-      .sort((x, y) => Number(failing.has(y)) - Number(failing.has(x)))
-      .slice(0, 14);
-    const ent = (e: string) => {
-      const s: EntityState | undefined = ents[e];
-      const val = s
-        ? `${s.state}${s.attributes?.unit_of_measurement ? ` ${s.attributes.unit_of_measurement}` : ''}`
-        : F.active
-          ? 'no state'
-          : '';
-      return `<code${failing.has(e) ? ' class="fbad"' : ''}>${esc(e)}</code>${val ? ` <span class="pinnote">${esc(val)}</span>` : ''}`;
-    };
-    rows.push(
-      row(
-        'entities',
-        list.map(ent).join('<br>') +
-          (healthEntities(d).length > list.length
-            ? `<br><span class="pinnote">+ ${healthEntities(d).length - list.length} more</span>`
-            : ''),
-        'ha',
-      ),
-    );
-    if (d.unavailable_means)
-      rows.push(
-        row(
-          'unavailable',
-          `<span class="pinnote">means off: ${esc(d.unavailable_means.off)}${d.unavailable_means.unless_on ? `; a fault if any of ${d.unavailable_means.unless_on.length} bulb(s) on the same switch answers` : ''}</span>`,
-        ),
-      );
-    if (d.powered_by) rows.push(row('powered by', `<code>${esc(d.powered_by)}</code>`));
-    // where the device map comes from (the site says, if it wants to)
-    if (config.source) rows.push(row('source', `<code>${esc(config.source)}</code>`));
-    el.innerHTML = `<span class="close" id="infoclose">✕</span><h2>${dot(d.sev, d.off)}${esc(d.name)}</h2><table>${rows.join('')}</table>`;
-    el.style.display = 'block';
-    $('infoclose').onclick = () => {
-      el.style.display = 'none';
-      select(null);
-    };
-    select(d);
-  }
   function select(d: Device | null): void {
     F.selected = d;
     dirty = true;
@@ -537,7 +405,7 @@ export function createFaults({
   function go(idOrDev: string | Device): boolean {
     const d = typeof idOrDev === 'string' ? F.byId[idOrDev] : idOrDev;
     if (!d) return false;
-    show(d);
+    select(d);
     if (!d.at) return true;
     if (d.place?.src === 'plate') {
       const p = getSwitches?.()?.byId[d.place.ref as string];
@@ -558,81 +426,9 @@ export function createFaults({
     return true;
   }
 
-  // ------------------------------------------------------------------ the fault list (top left)
-  function buildUI(): void {
-    const el = $('faultlist');
-    el.addEventListener('click', (e) => {
-      const target = e.target as HTMLElement;
-      const s = target.closest<HTMLElement>('[data-sev]'),
-        it = target.closest<HTMLElement>('[data-dev]'),
-        t = target.closest('[data-ftoggle]');
-      if (t) {
-        F.open = !F.open;
-        listT = 0;
-        return;
-      }
-      if (s) {
-        const k = s.dataset.sev as Severity;
-        if (F.sevs.has(k)) F.sevs.delete(k);
-        else F.sevs.add(k);
-        dirty = true;
-        return;
-      }
-      if (it) go(it.dataset.dev!);
-    });
-    el.addEventListener('change', (e) => {
-      const t = e.target as HTMLInputElement;
-      if (t.id === 'faultall') {
-        setAll(t.checked);
-        t.blur();
-      }
-    });
-  }
-  function drawList(): void {
-    const el = $('faultlist'),
-      h = ha();
-    const on = F.active && h?.wallhack;
-    el.classList.toggle('hidden', !on);
-    if (!on) return;
-    const c = F.counts;
-    const chip = (k: Severity) =>
-      `<span class="fchip${F.sevs.has(k) ? '' : ' off'}" data-sev="${k}" title="${NAME[k]}: click to hide / show">${dot(k)}${c[k]} ${k}</span>`;
-    const listed = F.devices.filter((d) => F.sevs.has(d.sev) || (F.all && d.sev === 'ok'));
-    const rooms: Record<string, Device[]> = {};
-    for (const d of listed) (rooms[d.at ? human(d.place?.room || '?') : 'not placed'] ||= []).push(d);
-    const worst = (ds: Device[]) => ds.reduce((m, d) => Math.max(m, SEV[d.sev]), 0);
-    const reds = (ds: Device[]) => ds.filter((d) => d.sev === 'red').length;
-    const order = Object.keys(rooms).sort(
-      (a, b) =>
-        Number(a === 'not placed') - Number(b === 'not placed') ||
-        worst(rooms[b]) - worst(rooms[a]) ||
-        reds(rooms[b]) - reds(rooms[a]) ||
-        a.localeCompare(b),
-    );
-    const item = (d: Device) =>
-      `<div class="fitem" data-dev="${esc(d.id)}" title="${esc(d.why.map((r) => r.text).join('; ') || d.off || 'ok')}${d.at ? ' · click to fly there' : ''}">` +
-      `${dot(d.sev, d.off)}${esc(d.name)}${d.place?.approx ? '<span class="pinnote"> ◌</span>' : ''} <span class="pinnote">${esc(d.why[0]?.text || d.off || '')}</span></div>`;
-    el.innerHTML =
-      `<div class="fhead"><b>Device faults</b> ${(['red', 'amber', 'blue'] as const).map(chip).join(' ')}` +
-      ` <span class="ftog" data-ftoggle="1" title="fold / unfold the list">${F.open ? '▾' : '▸'}</span></div>` +
-      `<div class="frow"><label title="Show healthy devices too (Shift-V)"><input type="checkbox" id="faultall" ${F.all ? 'checked' : ''}> show all ${F.devices.length}</label>` +
-      ` <span class="pinnote">${c.ok} ok${c.off ? `, ${c.off} off at a switch` : ''} · ◌ = placed by room only</span></div>` +
-      (F.open
-        ? `<div class="fbody">${
-            order
-              .map((r) => {
-                const ds = rooms[r].sort((a, b) => SEV[b.sev] - SEV[a.sev] || a.name.localeCompare(b.name));
-                return `<div class="froom">${esc(r)} <span class="pinnote">${ds.length}</span></div>${ds.map(item).join('')}`;
-              })
-              .join('') || '<div class="pinnote">nothing to show</div>'
-          }</div>`
-        : '');
-  }
-
   // ------------------------------------------------------------------ mock (?ha=mock): states for every device entity, and faults to test with
   function mock(): void {
-    const h = ha();
-    if (!h?.mock) return;
+    if (!isMock()) return;
     let seed = ((+(q.get('hamock') as string) || 7) * 7919) % 2147483647;
     const rnd = () => {
       seed = (seed * 16807) % 2147483647;
@@ -655,7 +451,7 @@ export function createFaults({
         last_updated: iso0(now - Math.min(age, rnd() * 600e3)),
       };
     };
-    const have = (e: string) => h.entities[e] || ents[e];
+    const have = (e: string) => entities()[e] || ents[e];
     for (const d of F.devices) {
       // a healthy building first
       const hh = d.health;
@@ -757,17 +553,15 @@ export function createFaults({
       for (const d of multi[1].slice(1)) for (const e of d.health.avail) put(e, 'on', { brightness: 200 });
     }
     index();
-    h.mock.load(Object.values(ents));
+    simulate(Object.values(ents));
     recompute(F.devices);
   }
 
   // ------------------------------------------------------------------ per frame
   function update(dt: number): void {
     if (!pts) return;
-    const h = ha();
     resolveT -= dt;
     healthT -= dt;
-    listT -= dt;
     if (resolveT <= 0) {
       // positions: until every model-backed one is found (or 90 s)
       resolveT = 1;
@@ -778,16 +572,18 @@ export function createFaults({
       healthT = 30;
       recompute(F.devices);
     } // staleness moves with the clock
-    const active = isActive(h);
-    // redraw when the wall hack is switched (the prototype compared against pts.visible, which stays false while
+    const on = isActive();
+    // redraw when the overlay is switched (the prototype compared against pts.visible, which stays false while
     // nothing is drawn, so V never drew the markers once loading had settled)
-    if (active !== F.active || drawnOn !== (active && !!h?.wallhack)) dirty = true;
+    if (on !== F.active || drawnOn !== (on && F.on)) dirty = true;
     if (dirty) redraw();
     if (pts.visible) pts.material.uniforms.time.value += dt;
-    if (listT <= 0) {
-      listT = 0.5;
-      drawList();
-    }
+  }
+
+  function setOn(on: boolean): void {
+    F.on = on;
+    dirty = true;
+    onChange?.();
   }
 
   function setAll(on: boolean): void {
@@ -799,12 +595,26 @@ export function createFaults({
     dirty = true;
   }
 
+  /** out of the scene again */
+  function dispose(): void {
+    if (!pts) return;
+    scene.remove(pts);
+    pts.geometry.dispose();
+    pts.material.uniforms.atlas.value.dispose();
+    pts.material.dispose();
+    pts = null;
+  }
+
   const api = Object.assign(F, {
+    dispose,
+    ago,
     load,
     update,
     at,
-    show,
     go,
+    setOn,
+    resolve,
+    refs,
     select,
     setAll,
     refresh,

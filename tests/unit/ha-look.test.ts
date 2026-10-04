@@ -1,6 +1,6 @@
 import { Color } from 'three';
 import { describe, expect, it } from 'vitest';
-import { combine, kelvinRGB, lookOf, type Look } from '../../src/plugins/home-assistant/look';
+import { combine, kelvinRGB, lookOf, type Look } from '../../src/plugins/lights/look';
 
 const st = (state: string, attributes = {}) => ({ entity_id: 'light.x', state, attributes });
 

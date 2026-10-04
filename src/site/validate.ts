@@ -4,6 +4,8 @@
 // e.g. `viewpoints[2].at`, so a message points at the line to fix.
 import schema from '../../schema/site.schema.json' with { type: 'json' };
 import { MANIFEST_VERSION, type SiteManifest } from './manifest.ts';
+import { CORE_KEYS } from '../core/plugin/keys.ts';
+import { pluginKeys } from '../plugins/registry.ts';
 
 export interface Issue {
   /** where in the manifest, e.g. 'layers[1].key' ('' = the whole manifest) */
@@ -41,8 +43,13 @@ interface Schema {
 
 const ROOT = schema as Schema;
 
-/** keys the viewer and its built-in plugins use; a site layer can't take them */
-export const RESERVED_KEYS = new Set([...'WASDQECXUBGHVTLP']);
+/** Keys a site layer can't take: the core's (movement, view, help) and those of the plugins the manifest enables
+ * (each built-in plugin declares its letters in src/plugins/registry.ts; the key registry reports any it doesn't). */
+export function reservedKeys(m: Pick<SiteManifest, 'plugins'>): Set<string> {
+  const ids = Object.keys(m.plugins || {});
+  if (m.plugins?.['home-assistant']) ids.push('lights'); // Home Assistant starts the lights plugin too
+  return new Set([...CORE_KEYS, ...pluginKeys(ids)]);
+}
 
 /** the layers with built-in behaviour (X cutaway hides roof and ceiling, U hides roofs, O toggles doors) */
 export const BUILTIN_LAYERS = ['roof', 'ceiling', 'door'] as const;
@@ -171,15 +178,16 @@ export function checkRules(m: SiteManifest): ValidationResult {
   const layers = m.layers || [];
   const ids = new Map<string, number>(),
     keys = new Map<string, number>();
+  const reserved = reservedKeys(m);
   layers.forEach((l, i) => {
     if (ids.has(l.id))
       errors.push({ path: `layers[${i}].id`, message: `"${l.id}" is already layers[${ids.get(l.id)}]` });
     ids.set(l.id, i);
     if (!l.key) return;
-    if (RESERVED_KEYS.has(l.key))
+    if (reserved.has(l.key))
       errors.push({
         path: `layers[${i}].key`,
-        message: `${l.key} is one of the viewer's own keys (${[...RESERVED_KEYS].join(' ')})`,
+        message: `${l.key} is one of the viewer's own keys (${[...reserved].sort().join(' ')})`,
       });
     else if (keys.has(l.key))
       errors.push({ path: `layers[${i}].key`, message: `${l.key} is already layers[${keys.get(l.key)}]'s key` });
@@ -217,17 +225,28 @@ export function checkRules(m: SiteManifest): ValidationResult {
 
   const p = m.plugins || {};
   for (const [path, re] of [
+    ['plugins.lights.emitterHints', p.lights?.emitterHints],
     ['plugins["home-assistant"].emitterHints', p['home-assistant']?.emitterHints],
     ['plugins.switches.boxIdPattern', p.switches?.boxIdPattern],
   ] as const) {
     const bad = re && compiles(re);
     if (bad) errors.push({ path, message: `not a regular expression: ${bad}` });
   }
-  if (p.faults && !p['home-assistant'])
-    warnings.push({
-      path: 'plugins.faults',
-      message: 'the faults layer needs the home-assistant plugin; it will stay off',
-    });
+  for (const k of ['map', 'emitterHints'] as const)
+    if (p['home-assistant']?.[k])
+      warnings.push({
+        path: `plugins["home-assistant"].${k}`,
+        message: p.lights
+          ? `ignored: plugins.lights has its own`
+          : `moved to plugins.lights.${k} (read from here for now)`,
+      });
+  // the features read the entity store, which a connector fills (Home Assistant is the one that ships)
+  for (const f of ['faults', 'lights'] as const)
+    if (p[f] && !p['home-assistant'])
+      warnings.push({
+        path: `plugins.${f}`,
+        message: `the ${f} plugin reads live states from a connector (home-assistant); without one it shows nothing live`,
+      });
   if (p['home-assistant'] && !p['home-assistant'].url)
     warnings.push({
       path: 'plugins["home-assistant"].url',

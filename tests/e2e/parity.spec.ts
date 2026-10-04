@@ -1,8 +1,9 @@
-// Parity with a reference build (the single-site prototype this viewer was extracted from, or any earlier build): the
-// same views, rendered by this app and by the reference, compared pixel by pixel. The views are the site manifest's
-// viewpoints by day, the second and third by night too, and the overview in cutaway with the fault markers. Skipped
-// unless PROTOTYPE_URL points at a running copy of the reference (any static server over its folder) with the same
-// site data. Screenshots and diff images go to test-results/parity/.
+// Parity with a reference build (an earlier build of this app, e.g. main, or the single-site prototype it was
+// extracted from): the same views, rendered by this app and by the reference with the HUD hidden, compared pixel by
+// pixel, so a HUD or plugin refactor can prove the 3D render didn't move. The views are the site manifest's viewpoints
+// by day, the second and third by night too, and the overview in cutaway with the fault markers. Skipped unless
+// PROTOTYPE_URL points at a running copy of the reference (a dev server or any static server over its folder) with
+// the same site data. Screenshots and diff images go to test-results/parity/.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { expect, test, type Browser, type Page } from '@playwright/test';
 
@@ -28,6 +29,7 @@ function views(viewpoints: Viewpoint[]): View[] {
     ...viewpoints.slice(1, 3).map((v, i) => ({ name: `${i + 2}-${slug(v.name)}-night`, setup: walk(v, '21, 274') })),
     {
       name: 'overview-cutaway-faults',
+      // the fault overlay: the faults plugin's now, the HA layer's in older builds (twin.ha.setWallhack is kept for them)
       setup: `twin.setSun(15, 276); twin.state.cutaway = true; twin.applyVisibility(); twin.setMode('orbit'); twin.ha?.setWallhack(true);`,
     },
   ];
@@ -49,6 +51,8 @@ async function open(browser: Browser, url: string): Promise<Page> {
     null,
     { timeout: 10 * 60_000, polling: 1000 },
   );
+  // the HUD off: everything on the page but the canvas (this app's <jv-hud>, the prototype's #hud, #info, #cross, …)
+  await page.addStyleTag({ content: 'body > :not(canvas) { display: none !important; }' });
   return page;
 }
 

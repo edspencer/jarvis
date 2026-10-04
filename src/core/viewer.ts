@@ -1,25 +1,36 @@
-// The walkthrough: loads the site manifest, wires the stage, the model, the walker, the HUD and the optional layers
-// (plugins) together, runs the frame loop, and reads the start-up URL options.
+// The walkthrough: loads the site manifest, wires the stage, the model, the walker, the HUD and the plugins together,
+// runs the frame loop, and reads the start-up URL options. Everything the HUD shows comes through the plugin API
+// (plugin/types.ts): the core's own panels and chips (builtin.ts) use it too.
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { SiteError, loadSite, type Site } from '../site';
-import { createBlueprints } from './blueprints';
-import { $, esc, query } from './dom';
+import { BUILTIN_PLUGINS } from '../plugins/registry';
+import { installTokens } from '../ui/tokens';
+import { Hud } from '../ui/hud';
+import { mountHud } from '../ui/shell';
+import { installCore } from './builtin';
+import { createContextFactory } from './context';
 import { createFlight } from './flight';
-import { createHud } from './hud';
 import { CENTRE_NDC, bindInput, type OrbitHolder, type Pointer } from './input';
-import { createInspect } from './inspect';
+import { createPicker } from './inspect';
+import { createLoading, type Loading } from './loading';
 import { createModel } from './model';
 import { createPlayer, createWalker } from './player';
-import { startPlugins } from './plugins';
+import { createBus } from './plugin/events';
+import { createStorage, createUrl } from './plugin/env';
+import { createPluginHost } from './plugin/host';
+import { createKeyRegistry } from './plugin/keys';
+import { createStore } from './plugin/store';
+import type { PluginDef, Subject, ViewApi } from './plugin/types';
 import { createStage } from './stage';
 import { createSunlight } from './sunlight';
-import type { Keys, Mode, PluginSlots, ViewState } from './types';
+import type { Keys, Mode, ViewState } from './types';
 import { P, setPlanUnit, toPlan } from './units';
 
 /** Load the site manifest, then start; a missing or invalid manifest is listed on the loading screen. */
 export async function startViewer(): Promise<void> {
-  const loading = $('loading');
+  installTokens();
+  const loading = createLoading(document.getElementById('loading')!);
   let site: Site;
   try {
     const r = await loadSite();
@@ -27,41 +38,26 @@ export async function startViewer(): Promise<void> {
     for (const w of r.warnings) console.warn(`site.json: ${w}`);
   } catch (err) {
     const e = err instanceof SiteError ? err : new SiteError('site.json', [(err as Error).message]);
-    loading.classList.add('error');
     document.body.classList.add('site-error');
-    loading.innerHTML =
-      `<b>Can't load the site manifest</b> <code>${esc(e.url)}</code><ul>` +
-      e.lines.map((l) => `<li>${esc(l)}</li>`).join('') +
-      '</ul><span class="sub">See the README: a site folder holds a site.json, the model and its data files.</span>';
+    loading.error(
+      "Can't load the site manifest",
+      e.url,
+      e.lines,
+      'See the README: a site folder holds a site.json, the model and its data files.',
+    );
     console.error(e);
     return;
   }
-  startSite(site);
+  startSite(site, loading);
 }
 
-/** the site's own words in the page: the title, the help's heading, viewpoints and layer keys */
-function describeSite(site: Site): void {
-  document.title = `${site.name} — JARVIS`;
-  $('helptitle').textContent = site.name;
-  $('helpsub').textContent = [site.description, 'Doors are shown open; glass is see-through.']
-    .filter(Boolean)
-    .join(' ');
-  const row = (k: string, what: string) => `<tr><td>${esc(k)}</td><td>${what}</td></tr>`;
-  const n = site.viewpoints.length;
-  $('helpviews').outerHTML = row(n > 1 ? `1 – ${n}` : '1', site.viewpoints.map((v) => esc(v.name)).join(' · '));
-  $('helplayers').outerHTML = site.layers
-    .filter((l) => l.key)
-    .map((l) =>
-      row(l.key!, `Show / hide ${esc(l.help)}${l.model ? ' (it loads in the background after the main model)' : ''}`),
-    )
-    .join('');
-}
-
-function startSite(site: Site): void {
+function startSite(site: Site, loading: Loading): void {
   setPlanUnit(site.unit);
-  describeSite(site);
+  document.title = `${site.name} — JARVIS`;
+  loading.stage('manifest', 'done');
   const stage = createStage(document.body, site);
   const { renderer, scene, camera, lamp, sun, centre } = stage;
+  renderer.domElement.tabIndex = -1; // F6 can give the view the keys back
 
   // ghost is the default: a model may have gaps and steps a walker can get stuck on; G walks
   const state: ViewState = {
@@ -74,10 +70,10 @@ function startSite(site: Site): void {
   };
   const player = createPlayer(site.walk);
   const keys: Keys = {};
-  const plugins: PluginSlots = { ha: null, faults: null, pins: null, switches: null };
   const orbit: OrbitHolder = { controls: null, dragged: false };
   const orbitCam = { pos: site.overviewCamera ? P(...site.overviewCamera) : centre.clone(), target: centre.clone() };
   const pointer: Pointer = { mouse: new THREE.Vector2(), hoverT: 0, hoverAt: null };
+  const url = createUrl();
 
   // Shadow map: not redrawn every frame (autoUpdate off), and at most every SHADOW_MS while something keeps changing
   // (dragging the time or date slider, animating the year); the last change always gets its update.
@@ -95,14 +91,34 @@ function startSite(site: Site): void {
     }
   }
 
+  const bus = createBus();
+  const store = createStore();
+  const keyReg = createKeyRegistry({ declared: (owner) => BUILTIN_PLUGINS[owner]?.keys ?? null });
+  const services = new Map<string, unknown>();
+  const extraProgress = new Map<string, { done(): void }>();
+  const announced = new Set<string>();
+
   const model = createModel({
     site,
     renderer,
     scene,
-    onExtraStatus: () => hud.flags(),
+    onExtraStatus: () => {
+      for (const [id, x] of Object.entries(model.extras)) {
+        if (x.status === 'loading' && !extraProgress.has(id)) extraProgress.set(id, hud.addProgress(`Loading ${id}…`));
+        if (x.status !== 'loading' && extraProgress.has(id)) {
+          extraProgress.get(id)!.done();
+          extraProgress.delete(id);
+        }
+      }
+      hud.update('status');
+    },
     onExtraLoaded: () => {
-      blueprints.onModelAdded();
       applyVisibility();
+      for (const [id, x] of Object.entries(model.extras))
+        if (x.status === 'loaded' && !announced.has(id)) {
+          announced.add(id);
+          bus.emit('model', { id });
+        }
     },
   });
   const walker = createWalker({
@@ -111,28 +127,14 @@ function startSite(site: Site): void {
     keys,
     camera,
     getCollider: () => model.collider,
-    onCrouchChange: () => hud.flags(),
+    onCrouchChange: () => hud.update('status'),
   });
-  const hud = createHud({ site, state, player, model, walker, plugins, $, setMode });
-  const blueprints = createBlueprints({
-    config: site.plugins.blueprints,
-    units: site.units,
-    scene,
-    renderer,
-    owners: model.owners,
-    groups: model.groups,
-    $,
-    applyVisibility,
-  });
-  const inspect = createInspect({
+  const picker = createPicker({
     camera,
     root: model.root,
     parts: model.parts,
     ownerOf: model.ownerOf,
     isGlass: model.isGlass,
-    plugins,
-    $,
-    esc,
   });
   const flight = createFlight({
     state,
@@ -140,16 +142,17 @@ function startSite(site: Site): void {
     camera,
     centre,
     getOrbit: () => orbit.controls,
-    onChange: () => hud.flags(),
+    onChange: () => hud.update('status'),
   });
-  const sunlight = createSunlight({ site, stage, $, requestShadows });
+  const sunlight = createSunlight({ site, stage, requestShadows });
+  services.set('core.sunlight', sunlight); // the sun plugin's panel drives it
 
   function setMode(mode: Mode): void {
+    if (mode === state.mode) return;
     state.mode = mode;
     lamp.visible = mode === 'walk';
     if (mode === 'orbit') {
       if (document.pointerLockElement) document.exitPointerLock();
-      hud.help(false);
       camera.position.copy(orbitCam.pos);
       if (!orbit.controls) {
         orbit.controls = new OrbitControls(camera, renderer.domElement);
@@ -164,51 +167,173 @@ function startSite(site: Site): void {
       orbitCam.target.copy(orbit.controls.target);
       orbit.controls.enabled = false;
     }
-    hud.flags();
+    document.getElementById('cross')?.classList.toggle('hidden', mode !== 'walk');
+    hud.setHover(null, null);
+    hud.update('status', 'hover');
+    bus.emit('mode', { mode });
   }
 
   // Every node starts visible and each rule can only hide, so the toggles combine (an upstairs piece of furniture
-  // stays hidden with U whatever its own layer says).
+  // stays hidden with U whatever its own layer says). Plugins add rules (a blueprint's "hide above").
+  const visRules = new Set<() => Iterable<THREE.Object3D>>();
   function applyVisibility(): void {
     const { groups } = model;
-    const { bp } = blueprints;
-    const hide = (list: THREE.Object3D[], yes: boolean) => {
+    const hide = (list: Iterable<THREE.Object3D>, yes: boolean) => {
       if (yes) for (const o of list) o.visible = false;
     };
     for (const o of model.owners) o.visible = true;
     hide(groups.upper, state.upperHidden);
     hide(groups.roof, state.cutaway || state.upperHidden);
     hide(groups.ceiling, state.cutaway);
-    for (const l of site.layers) hide(groups[l.id], !!state.hidden[l.id]);
-    hide(bp.hidden, !!bp.active && bp.hideAbove); // blueprint overlay: "hide above"
-    plugins.pins?.refresh(); // equipment pins upstairs go with U
-    plugins.faults?.refresh(); // and device fault markers
+    for (const l of site.layers) hide(groups[l.id] || [], !!state.hidden[l.id]);
+    for (const r of visRules) {
+      try {
+        hide(r(), true);
+      } catch (err) {
+        console.error('a visibility rule failed', err);
+      }
+    }
     requestShadows();
-    hud.flags();
+    bus.emit('visibility', {});
+    hud.update('status');
   }
 
-  bindInput({
-    site,
-    canvas: renderer.domElement,
+  // a site layer: show / hide it; an extra model's layer loads its model first (if it was left with ?noextra, or is
+  // still on its way)
+  function toggleLayer(id: string): void {
+    const l = site.layers.find((x) => x.id === id);
+    if (!l) return;
+    const x = l.model ? model.extras[l.model] : null;
+    if (x && x.status !== 'loaded') {
+      state.hidden[id] = false;
+      model.loadExtra(x.model.id);
+      hud.update('status');
+      return;
+    }
+    state.hidden[id] = !state.hidden[id];
+    applyVisibility();
+  }
+
+  // ------------------------------------------------------------------ where the walker is
+  let here: string | null = null;
+  const DOWN = new THREE.Vector3(0, -1, 0),
+    tmp = new THREE.Vector3();
+  /** the room under the walker (the floor node's `room` extra): the place item and the light pool want it */
+  function updateHere(): void {
+    const g = walker.castDown(player.pos.x, player.pos.y + 0.3, player.pos.z);
+    let room = '';
+    if (g) {
+      // collider triangles don't know their object; find the floor under the feet among the visible model
+      const ray = walker.ray;
+      ray.set(tmp.set(player.pos.x, player.pos.y + 0.3, player.pos.z), DOWN);
+      ray.far = 1;
+      const h = ray.intersectObjects(model.rooms, true)[0];
+      if (h) room = String(model.ownerOf(h.object).userData.room);
+    }
+    here = state.mode === 'walk' && g && room ? room : null;
+  }
+
+  function flyToSubject(s: Subject): void {
+    if (s.kind === 'item') {
+      const kind = s.id.split(':')[0];
+      hud.resolvers.get(kind)?.fly?.(s.id.slice(kind.length + 1));
+      return;
+    }
+    const box = new THREE.Box3().setFromObject(s.node);
+    if (box.isEmpty()) return;
+    flight.fly(s.hit?.point.clone() ?? box.getCenter(new THREE.Vector3()), core.roomCentreOf(s.node));
+  }
+
+  const view: ViewApi = {
     state,
-    keys,
-    player,
-    model,
-    walker,
-    hud,
-    inspect,
-    blueprints,
-    plugins,
-    orbit,
-    pointer,
-    $,
     setMode,
+    fly: (t, c) => flight.fly(t, c),
+    flyTo: (s) => {
+      const subj = hud.resolve(s);
+      if (subj) flyToSubject(subj);
+    },
+    teleport: (x, y, z, yaw) => {
+      if (state.mode !== 'walk') setMode('walk');
+      walker.teleport(x, y, z, yaw);
+    },
+    here: () => here,
+    aim: () => (state.mode === 'walk' && document.pointerLockElement ? CENTRE_NDC : pointer.mouse),
+    seen: (p) => walker.seen(p),
+    addVisibilityRule(fn) {
+      visRules.add(fn);
+      return { dispose: () => void visRules.delete(fn) };
+    },
     applyVisibility,
+    toggleLayer,
+    layers: () => site.layers,
+    requestShadows,
+  };
+
+  // ------------------------------------------------------------------ the HUD and the plugins
+  const hud: Hud = new Hud({
+    site,
+    keys: keyReg,
+    storage: createStorage(`jarvis.ui.${site.id}`),
+    flyTo: flyToSubject,
+    canFly: (s) => s.kind === 'object' || !!hud.resolvers.get(s.id.split(':')[0])?.fly,
+    resolveRef: (ref) => core.resolveRef(ref),
+    describeObject: (s) => core.describeObject(s),
+    onSelect: (subject, previous) => bus.emit('select', { subject, previous }),
+    locked: () => document.pointerLockElement === renderer.domElement,
+    mode: () => state.mode,
+    setMode,
   });
+  const hudEl = mountHud(hud);
+
+  const three = { THREE, scene, camera, renderer, model, P, toPlan, unit: site.unit };
+  // a plugin with a manifest section (resolved: the lights plugin also reads the old home-assistant.map)
+  const enabled = (id: string) =>
+    !!(site.plugins as Record<string, unknown>)[id] ||
+    !!(site.manifest.plugins as Record<string, unknown> | undefined)?.[id];
+  const twin: Record<string, unknown> = {};
+  const makeContext = createContextFactory({
+    site,
+    three,
+    view,
+    picker,
+    bus,
+    keys: keyReg,
+    store,
+    hud,
+    services,
+    url,
+    twin,
+    host: () => host,
+  });
+  const host = createPluginHost({
+    enabled: (id) => enabled(id),
+    context: (def, own) => makeContext(def, own),
+    report: (def, message) => hud.toast({ text: `${def.name} is off: ${message}`, tone: 'warn', sticky: true }),
+  });
+
+  const core = installCore({
+    site,
+    view,
+    hud,
+    state,
+    player,
+    walker,
+    model,
+    ctx: makeContext({ id: 'core', name: 'JARVIS', setup() {} }, () => {}),
+    here: () => here,
+  });
+
+  bindInput({ canvas: renderer.domElement, state, keys, player, keyReg, hud, hudEl, picker, bus, orbit, pointer });
   addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
+  });
+  document.addEventListener('pointerlockchange', () => {
+    const locked = document.pointerLockElement === renderer.domElement;
+    hudEl.classList.toggle('locked', locked);
+    hud.update('hover', 'status');
+    bus.emit('pointerlock', { locked });
   });
 
   // ------------------------------------------------------------------ main loop
@@ -227,99 +352,108 @@ function startSite(site: Site): void {
         pointer.hoverT -= dt;
         if (pointer.hoverT <= 0 && document.pointerLockElement) {
           pointer.hoverT = 0.12;
-          inspect.hover(CENTRE_NDC);
+          hud.setHover(picker.at(CENTRE_NDC), null);
         }
-        if (!document.pointerLockElement) $('hover').style.display = 'none';
+        if (!document.pointerLockElement && hud.hoverLabel) hud.setHover(null, null);
       } else {
         if (!flying) orbit.controls!.update();
         if (pointer.hoverT < 0 && pointer.hoverAt) {
           pointer.hoverT = 0.1;
-          inspect.hover(pointer.mouse, pointer.hoverAt);
+          hud.setHover(picker.at(pointer.mouse), pointer.hoverAt);
         }
         pointer.hoverT -= dt;
       }
       whereT -= dt;
       if (whereT <= 0) {
         whereT = 0.25;
-        hud.updateWhere();
+        updateHere();
+        hud.update('status');
       }
     }
     sunlight.step(dt);
-    plugins.ha?.update(dt);
-    plugins.faults?.update(dt);
-    plugins.pins?.update(dt);
-    plugins.switches?.update(dt);
+    bus.emit('frame', { dt, now });
     updateShadows(now);
     renderer.render(scene, camera);
   }
 
-  // scripting / test hook (browser console): twin.teleport(10, 20, 0, 180), twin.keys.KeyW = true, …
-  const twin = {
-    site,
-    THREE,
-    renderer,
-    scene,
-    camera,
-    stepWalk: walker.stepWalk,
-    updateWhere: hud.updateWhere,
-    headroom: walker.headroom,
-    sun,
-    player,
-    state,
-    keys,
-    teleport: walker.teleport,
-    setMode,
-    applyVisibility,
-    fixtures: model.fixtures,
-    setSun: sunlight.setSun,
-    sunNow: sunlight.sunNow,
-    sunAt: sunlight.sunAt,
-    updateSun: sunlight.updateSun,
-    VIEWS: site.viewpoints,
-    toPlan,
-    P,
-    groups: model.groups,
-    owners: model.owners,
-    parts: model.parts,
-    root: model.root,
-    plants: model.plants,
-    extras: model.extras,
-    loadExtra: model.loadExtra,
-    pick: inspect.pick,
-    showInfo: inspect.showInfo,
-    bp: blueprints.bp,
-    showBlueprint: blueprints.showBlueprint,
-    setBlueprintFade: blueprints.setBlueprintFade,
-    fly: flight.fly,
-    get collider() {
-      return model.collider;
-    },
-    // set by the plugins as they load
-    ha: undefined as unknown,
-    faults: undefined as unknown,
-    pins: undefined as unknown,
-    switches: undefined as unknown,
-  };
+  // scripting / test hook (browser console): twin.teleport(10, 20, 0, 180), twin.keys.KeyW = true, …; each plugin
+  // adds its own (twin.pins, twin.ha, …)
+  // (descriptors, not Object.assign: the getters must stay getters)
+  Object.defineProperties(
+    twin,
+    Object.getOwnPropertyDescriptors({
+      site,
+      THREE,
+      renderer,
+      scene,
+      camera,
+      stepWalk: walker.stepWalk,
+      headroom: walker.headroom,
+      // where am I, now (the place item in the status strip; it also refreshes four times a second)
+      updateWhere: () => {
+        updateHere();
+        hud.update('status');
+      },
+      sun,
+      player,
+      state,
+      keys,
+      teleport: walker.teleport,
+      setMode,
+      applyVisibility,
+      toggleLayer,
+      fixtures: model.fixtures,
+      setSun: sunlight.setSun,
+      sunNow: sunlight.sunNow,
+      sunAt: sunlight.sunAt,
+      updateSun: sunlight.updateSun,
+      sunlight,
+      VIEWS: site.viewpoints,
+      toPlan,
+      P,
+      groups: model.groups,
+      owners: model.owners,
+      parts: model.parts,
+      root: model.root,
+      plants: model.plants,
+      extras: model.extras,
+      loadExtra: model.loadExtra,
+      pick: picker.model,
+      pickAt: picker.at,
+      inspect: (s: Subject | string) => hud.inspect(s),
+      fly: flight.fly,
+      hud,
+      store,
+      keyRegistry: keyReg,
+      bus,
+      view,
+      get host() {
+        return host;
+      },
+      get collider() {
+        return model.collider;
+      },
+      get here() {
+        return here;
+      },
+    }),
+  );
   window.twin = twin;
 
   // ------------------------------------------------------------------ start
   sunlight.updateSun();
-  hud.flags();
-  try {
-    if (!localStorage.getItem('twin.helpSeen')) hud.help(true);
-  } catch {
-    /* private mode: no help popup */
-  }
   const start = site.viewpoints[site.startView];
   walker.teleport(...start.at, start.yaw);
   renderer.setAnimationLoop(frame);
-  const loading = $('loading');
-  loading.textContent = `Loading ${site.name}…`;
+  loading.stage('model', 'active', 0);
   model
     .loadModel((pct) => {
-      loading.textContent = `Loading ${site.name}… ${pct}%`;
+      loading.stage('model', pct >= 100 ? 'done' : 'active', pct);
+      if (pct >= 100) loading.stage('colliders', 'active');
     })
     .then(() => {
+      loading.stage('model', 'done');
+      loading.stage('colliders', 'done');
       stage.fitShadows(model.box);
       if (!site.overviewCamera) {
         // off the model's south-east corner, looking down at the centre from about 35°
@@ -328,56 +462,68 @@ function startSite(site: Site): void {
         orbitCam.pos.copy(centre).add(new THREE.Vector3(0.8 * r, 1.1 * r, 0.9 * r));
       }
       applyVisibility();
-      hud.buildRoomMenu();
-      loading.classList.add('hidden');
+      announced.add('main');
+      bus.emit('model', { id: 'main' });
+      loading.hide();
       walker.teleport(...start.at, start.yaw);
-      const q = query(); // ?view=3 or ?at=X,Y,Z,yaw for links
-      const view = q.get('view') && site.viewpoints[+q.get('view')! - 1];
-      if (view) walker.teleport(...view.at, view.yaw);
-      if (q.get('at')) {
-        const a = q.get('at')!.split(',').map(Number);
+      const vp = url.get('view') && site.viewpoints[+url.get('view')! - 1]; // ?view=3 or ?at=X,Y,Z,yaw for links
+      if (vp) walker.teleport(...vp.at, vp.yaw);
+      if (url.get('at')) {
+        const a = url.get('at')!.split(',').map(Number);
         walker.teleport(a[0], a[1], a[2] || 0, a[3] || 0);
       }
-      if (q.has('cutaway')) {
+      if (url.has('cutaway')) {
         state.cutaway = true;
         applyVisibility();
       }
-      if (q.has('overview')) setMode('orbit');
-      if (q.get('sun')) {
-        const [h, dy] = q.get('sun')!.split(',').map(Number); // ?sun=13.5,172
+      if (url.has('overview') || hud.small) setMode('orbit'); // phones: overview only, for now
+      if (url.get('sun')) {
+        const [h, dy] = url.get('sun')!.split(',').map(Number); // ?sun=13.5,172
         sunlight.setSun(h, dy);
       }
-      if (q.has('walk')) {
-        state.ghost = false; // start walking (with collision) instead of in ghost mode
-        hud.flags();
+      if (url.has('walk')) state.ghost = false; // start walking (with collision) instead of in ghost mode
+      try {
+        if (!localStorage.getItem('twin.helpSeen')) hud.help(); // a first visit: the keys, once
+      } catch {
+        /* private mode: no help popup */
       }
+      hud.update();
       // the extra models follow in the background (?noextra leaves each until its layer's key is pressed)
       for (const x of site.models.extra) {
         const layer = x.layer && site.layers.find((l) => l.id === x.layer);
-        if (q.has('noextra') && layer && layer.key) state.hidden[layer.id] = true;
+        if (url.has('noextra') && layer && layer.key) state.hidden[layer.id] = true;
         else model.loadExtra(x.id);
       }
-      blueprints.loadIndex(); // ?bp=<sheet id> opens with that sheet, ?bpfade=20 sets the model's opacity
-      startPlugins({
-        site,
-        stage,
-        state,
-        model,
-        plugins,
-        twin,
-        $,
-        esc,
-        seen: walker.seen,
-        fly: flight.fly,
-        flags: () => hud.flags(),
-        hereRoom: () => hud.hereRoom(),
-        inspect,
-      });
+      startPlugins();
     })
     .catch((err: Error) => {
-      loading.textContent = `Couldn't load ${site.models.main.url} (${err.message}).`;
+      loading.error(`Couldn't load ${site.models.main.url}`, '', [err.message], '');
       console.error(err);
     });
+
+  // The built-in plugins the site enables (and the autoStart ones), each its own chunk; a module that fails to load
+  // is reported and left out.
+  async function startPlugins(): Promise<void> {
+    const ids = Object.keys(BUILTIN_PLUGINS);
+    const prog = hud.addProgress('Starting plugins…');
+    const defs: PluginDef[] = [];
+    await Promise.all(
+      ids.map(async (id) => {
+        try {
+          const m = await BUILTIN_PLUGINS[id].load();
+          if (enabled(id) || m.default.autoStart) defs.push(m.default as PluginDef);
+        } catch (err) {
+          console.warn(`plugin ${id} didn't load (${(err as Error).message})`);
+          if (enabled(id)) hud.toast({ text: `The ${id} plugin didn't load`, tone: 'warn' });
+        }
+      }),
+    );
+    defs.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+    await host.start(defs);
+    bus.emit('ready', {});
+    prog.done();
+    hud.update();
+  }
 }
 
 export type Twin = Record<string, unknown>;

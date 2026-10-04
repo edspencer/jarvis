@@ -96,11 +96,8 @@ More of the manifest, all optional (the [schema](schema/site.schema.json) docume
   "colliders": { "passable": { "namePrefix": ["Win_"], "extra": ["passable"] } },
   "walk": { "maxStep": 0.4 }, // metres; also eyeHeight, crouchEyeHeight, radius
   "plugins": {
-    "home-assistant": {
-      "url": "https://homeassistant.example.org",
-      "map": "ha_map.json",
-      "controls": "ha_controls.json",
-    },
+    "home-assistant": { "url": "https://homeassistant.example.org", "controls": "ha_controls.json" },
+    "lights": { "map": "ha_map.json" }, // which entities light each fixture
     "faults": { "devices": "ha_devices.json" },
     "pins": { "registry": "registry_pins.json", "sourceLink": "https://example.org/repo/{file}" },
     "switches": {},
@@ -109,15 +106,28 @@ More of the manifest, all optional (the [schema](schema/site.schema.json) docume
 }
 ```
 
-A plugin starts only if the manifest has its section under `plugins`.
+A plugin starts only if the manifest has its section under `plugins` (the sun panel and the wall plates start on
+their own; the plates only if the model has some). Everything on screen comes from plugins through one API, the core
+included: see [docs/plugins.md](docs/plugins.md) to write one.
 
 ### Home Assistant
 
 The live connection logs in with Home Assistant's own OAuth flow, to the URL in `plugins["home-assistant"].url`. Add
 the viewer's origin to HA's `http: cors_allowed_origins`. Without a URL only the mock works. `?ha=mock` plays a seeded
 fake state stream instead (`&hamock=static` for no changes), and nothing reaches Home Assistant. Every service call goes
-through one allowlist (`src/plugins/home-assistant/policy.ts`): lights and switches on / off / toggle, scripts and
-scenes turned on; anything else (locks, covers, alarm, climate, fans, media) is refused.
+through one choke point (`send()` in `src/plugins/home-assistant/policy.ts`) that checks the service (lights and
+switches on / off / toggle, scripts and scenes turned on; never locks, covers, the alarm, climate, fans, media) **and
+every entity** against an allow-list built only from the site's own files: the controls file's entities, and the
+fixture map's lights (a `switch.*` only where the map marks it `switch_is_light` and the controls file's
+`fixture_toggle` allows that). A stray call for any other entity (a water heater's or a network switch's plug) is
+refused.
+
+**What the allow-list does and doesn't protect.** The login's tokens are kept in this browser's `localStorage`, as
+Home Assistant's own frontend keeps them, so any code running on the viewer's origin (the browser console, a plugin, a
+script injected by an extension) can read them and call Home Assistant directly with that user's rights. The
+allow-list guards against bugs and misclicks in the viewer and its plugins, not against hostile code on the page.
+**Log the viewer in as a dedicated, non-admin Home Assistant user**, not your own account, and serve it from an origin
+that runs nothing else. More in [SECURITY.md](SECURITY.md).
 
 ## Scripts
 
@@ -138,8 +148,9 @@ scenes turned on; anything else (locks, covers, alarm, climate, fans, media) is 
 lacks. Headless Chromium renders WebGL on the GPU if there is a DRM render node (`E2E_GPU=0` forces software), else in
 software (SwiftShader): the demo house takes about a minute that way, a large real model several; the tests share one
 page and allow minutes. `npx playwright install chromium` once, or set `PLAYWRIGHT_CHROMIUM_EXECUTABLE` to a
-local Chromium. `PROTOTYPE_URL=http://host:port npm run test:e2e -- parity` also renders the same views in a running copy
-of the prototype and compares them pixel by pixel (`test-results/parity/`).
+local Chromium. `PROTOTYPE_URL=http://host:port npm run test:e2e -- parity` also renders the same views, with the HUD
+hidden, in a running reference build (another checkout's dev server, e.g. `main`, or the prototype) and compares them
+pixel by pixel (`test-results/parity/`).
 
 ## Deploy
 
@@ -161,10 +172,17 @@ src/
   main.ts                 entry
   site/                   the site manifest: types, validation (schema + rules), defaults, loading, the
                           validate-site checks (model-check.ts, check-site.ts)
-  core/                   the viewer: stage, sun, model loading, walker and collision, visibility, blueprints,
-                          picking and the inspect panel, HUD, fly-to, input, plugin start-up
+  core/                   the viewer: stage, sun, model loading, walker and collision, visibility, picking, fly-to,
+                          input; builtin.ts (the core's own panels, chips and sections)
+    plugin/               the plugin API (types.ts: the public contract), the host, the event bus, the key
+                          registry, the entity store
+  ui/                     the HUD: Lit components (shell.ts), the standard blocks, design tokens, help
   plugins/
-    home-assistant/       live light state, controls, the call allowlist (policy.ts), mock
+    registry.ts           the built-in plugins and the keys each one claims
+    sun/                  the Sun & time panel
+    blueprints/           blueprint sheets in the plan frame
+    home-assistant/       the connector: login, the state stream into the store, the allow-list (policy.ts), mock
+    lights/               fixtures drawn by their entities' state, switching a light, the blink test
     faults/               device health through walls (health.ts: the rules)
     pins/                 equipment registry pins
     switches/             wall plates
@@ -174,12 +192,13 @@ examples/demo-site/       the demo house (generated: npm run demo-site)
 tests/unit/               Vitest (tests/fixtures/site: a synthetic site)
 tests/e2e/                Playwright
 deploy/nginx.conf         the container's nginx configuration (Dockerfile)
-docs/                     the model format; HUD design notes
+docs/                     the plugin API, the model format; HUD design notes
 ```
 
 ## Keys
 
-Click to walk (Esc releases the mouse) · WASD / arrows move, Shift runs, Space jumps or rises · C crouch / sink · Q E
-turn · Tab overview · X cutaway · U hide upper storey · O doors · the site's own layer keys · B blueprint · G ghost ·
-1–9 viewpoints · V faults through walls (Shift-V all devices) · T / Shift-click switch a light · P pins (Shift-P through
-walls) · L wall plates (Shift-L through walls) · / find equipment · H help.
+Click to walk (Esc releases the mouse; a second Esc closes the inspector) · WASD / arrows move, Shift runs, Space jumps
+or rises · C crouch / sink · Q E turn · Tab overview · X cutaway · U hide upper storey · O doors · the site's own layer
+keys · B blueprint · G ghost · 1–9 viewpoints · N Navigate panel · V faults through walls (Shift-V all devices) · T /
+Shift-click switch a light · P pins (Shift-P through walls) · L wall plates (Shift-L through walls) · / search · H help
+(generated from the key registry: it lists only the plugins that are running) · F6 moves between the HUD's regions.

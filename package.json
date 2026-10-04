@@ -5,6 +5,9 @@
   "description": "A browser walkthrough for a building's digital twin (three.js), with live data layered on through plugins.",
   "license": "MIT",
   "type": "module",
+  "exports": {
+    "./plugin": "./src/plugin-api.ts"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -28,6 +31,7 @@
   },
   "dependencies": {
     "home-assistant-js-websocket": "9.7.0",
+    "lit": "3.3.3",
     "three": "0.186.1",
     "three-mesh-bvh": "0.9.15"
   },

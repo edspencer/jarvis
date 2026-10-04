@@ -1,15 +1,5 @@
 import type { Page } from '@playwright/test';
 
-/** the bits of the console hook (window.twin) waitForLayers reads */
-interface LayersView {
-  site: { plugins: Record<string, unknown> };
-  ha?: { status?: string };
-  faults?: { points?: unknown };
-  pins?: { items?: unknown[] };
-  switches?: { group?: unknown };
-  bp?: { index?: unknown };
-}
-
 /** Collect console errors and page errors from now on. */
 export function watchErrors(page: Page): string[] {
   const errors: string[] = [];
@@ -30,18 +20,24 @@ export async function openViewer(page: Page, query: string): Promise<void> {
   });
 }
 
-/** Wait for the optional layers the site configures (HA mock, faults, pins, plates, blueprints) to be up. */
+/** Wait until every plugin the site enables has started, failed or been skipped (and mock HA is up, if configured). */
 export async function waitForLayers(page: Page): Promise<void> {
   await page.waitForFunction(
     () => {
-      const t = (window as unknown as { twin: LayersView }).twin;
-      const p = t.site.plugins;
+      const t = (
+        window as unknown as {
+          twin: {
+            site: { plugins: Record<string, unknown> };
+            host?: { records(): { state: string }[] };
+            ha?: { status?: string };
+          };
+        }
+      ).twin;
+      const recs = t.host?.records() || [];
       return (
-        (!p['home-assistant'] || t.ha?.status === 'mock') &&
-        (!p.faults || t.faults?.points) &&
-        (!p.pins || t.pins?.items?.length) &&
-        (!p.switches || t.switches?.group) &&
-        (!p.blueprints || t.bp?.index)
+        recs.length > 0 &&
+        recs.every((r) => r.state !== 'pending' && r.state !== 'starting') &&
+        (!t.site.plugins['home-assistant'] || t.ha?.status === 'mock')
       );
     },
     null,

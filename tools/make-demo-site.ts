@@ -1566,7 +1566,8 @@ function manifest() {
     ],
     walk: { maxStep: 0.35 },
     plugins: {
-      'home-assistant': { url: 'https://homeassistant.example.org', map: 'ha_map.json', controls: 'ha_controls.json' },
+      'home-assistant': { url: 'https://homeassistant.example.org', controls: 'ha_controls.json' },
+      lights: { map: 'ha_map.json' },
       faults: { devices: 'ha_devices.json', source: 'tools/make-demo-site.ts' },
       pins: { registry: 'registry_pins.json', sourceLink: `${REPO}/blob/main/{file}` },
       switches: { source: 'tools/make-demo-site.ts' },
