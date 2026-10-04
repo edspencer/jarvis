@@ -752,6 +752,45 @@ export interface ThreeApi {
   toPlan(v: THREE.Vector3): { X: number; Y: number; Z: number };
   /** metres per plan unit */
   unit: number;
+  /** material overrides: the only way to change what a model mesh is drawn with (see MaterialsApi) */
+  materials: MaterialsApi;
+}
+
+/** an override's material: a fixed one, or one made from the material beneath it (the mesh's own, or a lower layer's;
+ * called again whenever the stack changes, so cache what it makes) */
+export type MaterialLayer = THREE.Material | ((below: THREE.Material, mesh: THREE.Mesh) => THREE.Material);
+
+/** one layer on a set of meshes; dispose takes it off (in any order), and it goes when the plugin stops */
+export interface MaterialOverride extends Disposable {
+  /** change this layer's material; it keeps its place in each mesh's stack */
+  set(m: MaterialLayer): void;
+  /** re-run each of its meshes' whole stack (after you edited a material that a function layer above copies from,
+   * e.g. a light's glow under the blueprint fade) */
+  refresh(): void;
+}
+
+/** the built-in plugins' places in a mesh's material stack (higher on top); a plugin's own default is 0 */
+export const MATERIAL_PRIORITY = {
+  /** the lights: a fixture's glowing copy */
+  glow: -10,
+  /** blueprints: the model faded under a sheet */
+  fade: -5,
+  /** energy mode: the ghost and the load tints */
+  energy: 0,
+} as const;
+
+/** Each mesh shows the top of a stack of overrides over its own material: higher `priority` on top (default 0; see
+ * MATERIAL_PRIORITY), and the later push on top of an equal one. Don't assign `mesh.material` on model meshes
+ * yourself. */
+export interface MaterialsApi {
+  /** cover meshes with a layer; anything that isn't a mesh with one material is skipped (with a warning, once) */
+  push(
+    meshes: THREE.Object3D | Iterable<THREE.Object3D>,
+    m: MaterialLayer,
+    opts?: { priority?: number },
+  ): MaterialOverride;
+  /** the mesh's own material, whatever is drawn over it (also in userData.baseMaterial while it has overrides) */
+  base(mesh: THREE.Mesh): THREE.Material;
 }
 
 export interface ViewApi {

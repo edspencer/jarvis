@@ -406,6 +406,13 @@ Fallback without `backdrop-filter`: opacity 0.94.
 | `--jv-info` | `#6aa8ff` | Update available, mock data, informational        |
 | `--jv-off`  | `#7a8494` | Off, unknown, not connected                       |
 
+**Badge fills** (a count badge's background, under its label; checked for 4.5:1 in `tests/unit/tokens.test.ts`)
+
+| Token             | Value     | Use                                                          |
+| ----------------- | --------- | ------------------------------------------------------------ |
+| `--jv-bad-fill`   | `#c9372c` | A fault count (white label; `--jv-bad` under white is 3.4:1) |
+| `--jv-badge-fill` | `#2c3c55` | A neutral count (`--jv-text` label)                          |
+
 Status is never colour alone: each has a glyph (✓ ! ↑ ○) as the markers already do.
 
 **Data scales.** Sequential (load tint): 5 steps from `#2b3a55` to `#ffd166` to `#ff6b3d`; categorical (pin

@@ -194,7 +194,7 @@ export default definePlugin<EnergyConfig>({
     };
 
     // ------------------------------------------------------------------ the scene: energy mode
-    const es = createEnergyScene({ scene, model, camera });
+    const es = createEnergyScene({ scene, model, camera, materials: ctx.three.materials });
     const anchorCache = new Map<string, THREE.Vector3 | null>();
     function anchorAt(ref: string): THREE.Vector3 | null {
       if (anchorCache.has(ref)) return anchorCache.get(ref)!;

@@ -10,7 +10,7 @@ export default definePlugin<BlueprintsConfig>({
   id: 'blueprints',
   name: 'Blueprints',
   async setup(ctx) {
-    const { scene, renderer, model } = ctx.three;
+    const { scene, renderer, model, materials } = ctx.three;
     const units = ctx.site.units;
     let panel: PanelHandle | undefined = undefined;
     const b = createBlueprints({
@@ -19,6 +19,7 @@ export default definePlugin<BlueprintsConfig>({
       renderer,
       owners: model.owners,
       groups: model.groups,
+      materials,
       applyVisibility: () => ctx.view.applyVisibility(),
       onChange: () => {
         panel?.refresh();

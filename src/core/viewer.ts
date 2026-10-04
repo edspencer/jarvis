@@ -14,6 +14,7 @@ import { createFlight } from './flight';
 import { CENTRE_NDC, bindInput, type OrbitHolder, type Pointer } from './input';
 import { createPicker } from './inspect';
 import { createLoading, type Loading } from './loading';
+import { createMaterialStack } from './material-stack';
 import { bindTouch } from './touch';
 import { createModel } from './model';
 import { createPlayer, createWalker } from './player';
@@ -299,7 +300,8 @@ function startSite(site: Site, loading: Loading): void {
   });
   const hudEl = mountHud(hud);
 
-  const three = { THREE, scene, camera, renderer, model, P, toPlan, unit: site.unit };
+  const materials = createMaterialStack();
+  const three = { THREE, scene, camera, renderer, model, P, toPlan, unit: site.unit, materials };
   // a plugin with a manifest section (resolved: the lights plugin also reads the old home-assistant.map)
   const enabled = (id: string) =>
     !!(site.plugins as Record<string, unknown>)[id] ||
@@ -308,6 +310,7 @@ function startSite(site: Site, loading: Loading): void {
   const makeContext = createContextFactory({
     site,
     three,
+    materials,
     view,
     picker,
     bus,
@@ -444,6 +447,7 @@ function startSite(site: Site, loading: Loading): void {
       owners: model.owners,
       parts: model.parts,
       root: model.root,
+      materials,
       plants: model.plants,
       extras: model.extras,
       loadExtra: model.loadExtra,

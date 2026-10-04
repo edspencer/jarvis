@@ -3,8 +3,8 @@ import type * as THREE from 'three';
 
 export const isMesh = (o: THREE.Object3D): o is THREE.Mesh => (o as THREE.Mesh).isMesh === true;
 
-/** glTF meshes carry one standard (or physical) material; never an array. A plugin that swaps in a temporary
- * material (energy mode's ghost) keeps the mesh's own in userData.baseMaterial: that is the one returned. */
+/** glTF meshes carry one standard (or physical) material; never an array. While material overrides cover a mesh
+ * (energy mode, the blueprint fade; material-stack.ts), its own is in userData.baseMaterial: that is the one returned. */
 export const matOf = (o: THREE.Mesh): THREE.MeshStandardMaterial =>
   (o.userData.baseMaterial ?? o.material) as THREE.MeshStandardMaterial;
 

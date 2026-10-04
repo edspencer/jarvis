@@ -37,6 +37,10 @@ export default defineConfig({
   use: {
     baseURL: `http://localhost:${PORT}/`,
     viewport: { width: 1280, height: 720 },
+    // an action that can't happen fails with its reason ("<jv-status> intercepts pointer events") instead of retrying
+    // until the 10-minute test timeout, which looks like a hang
+    actionTimeout: 180_000,
+    navigationTimeout: 5 * 60_000,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
     launchOptions: {
