@@ -444,8 +444,9 @@ real store and Home Assistant's allow-list.
 A site loads a plugin that isn't built into JARVIS from a module of its own: a section with a `module`, an ES module
 whose default export is the plugin. Nothing in JARVIS changes, and no fork is needed.
 
-**Build the module.** A plugin's only run-time import from `jarvis/plugin` is `definePlugin`, which returns its
-argument, so a bundler inlines it and the result is one self-contained file. In a JARVIS checkout:
+**Build the module.** What a plugin imports from `jarvis/plugin` at run time is `definePlugin`, which returns its
+argument (and perhaps a constant such as `MATERIAL_PRIORITY`), so a bundler inlines it and the result is one
+self-contained file. In a JARVIS checkout:
 
 ```sh
 cp -r examples/demo-site sites/measure-demo   # sites/ is git-ignored; examples/demo-site is generated, don't edit it

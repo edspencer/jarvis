@@ -21,10 +21,12 @@ const withPlugins = (plugins: Record<string, unknown>, extra: Partial<SiteManife
 };
 
 describe('the plugin API at run time', () => {
-  it('has one run-time export, definePlugin, which returns its argument (so a bundled plugin needs only ctx)', () => {
-    expect(Object.keys(api)).toEqual(['definePlugin']);
+  it('exports at run time only definePlugin, which returns its argument, and plain data (a bundled plugin needs only ctx)', () => {
     const def = { id: 'x', name: 'X', setup() {} };
     expect(api.definePlugin(def)).toBe(def);
+    for (const [name, v] of Object.entries(api))
+      if (name !== 'definePlugin') expect(JSON.parse(JSON.stringify(v)), name).toEqual(v); // constants only
+    expect(Object.keys(api).sort()).toEqual(['MATERIAL_PRIORITY', 'definePlugin']);
   });
 });
 

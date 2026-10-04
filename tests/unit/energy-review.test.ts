@@ -3,6 +3,7 @@
 // mesh's own material where another plugin (the lights) can find it.
 import * as THREE from 'three';
 import { describe, expect, it } from 'vitest';
+import { createMaterialStack } from '../../src/core/material-stack';
 import type { EntityState, ModelInfo } from '../../src/plugin-api';
 import { checkEnergyMap, type MeterSpec } from '../../src/plugins/energy/map';
 import { buildTree, compute, consumers, countable, sumOf, totals } from '../../src/plugins/energy/tree';
@@ -109,7 +110,8 @@ describe('energy mode: the material swap', () => {
     scene.add(root);
     const model = { root, groups: { upper: [] }, rooms: [floor], fixtures: {} } as unknown as ModelInfo;
     const camera = new THREE.PerspectiveCamera();
-    return { es: createEnergyScene({ scene, model, camera }), mesh, floor, own };
+    const materials = createMaterialStack();
+    return { es: createEnergyScene({ scene, model, camera, materials }), mesh, floor, own, materials };
   }
   it('ghosts, tints, and puts every material back', () => {
     const { es, mesh, floor, own } = setup();
@@ -128,14 +130,13 @@ describe('energy mode: the material swap', () => {
     es.hide();
     expect(mesh.userData.baseMaterial).toBeUndefined();
   });
-  it("keeps another plugin's swap made meanwhile: re-ghosts it, and puts theirs back", () => {
-    const { es, mesh } = setup();
+  it("keeps another plugin's override made meanwhile under the ghost, and puts theirs back", () => {
+    const { es, mesh, own, materials } = setup();
     es.show({ nodes: new Map(), rooms: new Map(), anchors: [] });
     const theirs = new THREE.MeshStandardMaterial({ name: 'lamp-clone' });
-    mesh.material = theirs; // the lights prepare a fixture while energy mode is on
-    es.show({ nodes: new Map(), rooms: new Map(), anchors: [] });
+    materials.push(mesh, theirs, { priority: -10 }); // the lights prepare a fixture while energy mode is on
     expect(mesh.material).toBe(es.ghost);
-    expect(mesh.userData.baseMaterial).toBe(theirs);
+    expect(mesh.userData.baseMaterial).toBe(own);
     es.hide();
     expect(mesh.material).toBe(theirs);
     es.dispose();

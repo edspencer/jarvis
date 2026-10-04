@@ -1,7 +1,7 @@
 // npm run build-plugin -- <plugin.ts> <out.js>
 // Bundles a plugin into one self-contained ES module that a site loads as an external plugin
-// (`"plugins": { "<id>": { "module": "plugins/<id>.js" } }`, docs/plugins.md). `jarvis/plugin` is inlined (its one
-// run-time export, definePlugin, returns its argument), and so is any other package the plugin imports, except
+// (`"plugins": { "<id>": { "module": "plugins/<id>.js" } }`, docs/plugins.md). `jarvis/plugin` is inlined (its run-time
+// exports are definePlugin, which returns its argument, and constants), and so is any other package the plugin imports, except
 // three.js: the viewer's own is `ctx.three.THREE`, so a run-time import of `three` is an error (type imports are fine).
 // Any other bundler does the same job (docs/plugins.md shows esbuild); this one needs nothing beyond JARVIS's own tools.
 import { mkdirSync, writeFileSync } from 'node:fs';
