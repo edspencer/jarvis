@@ -1,0 +1,86 @@
+name: Pages
+
+# The live demo, https://<owner>.github.io/jarvis/: the built viewer with the demo house (npm run build:pages), mock
+# Home Assistant by default. Every run builds it and checks it under the /jarvis/ sub-path in a browser (tests/pages);
+# pushes to main and manual runs then deploy it, but only while the repository is public (Pages on a private repository
+# needs a paid plan): until then the deploy job is skipped. Settings -> Pages -> Source must be "GitHub Actions".
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Pages (build + sub-path test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - run: npm run build:pages
+      - name: Playwright version
+        id: pw
+        run: echo "version=$(node -p 'require("@playwright/test/package.json").version')" >> "$GITHUB_OUTPUT"
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - name: Install Chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
+      - name: Install Chromium's system dependencies
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+      - name: The demo under /jarvis/ (software WebGL)
+        id: test
+        env:
+          E2E_GPU: '0'
+        run: npm run test:pages
+      - name: Upload Playwright report and traces
+        if: failure() && steps.test.conclusion == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: pages-playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+      - name: Upload the site
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: pages/
+          retention-days: 7
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: build
+    if: >-
+      github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && !github.event.repository.private
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

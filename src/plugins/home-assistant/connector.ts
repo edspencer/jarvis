@@ -152,7 +152,7 @@ export function createConnector(d: ConnectorDeps) {
     if (!c.conn || c.status !== 'live') throw new Error('not connected to Home Assistant');
     return parseHistory(await c.conn.sendMessagePromise(historyMessage(entityId, from, to)), entityId);
   }
-  function refusal(ids: string[], action: StoreAction): string | null {
+  function refusal(ids: string[], action: StoreAction, data: Record<string, unknown> = {}): string | null {
     const r = allowRefusal(c.allow, action, { entity_id: ids });
     if (r) {
       const off = ids.filter((e) => !c.allow.get(e)?.has(action));
@@ -160,7 +160,10 @@ export function createConnector(d: ConnectorDeps) {
       return `${off.join(', ')} isn't a light the model may switch (the controls file's fixture_toggle)${sw ? '; a switch needs switch_is_light in the fixture map' : ''}`;
     }
     if (!(c.status === 'live' || c.status === 'mock')) return 'not connected to Home Assistant';
-    return null;
+    // the rest of what call() checks (each domain's service, the data's keys), so the store can refuse a call across
+    // connectors before it sends any part of it
+    const plan = planCalls(ids, action, data, c.allow);
+    return 'refused' in plan ? plan.refused : null;
   }
 
   // ------------------------------------------------------------------ the Controls panel's actions

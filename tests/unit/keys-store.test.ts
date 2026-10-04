@@ -3,6 +3,7 @@ import { CORE_KEYS, createKeyRegistry, keyName } from '../../src/core/plugin/key
 import { createStore } from '../../src/core/plugin/store';
 import { reservedKeys } from '../../src/site';
 import type { EntityState } from '../../src/core/plugin/types';
+import { buildAllowlist, planCalls } from '../../src/plugins/home-assistant/policy';
 
 const ev = (
   code: string,
@@ -279,6 +280,32 @@ describe('the entity store', () => {
     await expect(s.call(['light.a', 'light.zzz'], 'turn_on')).rejects.toThrow(/no connector/);
     expect(haCall).not.toHaveBeenCalled();
     await expect(s.call([], 'turn_on')).rejects.toThrow(/no entity/);
+  });
+
+  it('refuses on the call’s data before sending any part: the connector’s refusal sees the data', async () => {
+    const s = createStore();
+    const mqttCall = vi.fn(async () => {}),
+      haCall = vi.fn(async () => {});
+    s.addConnector({ id: 'mqtt', name: 'MQTT', call: mqttCall }).update([st('switch.m', 'off')]);
+    // like the Home Assistant connector: refusal() and call() check the same plan (allow-list, services, data keys)
+    const allow = buildAllowlist({ controls: [], map: {}, toggle: {}, extra: ['light.a'] });
+    s.addConnector({
+      id: 'ha',
+      name: 'HA',
+      refusal: (ids, action, data) => {
+        const p = planCalls(ids, action, data ?? {}, allow);
+        return 'refused' in p ? p.refused : null;
+      },
+      call: haCall,
+    }).update([st('light.a', 'off')]);
+    expect(s.refusal(['switch.m', 'light.a'], 'turn_on')).toBeNull();
+    expect(s.refusal(['switch.m', 'light.a'], 'turn_on', { bad: 1 })).toMatch(/bad in the call's data/);
+    await expect(s.call(['switch.m', 'light.a'], 'turn_on', { bad: 1 })).rejects.toThrow(/bad in the call's data/);
+    expect(mqttCall).not.toHaveBeenCalled();
+    expect(haCall).not.toHaveBeenCalled();
+    await s.call(['switch.m', 'light.a'], 'turn_on');
+    expect(mqttCall).toHaveBeenCalledOnce();
+    expect(haCall).toHaveBeenCalledWith(['light.a'], 'turn_on', undefined);
   });
 
   it('a second connector cannot take over another one’s entity', () => {

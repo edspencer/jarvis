@@ -375,6 +375,13 @@ describe('model check', () => {
     expect(r.warnings.join('\n')).toMatch(/12500 m across: glTF is in metres/);
   });
 
+  it('accepts meshopt compression under either extension name (gltfpack -cc, and -cc -ce khr)', () => {
+    for (const ext of ['EXT_meshopt_compression', 'KHR_meshopt_compression']) {
+      const r = checkModel(readGltfJson(buildGlb(cottage(), { required: [ext, 'KHR_mesh_quantization'] })), site, true);
+      expect(r.errors, ext).toEqual([]);
+    }
+  });
+
   it('warns when a keyed layer takes nothing and there are no rooms', () => {
     const r = checkModel(
       readGltfJson(buildGlb(cottage().filter((n) => n.name !== 'Shed' && !n.name!.startsWith('Floor_')))),
