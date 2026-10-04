@@ -28,5 +28,5 @@ body:
     id: validate
     attributes:
       label: validate-site output
-      description: If it's about your own site, the output of `npm run validate-site -- <folder>`. Don't attach a private model.
+      description: If it's about your own site, the output of `npm run validate-site -- <folder>`. Don't attach your model or data files, and remove anything that identifies the building (addresses, coordinates, hostnames, IPs, names).
       render: text

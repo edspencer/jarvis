@@ -23,6 +23,7 @@
     "validate-site": "node tools/validate-site.ts",
     "demo-site": "node tools/make-demo-site.ts",
     "screenshots": "node tools/screenshots.ts",
+    "notices": "node tools/third-party-notices.ts",
     "changeset": "changeset",
     "changeset:version": "changeset version && npm install --package-lock-only --ignore-scripts"
   },

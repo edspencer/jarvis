@@ -129,7 +129,7 @@ export type Subject =
     }
   | {
       kind: 'item';
-      /** '<owner kind>:<id>': 'pins:elec.panel.a', 'plates:KIT-S-B', 'devices:zha-1234' */
+      /** '<owner kind>:<id>': 'pins:elec.panel.a', 'plates:KT-S-A', 'devices:zha-1234' */
       id: string;
       hit?: THREE.Intersection | null;
     };
