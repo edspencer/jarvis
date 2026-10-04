@@ -82,6 +82,14 @@ export class AssistantPanel extends LitElement {
         height: min(62vh, 620px);
         min-height: 260px;
       }
+      /* a phone: the dock is a bottom sheet (src/ui/shell.ts, 50vh when half open): fit inside it, below its handle
+         and header, so the text box and the mic button stay on screen; the transcript scrolls */
+      @media (max-width: 719px) {
+        :host {
+          height: calc(50vh - 80px);
+          min-height: 0;
+        }
+      }
       .log {
         flex: 1;
         min-height: 0;
@@ -361,6 +369,24 @@ export class AssistantPanel extends LitElement {
         opacity: 0.45;
         cursor: default;
       }
+      /* a finger: a 48 px talk button (hold it to talk; a phone has no M key) and a taller text box */
+      @media (pointer: coarse) {
+        .talk {
+          width: 48px;
+          height: 48px;
+        }
+        .talk svg {
+          width: 22px;
+          height: 22px;
+        }
+        .composer input {
+          height: 44px;
+          font-size: 16px; /* under 16 px, iOS zooms the page when the box takes focus */
+        }
+        .keyhint {
+          display: none;
+        }
+      }
       .foot {
         display: flex;
         align-items: center;
@@ -571,7 +597,7 @@ export class AssistantPanel extends LitElement {
               )
             : html`<div class="empty">
                 Ask about the building, or have it do something.<br />
-                Hold <kbd>${m.talkKey}</kbd> (or the mic button) to talk.
+                Hold the mic button<span class="keyhint"> (or <kbd>${m.talkKey}</kbd> anywhere)</span> to talk.
               </div>`
         }
         ${

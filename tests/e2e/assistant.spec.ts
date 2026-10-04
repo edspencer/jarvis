@@ -181,6 +181,45 @@ test('no console errors', () => {
   expect(errors).toEqual([]);
 });
 
+test('on a phone (touch): the panel opens from More in the tab bar, and holding the 48 px mic button talks', async ({
+  browser,
+}) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true });
+  const p = await context.newPage();
+  const errs = watchErrors(p);
+  try {
+    await withAssistant(p);
+    await openViewer(p, 'ha=mock&hamock=static&assistant=mock&noextra');
+    await waitForLayers(p);
+    await p.locator('jv-rail button[aria-label="More"]').tap();
+    await p.locator('jv-rail [role="menuitem"]', { hasText: 'Assistant' }).tap();
+    const sheet = p.locator('jv-dock section[data-panel="assistant"]');
+    await expect(sheet).toBeVisible();
+    const talk = sheet.locator('button[data-action="talk"]');
+    const box = (await talk.boundingBox())!;
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    await expect(sheet.locator('.keyhint')).toBeHidden(); // no "hold M" on a phone
+    // press and hold with a finger (CDP touch events: real touch Pointer Events), then let go
+    const cdp = await context.newCDPSession(p);
+    const at = { x: box.x + box.width / 2, y: box.y + box.height / 2, id: 1, radiusX: 4, radiusY: 4 };
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [at] });
+    await expect(sheet.locator('.state')).toHaveAttribute('data-phase', 'listening');
+    await p.waitForTimeout(700);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    // the voice turn flies there; on a phone the inspector's sheet takes the dock sheet's place
+    await expect
+      .poll(() =>
+        twin<string | undefined>(p, `twin.assistant.transcript().filter((e) => e.kind === 'user').at(-1)?.text`),
+      )
+      .toBe('show me the air handler');
+    await expect(p.locator('jv-inspector aside')).toContainText('Air handler');
+    expect(errs).toEqual([]);
+  } finally {
+    await context.close();
+  }
+});
+
 test('the login: an access code is asked for, a wrong one refused without retrying, the right one connects', async ({
   browser,
 }) => {

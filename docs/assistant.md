@@ -529,6 +529,9 @@ runs with it; the e2e test adds the section itself. Enable it on your site (fiel
 - **Shift+M** (or the rail button, or the status item) opens the **Assistant** panel: the rolling conversation, tool
   activity as chips (a chip with a subject flies there), a text box, the **talk button**, Stop, New conversation and
   the speech toggle.
+- **On a phone** (touch, no M key) the panel is under **More** in the tab bar and opens as a bottom sheet sized so the
+  text box and a 48 px mic button stay on screen: hold the mic button to talk. The panel's code is downloaded only on
+  a site that enables it.
 - The **status item** shows ready / listening / transcribing / thinking / speaking, or "Assistant offline" while the
   socket retries.
 - **Confirm dialog:** the action in plain words, the exact call, a warning for `risk: high`, a countdown, and
