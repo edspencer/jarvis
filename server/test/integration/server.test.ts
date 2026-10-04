@@ -592,11 +592,26 @@ describe('the Origin check', () => {
 
 describe('assembly', () => {
   it('the system prompt only offers the web tools when JARVIS_ASSISTANT_WEB is on', () => {
-    expect(promptOptions({ web: false, knowledgeDir: null })).toEqual({ web: false, knowledge: false });
+    expect(promptOptions({ web: false, knowledgeDir: null })).toEqual({
+      web: false,
+      knowledge: false,
+      escalation: false,
+    });
     expect(buildSystemPrompt(app.site, promptOptions({ web: false, knowledgeDir: null }))).not.toMatch(/WebSearch/);
     expect(buildSystemPrompt(app.site, promptOptions({ web: true, knowledgeDir: '/kb' }))).toMatch(
       /WebSearch and WebFetch.*Read, Grep and Glob/,
     );
+  });
+
+  it('the system prompt offers think_harder only with escalation on, and never to the scripted agent', () => {
+    const esc = { model: 'claude-opus-5-5', effort: 'high' } as const;
+    const on = promptOptions({ web: false, knowledgeDir: null, agent: 'sdk', escalation: esc });
+    expect(on.escalation).toBe(true);
+    expect(buildSystemPrompt(app.site, on)).toMatch(/memory_\*, think_harder\)[\s\S]*call think_harder first/);
+    for (const o of [{ escalation: null }, { agent: 'scripted' as const, escalation: esc }])
+      expect(buildSystemPrompt(app.site, promptOptions({ web: false, knowledgeDir: null, ...o }))).not.toMatch(
+        /think_harder/,
+      );
   });
 
   it('the clients file is read as YAML or JSON and checked strictly: a bad one stops the server', () => {

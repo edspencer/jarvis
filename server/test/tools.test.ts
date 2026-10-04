@@ -75,6 +75,7 @@ describe('tool specs', () => {
         'registry_get',
         'site_rooms',
         'site_search',
+        'think_harder',
         'view_fly',
         'view_highlight',
         'view_layer',
@@ -373,6 +374,44 @@ describe('view tools', () => {
       room: { id: 'kitchen', name: 'Kitchen', subject: 'room:kitchen' },
       selected: 'pins:appliance.fridge',
     });
+  });
+});
+
+describe('think_harder', () => {
+  it('asks the agent to escalate and reports what it did', async () => {
+    const r = rig();
+    const asked: number[] = [];
+    const en = env();
+    en.e.escalate = async () => {
+      asked.push(1);
+      return {
+        ok: true,
+        detail: 'switched to claude-opus-5-5 at high effort for the rest of this turn',
+        model: 'claude-opus-5-5',
+      };
+    };
+    expect(await run(r, 'think_harder', { reason: 'a sizing calculation' }, en)).toBe(
+      'switched to claude-opus-5-5 at high effort for the rest of this turn',
+    );
+    expect(asked).toHaveLength(1);
+    expect(en.chips).toEqual([
+      { summary: 'Thinking harder', status: 'running', subject: undefined },
+      { summary: 'Thinking harder (claude-opus-5-5)', status: 'done', subject: undefined },
+    ]);
+  });
+
+  it('escalation off: says so; without an escalating agent: not available; a reason is required', async () => {
+    const r = rig();
+    const off = env();
+    off.e.escalate = async () => ({ ok: false, detail: 'escalation is off here; answer with the current model' });
+    expect(await run(r, 'think_harder', { reason: 'x' }, off)).toBe(
+      'escalation is off here; answer with the current model',
+    );
+    expect(off.chips.at(-1)).toMatchObject({ summary: 'Thinking harder: not available', status: 'refused' });
+    const none = env();
+    expect(await run(r, 'think_harder', { reason: 'x' }, none)).toMatch(/not available/);
+    expect(none.chips).toEqual([{ summary: 'Thinking harder: not available', status: 'refused', subject: undefined }]);
+    await expect(r.tools.think_harder.run({}, env().e)).rejects.toThrow(ToolInputError);
   });
 });
 

@@ -115,6 +115,15 @@ export interface ToolEnv {
   view(op: ViewOp, args: Record<string, unknown>): Promise<{ ok: boolean; detail?: string }>;
   /** tell the panel what this call is doing (a chip), and optionally the subject it's about */
   activity(summary: string, status: 'running' | 'done' | 'refused' | 'pending' | 'error', subject?: string): void;
+  /** switch the rest of this turn to the escalation model (think_harder); absent: the agent can't */
+  escalate?(): Promise<EscalateResult>;
+}
+
+/** what an escalation request did: `model` when the turn now runs on it (switched now or before) */
+export interface EscalateResult {
+  ok: boolean;
+  detail: string;
+  model?: string;
 }
 
 export interface ToolSpec {
@@ -145,10 +154,12 @@ export interface ToolRunner {
 
 /** One rolling conversation. The hub serialises turns: run() is never called while another turn runs. */
 export interface Agent {
-  /** 'claude-opus-5' or 'scripted' */
+  /** 'claude-sonnet-5' or 'scripted' */
   readonly name: string;
   /** run one turn; `tools` are bound to this turn (their ToolEnv knows the client) */
   run(prompt: string, turn: TurnInfo, emit: (e: AgentEvent) => void, tools: ToolRunner): Promise<void>;
+  /** switch the running turn to the escalation model and effort until it ends (the think_harder tool) */
+  escalate?(): Promise<EscalateResult>;
   interrupt(): Promise<void>;
   /** start a new session (the old one's transcript stays in the hub) */
   reset(): Promise<void>;

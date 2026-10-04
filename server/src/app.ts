@@ -83,10 +83,14 @@ export interface AssistantOverrides {
   log?: (m: string) => void;
 }
 
-/** what the system prompt says the agent has: no web tools when they're off, no Read/Grep/Glob without knowledge */
-export const promptOptions = (config: Pick<AssistantConfig, 'knowledgeDir' | 'web'>) => ({
+/** what the system prompt says the agent has: no web tools when they're off, no Read/Grep/Glob without knowledge, no
+ * think_harder without escalation */
+export const promptOptions = (
+  config: Pick<AssistantConfig, 'knowledgeDir' | 'web'> & Partial<Pick<AssistantConfig, 'agent' | 'escalation'>>,
+) => ({
   knowledge: !!config.knowledgeDir,
   web: config.web,
+  escalation: config.agent !== 'scripted' && !!config.escalation,
 });
 
 export function createAssistant(config: AssistantConfig, o: AssistantOverrides = {}): Assistant {
@@ -157,6 +161,7 @@ export function createAssistant(config: AssistantConfig, o: AssistantOverrides =
           systemPrompt: buildSystemPrompt(site, promptOptions(config)),
           model: config.model,
           effort: config.effort,
+          escalation: config.escalation,
           dataDir: config.dataDir,
           knowledgeDir: config.knowledgeDir,
           web: config.web,

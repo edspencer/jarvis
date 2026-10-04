@@ -736,6 +736,35 @@ describe('hub: turns', () => {
     });
   });
 
+  it("think_harder reaches the agent's escalate (a chip, audited); an agent without one: not available", async () => {
+    const r = rig(async (_t, emit, tools, a) => {
+      a.results.push((await tools.call('think_harder', { reason: 'a calculation' })).text);
+      emit({ type: 'done' });
+    });
+    const c = await join2(r);
+    await r.hub.onMessage(c, JSON.stringify(say('size the pressure tank')));
+    await r.hub.idle();
+    expect(r.agent.results).toEqual(['escalation is not available here; answer with the current model']);
+    let n = 0;
+    r.agent.escalate = async () => {
+      n++;
+      return { ok: true, detail: 'switched', model: 'claude-opus-5-5' };
+    };
+    await r.hub.onMessage(c, JSON.stringify(say('and the expansion tank?')));
+    await r.hub.idle();
+    expect(n).toBe(1);
+    expect(r.agent.results[1]).toBe('switched');
+    expect(c.of('tool').at(-1)).toMatchObject({
+      name: 'think_harder',
+      summary: 'Thinking harder (claude-opus-5-5)',
+      status: 'done',
+    });
+    expect(r.audit.records.filter((x) => x.tool === 'think_harder').map((x) => x.decision)).toEqual([
+      'refused',
+      'done',
+    ]);
+  });
+
   it('reset: the agent starts afresh, a divider, everyone gets the transcript again', async () => {
     const r = rig();
     const a = await join2(r);

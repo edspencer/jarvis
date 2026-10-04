@@ -7,9 +7,10 @@ import type { Options, SDKMessage, SDKUserMessage, query } from '@anthropic-ai/c
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { createSdkAgent, zodShape } from '../../src/agent-sdk.ts';
+import type { Escalation } from '../../src/core/config.ts';
 import type { AgentEvent, ToolSpec } from '../../src/core/types.ts';
 
-type Reply = (text: string, n: number) => SDKMessage[] | 'die' | 'hang';
+type Reply = (text: string, n: number) => SDKMessage[] | 'die' | 'hang' | Promise<SDKMessage[]>;
 
 interface FakeOpts {
   /** a resumed session dies before its init message (a session id the CLI can't find) */
@@ -20,11 +21,15 @@ interface FakeOpts {
   init?: Record<string, unknown>;
   /** send init again before every turn, as the CLI does in streaming-input mode */
   initEachTurn?: boolean;
+  /** setModel / applyFlagSettings throw when this says so */
+  switchFails?: (what: string) => boolean;
 }
 
 /** a fake query(): answers each pushed user message with the messages `reply` gives */
 function fakeQuery(reply: Reply, fo: FakeOpts = {}) {
   const calls: { options: Options; prompts: string[] }[] = [];
+  /** prompts and model / effort switches, in order, across every process: 'prompt:hi', 'model:x', 'effort:high' */
+  const trace: string[] = [];
   let interrupts = 0;
   let closes = 0;
   let wake: (() => void) | null = null;
@@ -48,7 +53,8 @@ function fakeQuery(reply: Reply, fo: FakeOpts = {}) {
       for await (const m of params.prompt) {
         if (fo.initEachTurn && n > 0) yield init;
         call.prompts.push(String(m.message.content));
-        const out = reply(String(m.message.content), n++);
+        trace.push(`prompt:${String(m.message.content)}`);
+        const out = await reply(String(m.message.content), n++);
         if (out === 'die') throw new Error('process exited with code 1');
         if (out === 'hang') {
           await new Promise<void>((r) => (wake = wakeHang = r));
@@ -71,10 +77,18 @@ function fakeQuery(reply: Reply, fo: FakeOpts = {}) {
         closed = true;
         wakeHang?.();
       },
+      async setModel(model?: string) {
+        if (fo.switchFails?.(`model:${model}`)) throw new Error('the control channel is gone');
+        trace.push(`model:${model}`);
+      },
+      async applyFlagSettings(settings: { effortLevel?: string }) {
+        if (fo.switchFails?.(`effort:${settings.effortLevel}`)) throw new Error('the control channel is gone');
+        trace.push(`effort:${settings.effortLevel}`);
+      },
     });
   }) as unknown as typeof query;
   /** wake: let a hanging turn produce its result */
-  return { impl, calls, interrupts: () => interrupts, closes: () => closes, wake: () => wake?.() };
+  return { impl, calls, trace, interrupts: () => interrupts, closes: () => closes, wake: () => wake?.() };
 }
 
 const result = (sid: string, subtype = 'success', extra: Record<string, unknown> = {}) =>
@@ -115,6 +129,7 @@ function agent(
     web?: boolean;
     blockedHosts?: string[];
     log?: (m: string) => void;
+    escalation?: Escalation | null;
   } & FakeOpts = {},
 ) {
   const fq = fakeQuery(reply, extra);
@@ -128,6 +143,7 @@ function agent(
     knowledgeDir: extra.knowledgeDir ?? null,
     web: extra.web,
     blockedHosts: extra.blockedHosts,
+    escalation: extra.escalation,
     queryImpl: fq.impl,
     log: extra.log ?? (() => {}),
   });
@@ -366,6 +382,167 @@ describe('sdk agent', () => {
     expect(await turn('two')).toEqual([{ type: 'done' }]);
     expect(fq.calls).toHaveLength(2);
     expect(fq.calls[1].options.resume).toBe('session-1');
+  });
+});
+
+const OPUS: Escalation = { model: 'claude-opus-5-5', effort: 'high' };
+
+describe('sdk agent: models and escalation', () => {
+  it('starts on the default model and effort, and never turns thinking off (Opus 5.5 cannot run without it)', async () => {
+    const { fq, turn } = agent(() => [result('s')], { escalation: OPUS });
+    await turn('hi');
+    const o = fq.calls[0].options;
+    expect(o).toMatchObject({ model: 'claude-test', effort: 'low' });
+    expect(o.thinking).toBeUndefined();
+    expect(o.maxThinkingTokens).toBeUndefined();
+    const { mcpServers: _m, ...plain } = o;
+    expect(JSON.stringify(plain)).not.toMatch(
+      /"thinking":\{"type":"disabled"\}|alwaysThinkingEnabled|maxThinkingTokens/,
+    );
+    expect(fq.trace).toEqual(['prompt:hi']); // no switches on an ordinary turn
+  });
+
+  it('an explicit ask switches before the prompt goes in, shows a chip, logs once, and switches back after', async () => {
+    const lines: string[] = [];
+    const { fq, turn } = agent(() => [...streamText('m1', 'Here goes.'), result('s')], {
+      escalation: OPUS,
+      log: (m) => void (m.startsWith('assistant: session') || lines.push(m)),
+    });
+    const events = await turn('Think hard: how big a pressure tank?');
+    expect(fq.trace).toEqual([
+      'model:claude-opus-5-5',
+      'effort:high',
+      'prompt:Think hard: how big a pressure tank?',
+      'model:claude-test',
+      'effort:low',
+    ]);
+    expect(events).toEqual([
+      {
+        type: 'tool',
+        callId: 'escalate-1',
+        name: 'think_harder',
+        summary: 'Thinking harder (claude-opus-5-5)',
+        status: 'done',
+      },
+      { type: 'text', delta: 'Here goes.' },
+      { type: 'done' },
+    ]);
+    expect(lines).toEqual(['assistant: escalated to claude-opus-5-5 (high): explicit ask']);
+    await turn('and the hall light?');
+    expect(fq.trace.slice(5)).toEqual(['prompt:and the hall light?']);
+  });
+
+  it('think_harder mid-turn switches for the rest of the turn (once), then back', async () => {
+    const lines: string[] = [];
+    const answers: unknown[] = [];
+    const box: { a?: ReturnType<typeof agent>['a'] } = {};
+    const rig = agent(
+      async (text) => {
+        if (text === 'why does the AC lock out?') {
+          answers.push(await box.a!.escalate!());
+          answers.push(await box.a!.escalate!()); // a second call in the same turn
+        }
+        return [result('s')];
+      },
+      { escalation: OPUS, log: (m) => void (m.startsWith('assistant: session') || lines.push(m)) },
+    );
+    box.a = rig.a;
+    await rig.turn('why does the AC lock out?');
+    expect(rig.fq.trace).toEqual([
+      'prompt:why does the AC lock out?',
+      'model:claude-opus-5-5',
+      'effort:high',
+      'model:claude-test',
+      'effort:low',
+    ]);
+    expect(answers).toEqual([
+      {
+        ok: true,
+        detail: 'switched to claude-opus-5-5 at high effort for the rest of this turn',
+        model: 'claude-opus-5-5',
+      },
+      { ok: true, detail: 'already on claude-opus-5-5 (high effort) for this turn', model: 'claude-opus-5-5' },
+    ]);
+    expect(lines).toEqual(['assistant: escalated to claude-opus-5-5 (high): think_harder']);
+    // the next turn may escalate again
+    await rig.turn('why does the AC lock out?');
+    expect(rig.fq.trace.slice(5)).toEqual([
+      'prompt:why does the AC lock out?',
+      'model:claude-opus-5-5',
+      'effort:high',
+      'model:claude-test',
+      'effort:low',
+    ]);
+  });
+
+  it('escalation off: think_harder says so, an explicit ask runs as usual, nothing switches', async () => {
+    const answers: unknown[] = [];
+    const box: { a?: ReturnType<typeof agent>['a'] } = {};
+    const rig = agent(
+      async () => {
+        answers.push(await box.a!.escalate!());
+        return [result('s')];
+      },
+      { escalation: null },
+    );
+    box.a = rig.a;
+    const events = await rig.turn('think hard about it');
+    expect(events).toEqual([{ type: 'done' }]);
+    expect(answers).toEqual([{ ok: false, detail: 'escalation is off here; answer with the current model' }]);
+    expect(rig.fq.trace).toEqual(['prompt:think hard about it']);
+    expect(await rig.a.escalate!()).toEqual({
+      ok: false,
+      detail: 'escalation is off here; answer with the current model',
+    });
+  });
+
+  it('a failed escalation is reported and the turn carries on; the half-done switch is still undone', async () => {
+    const lines: string[] = [];
+    const { fq, turn } = agent(() => [result('s')], {
+      escalation: OPUS,
+      switchFails: (w) => w === 'effort:high',
+      log: (m) => void (m.startsWith('assistant: session') || lines.push(m)),
+    });
+    expect(await turn('take your time')).toEqual([{ type: 'done' }]); // no chip
+    expect(fq.trace).toEqual(['model:claude-opus-5-5', 'prompt:take your time', 'model:claude-test', 'effort:low']);
+    expect(lines).toEqual(['assistant: cannot escalate to claude-opus-5-5: the control channel is gone']);
+  });
+
+  it('switching back fails: logged, and the next turn restarts the process (resuming the session) at the defaults', async () => {
+    const lines: string[] = [];
+    let failBack = true;
+    const { fq, turn } = agent(() => [result('s')], {
+      escalation: OPUS,
+      switchFails: (w) => failBack && w === 'model:claude-test',
+      log: (m) => void (m.startsWith('assistant: session') || lines.push(m)),
+    });
+    await turn('use opus for this');
+    expect(fq.calls).toHaveLength(1);
+    expect(lines).toContain(
+      'assistant: cannot switch back to claude-test (the control channel is gone); the next turn restarts the session',
+    );
+    failBack = false;
+    expect(await turn('and now?')).toEqual([{ type: 'done' }]);
+    expect(fq.closes()).toBe(1);
+    expect(fq.calls).toHaveLength(2);
+    expect(fq.calls[1].options).toMatchObject({ model: 'claude-test', effort: 'low', resume: 'session-1' });
+    expect(fq.calls[1].prompts).toEqual(['and now?']);
+    expect(lines).toContain('assistant: restarting the session on claude-test (low)');
+    // and only once
+    await turn('again');
+    expect(fq.calls).toHaveLength(2);
+  });
+
+  it('a turn that ends by reset or a crash leaves no escalation behind', async () => {
+    let n = 0;
+    const { a, fq, turn } = agent(() => (n++ === 0 ? 'die' : [result('s')]), { escalation: OPUS });
+    expect((await turn('think it through')).at(-1)).toMatchObject({ type: 'done', error: expect.any(String) });
+    expect(fq.trace).toEqual(['model:claude-opus-5-5', 'effort:high', 'prompt:think it through']); // nothing to revert
+    await turn('next');
+    expect(fq.calls[1].options).toMatchObject({ model: 'claude-test', effort: 'low' });
+    expect(fq.trace.slice(3)).toEqual(['prompt:next']);
+    await a.reset();
+    expect(await a.escalate!()).toEqual({ ok: false, detail: 'no turn is running' });
   });
 });
 

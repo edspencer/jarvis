@@ -1,5 +1,5 @@
 // The house tools the agent sees (as mcp__house__<name>): Home Assistant reads, the one action tool (ha_act, which goes
-// through the policy gate and nowhere else), the forecast (ha_weather, through the gate's built-in read-only path), the site and registry, the 3D viewer, and a small house-wide memory.
+// through the policy gate and nowhere else), the forecast (ha_weather, through the gate's built-in read-only path), the site and registry, the 3D viewer, a small house-wide memory, and think_harder (escalation).
 // Pure handlers over their dependencies, so the same specs serve the SDK agent, the scripted agent and the tests.
 // There is deliberately no raw service-call tool. Design §5.2, §6.2-6.4.
 import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -581,6 +581,29 @@ export function createTools(deps: ToolDeps): ToolSpec[] {
           storey: v.storey ?? null,
           selected: v.selected ?? null,
         };
+      },
+    },
+
+    // -------------------------------------------------------------------------------------------- escalation
+    {
+      name: 'think_harder',
+      description:
+        'Switch the rest of this turn to a stronger model at higher effort. Call it first when the question needs careful multi-step reasoning, calculations, planning or troubleshooting; not for house commands or simple lookups.',
+      readOnly: true,
+      params: { reason: p('string', 'in a few words, why this needs it') },
+      async run(args, env) {
+        str(args, 'reason', 300);
+        if (!env.escalate) {
+          env.activity('Thinking harder: not available', 'refused');
+          return 'escalation is not available here; answer with the current model';
+        }
+        env.activity('Thinking harder', 'running');
+        const r = await env.escalate();
+        env.activity(
+          r.ok ? `Thinking harder (${r.model})` : 'Thinking harder: not available',
+          r.ok ? 'done' : 'refused',
+        );
+        return r.detail;
       },
     },
 

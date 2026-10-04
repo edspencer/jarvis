@@ -435,6 +435,7 @@ export function createHub(opts: HubOptions): Hub {
             if (current !== turn) return; // a late call from an interrupted turn: keep quiet
             chip(info.turnId, callId, name, summary, status, subject);
           },
+          ...(agent.escalate ? { escalate: () => agent.escalate!() } : {}),
         };
         try {
           const r = await spec.run(isObj(args) ? args : {}, env);

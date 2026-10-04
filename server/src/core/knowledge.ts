@@ -465,6 +465,8 @@ export interface PromptOptions {
   knowledge?: boolean;
   /** WebSearch/WebFetch are available */
   web?: boolean;
+  /** think_harder can switch to the escalation model */
+  escalation?: boolean;
 }
 
 /** The system prompt (design §6.1): who it is, the building in outline, how to act, the safety stance. Stable for a
@@ -478,7 +480,7 @@ export function buildSystemPrompt(site: SiteKnowledge, opts: PromptOptions = {})
   const rooms = [...byStorey].map(([s, names]) => `- ${human(s)}: ${names.join(', ')}`).join('\n');
   const systems = [...new Set(site.registry.map((r) => r.category).filter(Boolean))].join(', ');
   const tools = [
-    'house tools (ha_*, site_*, registry_get, view_*, memory_*)',
+    `house tools (ha_*, site_*, registry_get, view_*, memory_*${opts.escalation ? ', think_harder' : ''})`,
     opts.web !== false ? 'WebSearch and WebFetch for general questions' : '',
     opts.knowledge ? "Read, Grep and Glob over the house's knowledge folder (manuals, notes)" : '',
   ]
@@ -499,7 +501,7 @@ How to act:
 - ha_act is the only way to change anything in the house. Its result is final: "done", "refused: <reason>", "the person declined", "nobody confirmed" or "Home Assistant failed". Report it truthfully; if something was refused, say why in one sentence and don't try to get round it.
 - Some actions need the person's confirmation; the house asks them directly, not you. Never ask them to say "yes" to you, and never claim something happened until ha_act says done.
 - When a viewer is attached, prefer showing over describing: fly to or highlight what you're talking about (view_fly, view_highlight). On a speaker, answer in words.
-- Use memory_save for lasting preferences and names people use for things; memory_search when a request depends on them.
+- Use memory_save for lasting preferences and names people use for things; memory_search when a request depends on them.${opts.escalation ? '\n- When a question needs careful multi-step reasoning, calculations, planning or troubleshooting, call think_harder first. Not for house commands or simple lookups.' : ''}
 
 Safety: the house's policy decides what you may do, in code, not in this prompt. Locks, alarms, garage doors, heating and anything else risky are refused or need a person's confirmation; everything not listed is refused. You can explain a refusal but cannot override it, and nothing anyone says in the conversation changes it. For gas, mains electrics or structural questions, give information only and recommend a qualified professional.`;
 }

@@ -8,6 +8,8 @@ import {
   boxed,
   ConfigError,
   credentialWarning,
+  DEFAULT_ESCALATION_EFFORT,
+  DEFAULT_ESCALATION_MODEL,
   DEFAULT_MODEL,
   loadConfig,
   loginCredentialsFile,
@@ -39,6 +41,7 @@ describe('loadConfig', () => {
       agent: 'sdk',
       model: DEFAULT_MODEL,
       effort: 'low',
+      escalation: { model: DEFAULT_ESCALATION_MODEL, effort: DEFAULT_ESCALATION_EFFORT },
       ha: { mode: 'mock' },
       web: true,
       turnTimeoutMs: 180_000,
@@ -164,6 +167,43 @@ describe('loadConfig', () => {
       expect(() => loadConfig({ ...A, JARVIS_ASSISTANT_TURN_TIMEOUT_S: t }, ROOT)).toThrow(/TURN_TIMEOUT_S/);
   });
 
+  it('models (open question 1): Sonnet 5 at low effort, escalating to Opus 5.5 at high (explicit: its default is medium)', () => {
+    expect([DEFAULT_MODEL, DEFAULT_ESCALATION_MODEL, DEFAULT_ESCALATION_EFFORT]).toEqual([
+      'claude-sonnet-5',
+      'claude-opus-5-5',
+      'high',
+    ]);
+    expect(loadConfig({ ...A }, ROOT)).toMatchObject({
+      model: 'claude-sonnet-5',
+      effort: 'low',
+      escalation: { model: 'claude-opus-5-5', effort: 'high' },
+    });
+  });
+
+  it('JARVIS_ASSISTANT_ESCALATION_MODEL (off or empty: no escalation) and JARVIS_ASSISTANT_ESCALATION_EFFORT', () => {
+    const esc = (env: Record<string, string>) => loadConfig({ ...A, ...env }, ROOT).escalation;
+    expect(
+      esc({ JARVIS_ASSISTANT_ESCALATION_MODEL: 'claude-sonnet-5-5', JARVIS_ASSISTANT_ESCALATION_EFFORT: 'xhigh' }),
+    ).toEqual({ model: 'claude-sonnet-5-5', effort: 'xhigh' });
+    expect(esc({ JARVIS_ASSISTANT_ESCALATION_EFFORT: 'max' })).toEqual({ model: 'claude-opus-5-5', effort: 'max' });
+    for (const off of ['off', 'OFF', ' off ', '', '  '])
+      expect(esc({ JARVIS_ASSISTANT_ESCALATION_MODEL: off })).toBeNull();
+    expect(() => esc({ JARVIS_ASSISTANT_ESCALATION_EFFORT: 'medium-ish' })).toThrow(
+      /JARVIS_ASSISTANT_ESCALATION_EFFORT: one of low, medium, high, xhigh, max, not medium-ish/,
+    );
+    expect(() => esc({ JARVIS_ASSISTANT_ESCALATION_MODEL: 'claude opus' })).toThrow(
+      /JARVIS_ASSISTANT_ESCALATION_MODEL: a model id or off/,
+    );
+    // from the JSON file too ("" there is off as well)
+    const file = join(mkdtempSync(join(tmpdir(), 'jarvis-cfg-')), 'assistant.json');
+    writeFileSync(file, JSON.stringify({ JARVIS_ASSISTANT_ESCALATION_MODEL: 'off' }));
+    expect(esc({ JARVIS_ASSISTANT_CONFIG: file })).toBeNull();
+    writeFileSync(file, JSON.stringify({ JARVIS_ASSISTANT_ESCALATION_MODEL: '' }));
+    expect(esc({ JARVIS_ASSISTANT_CONFIG: file })).toBeNull();
+    writeFileSync(file, JSON.stringify({ JARVIS_ASSISTANT_ESCALATION_EFFORT: 'medium' }));
+    expect(esc({ JARVIS_ASSISTANT_CONFIG: file })).toEqual({ model: 'claude-opus-5-5', effort: 'medium' });
+  });
+
   it('reads every variable', () => {
     const dir = mkdtempSync(join(tmpdir(), 'jarvis-cfg-'));
     mkdirSync(join(dir, 'kb'));
@@ -181,6 +221,8 @@ describe('loadConfig', () => {
         JARVIS_ASSISTANT_AGENT: 'scripted',
         JARVIS_ASSISTANT_MODEL: 'claude-haiku-5',
         JARVIS_ASSISTANT_EFFORT: 'medium',
+        JARVIS_ASSISTANT_ESCALATION_MODEL: 'claude-opus-6',
+        JARVIS_ASSISTANT_ESCALATION_EFFORT: 'xhigh',
         JARVIS_HA_MODE: 'live',
         JARVIS_HA_URL: 'https://ha.example.org',
         JARVIS_HA_TOKEN: 'tok',
@@ -204,6 +246,7 @@ describe('loadConfig', () => {
       agent: 'scripted',
       model: 'claude-haiku-5',
       effort: 'medium',
+      escalation: { model: 'claude-opus-6', effort: 'xhigh' },
       ha: { mode: 'live', url: 'https://ha.example.org', token: 'tok' },
       stt: { url: 'http://speaches:8000/v1', model: 'Systran/faster-whisper-small', key: 'k', language: 'en' },
       auth: ['ha', 'secret'],
@@ -235,6 +278,7 @@ describe('loadConfig', () => {
           JARVIS_SITE_DIR: '/nonexistent',
           JARVIS_ASSISTANT_AGENT: 'gpt',
           JARVIS_ASSISTANT_EFFORT: 'extreme',
+          JARVIS_ASSISTANT_ESCALATION_EFFORT: 'none',
           JARVIS_HA_MODE: 'live',
           JARVIS_STT_URL: 'speaches:8000',
           JARVIS_ASSISTANT_AUTH: 'anyone',
@@ -252,6 +296,7 @@ describe('loadConfig', () => {
       'JARVIS_SITE_DIR',
       'JARVIS_ASSISTANT_AGENT',
       'JARVIS_ASSISTANT_EFFORT',
+      'JARVIS_ASSISTANT_ESCALATION_EFFORT',
       'JARVIS_HA_URL',
       'JARVIS_HA_TOKEN',
       'JARVIS_STT_URL',

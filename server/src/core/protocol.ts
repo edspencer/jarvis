@@ -99,7 +99,7 @@ export interface WelcomeMsg {
   /** the last turns, so a reload or a second screen catches up */
   transcript: TranscriptEntry[];
   status: AssistantState;
-  /** what the server runs (shown in the panel's footer): 'claude-opus-5', 'scripted', … */
+  /** what the server runs (shown in the panel's footer): 'claude-sonnet-5', 'scripted', … */
   agent: string;
   /** whether POST /assistant/transcribe is configured */
   transcribe: boolean;

@@ -4,6 +4,9 @@
 // Every tool call also passes core/guard.ts twice (canUseTool and a PreToolUse hook), so a misconfiguration can't
 // open Bash, Write or a path outside the knowledge folder. Turns are serialised by the hub, so the house tools run
 // against the current turn's ToolRunner.
+// Models (core/escalation.ts decides): every turn starts on the default model and effort; an explicit ask switches
+// before the prompt goes in, think_harder mid-turn, and the turn's end switches back (or, failing that, the next turn
+// restarts the process). Opus 5.5's thinking can't be disabled, so `thinking` is never passed (a test checks).
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -19,14 +22,23 @@ import {
 } from '@anthropic-ai/claude-agent-sdk';
 import { z } from 'zod';
 import { checkToolUse } from './core/guard.ts';
-import { credentialWarning, type Effort } from './core/config.ts';
-import type { Agent, AgentEvent, ParamSpec, ToolRunner, ToolSpec, TurnInfo } from './core/types.ts';
+import { credentialWarning, type Effort, type Escalation } from './core/config.ts';
+import {
+  escalationChip,
+  escalationLog,
+  escalationStep,
+  wantsEscalation,
+  type EscalationTrigger,
+} from './core/escalation.ts';
+import type { Agent, AgentEvent, EscalateResult, ParamSpec, ToolRunner, ToolSpec, TurnInfo } from './core/types.ts';
 
 export interface SdkAgentOptions {
   tools: ToolSpec[];
   systemPrompt: string;
   model: string;
   effort: Effort;
+  /** the model and effort an escalated turn runs on; null/absent: off */
+  escalation?: Escalation | null;
   /** session.json lives here; also the empty working folder when there is no knowledge folder */
   dataDir: string;
   knowledgeDir: string | null;
@@ -152,6 +164,10 @@ export function createSdkAgent(o: SdkAgentOptions): Agent {
   let fresh = false; // reset(): don't resume
   let childVars: Record<string, string | undefined> = {}; // the env the current process got
   let lastInit = ''; // the session / model / credential last logged (the CLI re-sends init every turn)
+  const escalation = o.escalation ?? null;
+  let escalated = false; // this turn runs on the escalation model (or may: a switch that half failed)
+  let restart = false; // switching back failed: the next turn starts a new process (at the defaults)
+  let escalations = 0;
 
   const loadSession = (): string | undefined => {
     if (fresh) return undefined;
@@ -220,6 +236,7 @@ export function createSdkAgent(o: SdkAgentOptions): Agent {
     const options: Options = {
       model: o.model,
       effort: o.effort,
+      // no `thinking`: the models' adaptive default (Opus 5.5 can't run with thinking disabled)
       systemPrompt: o.systemPrompt,
       settingSources: [],
       tools: builtins,
@@ -269,6 +286,55 @@ export function createSdkAgent(o: SdkAgentOptions): Agent {
       } else log(`assistant: ${failure}`);
       endTurn({ error: failure });
     })();
+  }
+
+  /** switch the running process to the escalation model and effort for the rest of the turn */
+  async function escalate(why: EscalationTrigger): Promise<EscalateResult> {
+    const step = escalationStep(escalation, escalated);
+    if (!step.switch) return { ok: step.ok, detail: step.detail, ...(step.ok ? { model: escalation!.model } : {}) };
+    const e = escalation!;
+    const cur = q;
+    if (!cur || !turn) return { ok: false, detail: 'no turn is running' };
+    escalated = true; // before the calls: a half-done switch is still switched back
+    try {
+      await cur.setModel(e.model);
+      await cur.applyFlagSettings({ effortLevel: e.effort });
+    } catch (err) {
+      log(`assistant: cannot escalate to ${e.model}: ${(err as Error).message}`);
+      return { ok: false, detail: 'could not switch models; answer with the current one' };
+    }
+    log(escalationLog(e, why));
+    return {
+      ok: true,
+      detail: `switched to ${e.model} at ${e.effort} effort for the rest of this turn`,
+      model: e.model,
+    };
+  }
+
+  /** back to the default model and effort after an escalated turn; failing that, a new process next turn */
+  async function revert() {
+    if (!escalated) return;
+    escalated = false;
+    const cur = q;
+    if (!cur) return; // the process is gone: the next one starts at the defaults
+    try {
+      await cur.setModel(o.model);
+      await cur.applyFlagSettings({ effortLevel: o.effort });
+    } catch (err) {
+      log(
+        `assistant: cannot switch back to ${o.model} (${(err as Error).message}); the next turn restarts the session`,
+      );
+      restart = true;
+    }
+  }
+
+  /** stop the process (the session stays in session.json unless the caller clears it) */
+  function stop() {
+    const old = q;
+    q = null;
+    input?.end();
+    input = null;
+    old?.close();
   }
 
   function endTurn(d: { error?: string; interrupted?: boolean }) {
@@ -348,8 +414,15 @@ export function createSdkAgent(o: SdkAgentOptions): Agent {
   return {
     name: o.model,
 
-    run(prompt: string, _turn: TurnInfo, emit: (e: AgentEvent) => void, tools: ToolRunner) {
-      return new Promise<void>((resolve) => {
+    async run(prompt: string, info: TurnInfo, emit: (e: AgentEvent) => void, tools: ToolRunner) {
+      if (restart) {
+        // the last escalated turn couldn't switch back: a new process (resuming the session) starts at the defaults
+        restart = false;
+        log(`assistant: restarting the session on ${o.model} (${o.effort})`);
+        stop();
+      }
+      escalated = false;
+      const done = new Promise<void>((resolve) => {
         runner = tools;
         turn = {
           emit,
@@ -363,10 +436,27 @@ export function createSdkAgent(o: SdkAgentOptions): Agent {
           prompt,
           retried: false,
         };
-        if (!q) start();
-        input!.push(userMsg(prompt));
       });
+      const t = turn!;
+      if (!q) start();
+      if (escalation && wantsEscalation(info.text)) {
+        const r = await escalate('explicit ask');
+        if (r.ok && turn === t)
+          t.emit({
+            type: 'tool',
+            callId: `escalate-${++escalations}`,
+            name: 'think_harder',
+            summary: escalationChip(escalation),
+            status: 'done',
+          });
+      }
+      // while switching, the process may have died (the turn has ended, or its retry has pushed the prompt already)
+      if (turn === t && input && !t.retried) input.push(userMsg(prompt));
+      await done;
+      await revert();
     },
+
+    escalate: () => escalate('think_harder'),
 
     async interrupt() {
       if (!turn || !q) return;
@@ -381,11 +471,8 @@ export function createSdkAgent(o: SdkAgentOptions): Agent {
 
     async reset() {
       endTurn({ interrupted: true });
-      const old = q;
-      q = null;
-      input?.end();
-      input = null;
-      old?.close();
+      stop();
+      restart = false;
       fresh = true; // the next turn starts a new session (and a restart before it doesn't resume the old one)
       clearSession();
     },

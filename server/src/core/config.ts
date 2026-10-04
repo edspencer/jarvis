@@ -40,6 +40,8 @@ export interface AssistantConfig {
   agent: AgentKind;
   model: string;
   effort: Effort;
+  /** the model and effort a turn switches to for hard questions (core/escalation.ts); null: off */
+  escalation: Escalation | null;
   ha: { mode: 'mock' | 'live'; url?: string; token?: string };
   /** WebSearch / WebFetch for the agent */
   web: boolean;
@@ -64,9 +66,20 @@ export interface AssistantConfig {
   rateTranscribe: Rate;
 }
 
-// TODO(open question 1: model default for voice): a fast model at low effort with on-demand escalation, or a stronger
-// model always? Until that's settled the default is the strong model at low effort.
-export const DEFAULT_MODEL = 'claude-opus-5';
+/** a turn's escalated model and effort */
+export interface Escalation {
+  model: string;
+  effort: Effort;
+}
+
+// Open question 1, decided: a fast model at low effort for every turn, escalating to a stronger one for hard questions
+// (the person asks, or the model calls think_harder). Plain config, so a newer model is a config change only.
+export const DEFAULT_MODEL = 'claude-sonnet-5';
+export const DEFAULT_EFFORT: Effort = 'low';
+// Opus 5.5's own default effort is medium, so ours is explicit. Its thinking can't be disabled: nothing here may set
+// thinking off (agent-sdk.ts never passes `thinking`; a test checks).
+export const DEFAULT_ESCALATION_MODEL = 'claude-opus-5-5';
+export const DEFAULT_ESCALATION_EFFORT: Effort = 'high';
 
 /** the demo house, found from this file (so the defaults work from the repo root and from server/ alike) */
 export const DEMO_SITE = fileURLToPath(new URL('../../../examples/demo-site', import.meta.url));
@@ -94,6 +107,8 @@ export const CONFIG_KEYS = [
   'JARVIS_ASSISTANT_AGENT',
   'JARVIS_ASSISTANT_MODEL',
   'JARVIS_ASSISTANT_EFFORT',
+  'JARVIS_ASSISTANT_ESCALATION_MODEL',
+  'JARVIS_ASSISTANT_ESCALATION_EFFORT',
   'JARVIS_ASSISTANT_WEB',
   'JARVIS_ASSISTANT_TURN_TIMEOUT_S',
   'JARVIS_HA_MODE',
@@ -219,8 +234,19 @@ export function loadConfig(env: Env = process.env, cwd: string = process.cwd()):
 
   const model = get(e, 'JARVIS_ASSISTANT_MODEL') ?? DEFAULT_MODEL;
 
-  const effort = (get(e, 'JARVIS_ASSISTANT_EFFORT') ?? 'low') as Effort;
+  const effort = (get(e, 'JARVIS_ASSISTANT_EFFORT') ?? DEFAULT_EFFORT) as Effort;
   if (!EFFORTS.includes(effort)) problems.push(`JARVIS_ASSISTANT_EFFORT: one of ${EFFORTS.join(', ')}, not ${effort}`);
+
+  // set but empty, or `off`: no escalation
+  const escRaw = e.JARVIS_ASSISTANT_ESCALATION_MODEL;
+  const escOff = (escRaw !== undefined && !escRaw.trim()) || escRaw?.trim().toLowerCase() === 'off';
+  const escModel = get(e, 'JARVIS_ASSISTANT_ESCALATION_MODEL') ?? DEFAULT_ESCALATION_MODEL;
+  const escEffort = (get(e, 'JARVIS_ASSISTANT_ESCALATION_EFFORT') ?? DEFAULT_ESCALATION_EFFORT) as Effort;
+  if (!EFFORTS.includes(escEffort))
+    problems.push(`JARVIS_ASSISTANT_ESCALATION_EFFORT: one of ${EFFORTS.join(', ')}, not ${escEffort}`);
+  if (!escOff && /\s/.test(escModel))
+    problems.push(`JARVIS_ASSISTANT_ESCALATION_MODEL: a model id or off, not ${escModel}`);
+  const escalation: Escalation | null = escOff ? null : { model: escModel, effort: escEffort };
 
   const mode = (get(e, 'JARVIS_HA_MODE') ?? 'mock') as 'mock' | 'live';
   const haUrl = get(e, 'JARVIS_HA_URL');
@@ -314,6 +340,7 @@ export function loadConfig(env: Env = process.env, cwd: string = process.cwd()):
     agent,
     model,
     effort,
+    escalation,
     ha: { mode, url: haUrl, token: haToken },
     web: webRaw !== 'off',
     turnTimeoutMs: timeout * 1000,
