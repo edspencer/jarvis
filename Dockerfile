@@ -3,7 +3,7 @@
 #
 #   docker run -p 8080:80 -v ./my-site:/usr/share/nginx/html/site:ro ghcr.io/edspencer/jarvis
 
-FROM --platform=$BUILDPLATFORM node:22-alpine AS build
+FROM --platform=$BUILDPLATFORM node:22-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --include=dev --no-audit --no-fund
