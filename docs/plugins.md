@@ -123,7 +123,10 @@ know which connector an entity came from.
 - **Acting** goes through `store.call(entityIds, 'toggle' | 'turn_on' | 'turn_off', data?)`, which the store routes to
   the owning connector. The connector decides: Home Assistant allows only entities named in the site's controls file or
   its fixture map, at one choke point (`send()` in `src/plugins/home-assistant/policy.ts`), whatever the caller.
-  `store.refusal(ids, action)` says up front why a call would be refused, so a button can say "Can't switch: …".
+  `store.refusal(ids, action, data?)` says up front why a call would be refused, so a button can say "Can't switch:
+  …"; pass the same `data` as the call, since a connector may refuse on it (Home Assistant checks the data's keys
+  against what the service allows). The store hands it to each owning connector's `refusal(ids, action, data?)`, the
+  optional spec method that mirrors `call`'s checks.
 - **Bindings** say which entities belong to what: `store.bind({ ref: 'fixture:den.lamp', entities: ['light.den'],
 conf, src, meta })`. They come from the site's mapping files (the lights plugin reads the fixture map; pins bind a
   registry item's entities; faults a device's), so any plugin can ask `store.entitiesOf('pins:elec.panel.a')`. The
