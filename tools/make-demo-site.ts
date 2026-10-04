@@ -11,8 +11,9 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Document, Logger, NodeIO, type Material, type Mesh, type Node, type Scene } from '@gltf-transform/core';
-import { EXTMeshoptCompression, KHRMeshQuantization } from '@gltf-transform/extensions';
+import { EXTMeshoptCompression, KHRMeshQuantization, KHRTextureBasisu } from '@gltf-transform/extensions';
 import { meshopt } from '@gltf-transform/functions';
+import { encodeToKTX2 } from 'ktx2-encoder';
 import { MeshoptEncoder } from 'meshoptimizer';
 import * as prettier from 'prettier';
 import { Geo, Shape, toGltf, type V3 } from './demo-site/geometry.ts';
@@ -170,13 +171,30 @@ class Model {
     else this.scene.addChild(n);
     return n;
   }
+  /** a flat textured rectangle (plan corners, counter-clockwise seen from its front, from the bottom left), its
+   * image KTX2: the demo's one texture, so the viewer's Basis transcoder (and the CSP it needs) is exercised */
+  texturedQuad(name: string, corners: [V3, V3, V3, V3], normal: V3, ktx2: Uint8Array, extras = {}): Node {
+    this.doc.createExtension(KHRTextureBasisu).setRequired(true);
+    const tex = this.doc.createTexture(name).setImage(ktx2).setMimeType('image/ktx2');
+    const mat = this.doc.createMaterial(name).setBaseColorTexture(tex).setRoughnessFactor(0.6).setMetallicFactor(0);
+    const acc = (type: 'VEC2' | 'VEC3' | 'SCALAR', arr: Float32Array<ArrayBuffer> | Uint16Array<ArrayBuffer>) =>
+      this.doc.createAccessor().setType(type).setArray(arr).setBuffer(this.buffer);
+    const prim = this.doc
+      .createPrimitive()
+      .setAttribute('POSITION', acc('VEC3', new Float32Array(corners.flatMap(toGltf))))
+      .setAttribute('NORMAL', acc('VEC3', new Float32Array([0, 1, 2, 3].flatMap(() => toGltf(normal)))))
+      .setAttribute('TEXCOORD_0', acc('VEC2', new Float32Array([0, 1, 1, 1, 1, 0, 0, 0])))
+      .setIndices(acc('SCALAR', new Uint16Array([0, 1, 2, 0, 2, 3])))
+      .setMaterial(mat);
+    return this.node(name, this.doc.createMesh(name).addPrimitive(prim), extras);
+  }
   async write(file: string): Promise<number> {
     await MeshoptEncoder.ready;
     this.doc.createExtension(KHRMeshQuantization);
     this.doc.createExtension(EXTMeshoptCompression).setRequired(true);
     await this.doc.transform(meshopt({ encoder: MeshoptEncoder, level: 'medium' }));
     const io = new NodeIO()
-      .registerExtensions([EXTMeshoptCompression, KHRMeshQuantization])
+      .registerExtensions([EXTMeshoptCompression, KHRMeshQuantization, KHRTextureBasisu])
       .registerDependencies({ 'meshopt.encoder': MeshoptEncoder });
     const bytes = await io.writeBinary(this.doc);
     await writeFile(file, bytes);
@@ -646,8 +664,60 @@ const PLATES: PlateSpec[] = [
 ];
 
 // ------------------------------------------------------------------ the main model
-function buildMain(): Model {
+/** the house-name plaque's picture, as KTX2 (Basis Universal UASTC, with mipmaps): a slate plate, a border and a
+ * blocky "12". Encoding is deterministic, so the committed demo.glb stays what this script writes. */
+async function plaqueKtx2(): Promise<Uint8Array> {
+  const c = new Canvas(128, 64);
+  const ink = [236, 230, 214, 255];
+  c.rect(0, 0, 128, 64, [44, 58, 66, 255]);
+  for (const [x0, y0, x1, y1] of [
+    [4, 4, 124, 7],
+    [4, 57, 124, 60],
+    [4, 4, 7, 60],
+    [121, 4, 124, 60],
+  ])
+    c.rect(x0, y0, x1, y1, ink);
+  // "1": a stem and a flag; "2": three bars and two uprights
+  for (const [x0, y0, x1, y1] of [
+    [44, 16, 52, 48],
+    [38, 16, 44, 22],
+    [62, 16, 88, 22],
+    [82, 16, 88, 32],
+    [62, 29, 88, 35],
+    [62, 29, 68, 48],
+    [62, 42, 90, 48],
+  ])
+    c.rect(x0, y0, x1, y1, ink);
+  const log = console.log;
+  console.log = () => {}; // the Basis encoder's progress lines
+  try {
+    return await encodeToKTX2(new Uint8Array(0), {
+      isUASTC: true,
+      generateMipmap: true,
+      imageDecoder: async () => ({ data: c.px, width: c.w, height: c.h }),
+    });
+  } finally {
+    console.log = log;
+  }
+}
+
+function buildMain(plaque: Uint8Array): Model {
   const m = new Model('jarvis tools/make-demo-site.ts');
+
+  // the house-name plaque left of the front door, on the south wall's outer face (a KTX2 texture)
+  const py = -EXT - 0.01;
+  m.texturedQuad(
+    'Plaque_house_name',
+    [
+      [7.2, py, 1.35],
+      [7.8, py, 1.35],
+      [7.8, py, 1.65],
+      [7.2, py, 1.65],
+    ],
+    [0, -1, 0],
+    plaque,
+    { kind: 'house name plaque' },
+  );
 
   // the site: lawn, front path, back terrace (one merged node)
   merged(m, 'Site', 'site', [
@@ -1762,7 +1832,7 @@ function blueprintIndex() {
 const json = (o: unknown) => JSON.stringify(o, null, 2) + '\n';
 async function main(): Promise<void> {
   await mkdir(join(OUT, 'blueprints'), { recursive: true });
-  const main = buildMain(),
+  const main = buildMain(await plaqueKtx2()),
     furn = buildFurniture();
   const sizes: Record<string, number> = {};
   sizes['demo.glb'] = await main.write(join(OUT, 'demo.glb'));

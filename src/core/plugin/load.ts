@@ -10,7 +10,8 @@ import type { PluginDef } from './types';
 export interface LoadedPlugins {
   /** built-in ones first (registry order), then the external ones (manifest order) */
   defs: PluginDef[];
-  /** each external plugin's declared letter keys (for the key registry's "doesn't declare it" warning) */
+  /** each external plugin's declared letter keys, the section's if it has them, else the plugin's own (for the key
+   * registry's "doesn't declare it" warning) */
   keys: Record<string, readonly string[]>;
 }
 
@@ -46,7 +47,7 @@ export async function loadPlugins(
   );
   const keys: Record<string, readonly string[]> = {};
   const external = await Promise.all(
-    Object.entries(site.external).map(async ([id, { module }]) => {
+    Object.entries(site.external).map(async ([id, { module, keys: declared }]) => {
       const refused = moduleRefusal(module, { page: o.page, manifest: site.url, origins: site.pluginOrigins });
       if (refused) {
         console.warn(`plugin ${id}: not loading ${module}: ${refused}`);
@@ -73,7 +74,7 @@ export async function loadPlugins(
         o.failed(id, problems.join('; '));
         return null;
       }
-      keys[id] = def.keys ?? [];
+      keys[id] = declared ?? def.keys ?? []; // the site's say wins
       // an external plugin starts from its section: autoStart is for the built-in ones
       return { ...def, autoStart: false };
     }),

@@ -525,7 +525,15 @@
       "properties": {
         "module": {
           "$ref": "#/$defs/path",
-          "description": "The plugin's ES module (its default export is the plugin), relative to the manifest. Its other fields are the plugin's own configuration (ctx.config)."
+          "description": "The plugin's ES module (its default export is the plugin), relative to the manifest. Its other fields, except keys, are the plugin's own configuration (ctx.config)."
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z]$"
+          },
+          "description": "The letter keys the plugin binds, if the site says so: wins over the plugin's own `keys`, so validate-site can check them without running its code. Not part of ctx.config."
         }
       },
       "description": "A plugin loaded from the site: module, plus whatever fields the plugin reads."

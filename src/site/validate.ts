@@ -52,7 +52,16 @@ const ROOT = schema as Schema;
 export function reservedKeys(m: Pick<SiteManifest, 'plugins'>): Set<string> {
   const ids = Object.keys(m.plugins || {});
   if (m.plugins?.['home-assistant']) ids.push('lights'); // Home Assistant starts the lights plugin too
-  return new Set([...CORE_KEYS, ...pluginKeys(ids)]);
+  return new Set([...CORE_KEYS, ...pluginKeys(ids), ...Object.values(externalKeys(m)).flat()]);
+}
+
+/** the keys external plugins' sections declare (`plugins.<id>.keys`), by id */
+export function externalKeys(m: Pick<SiteManifest, 'plugins'>): Record<string, string[]> {
+  return Object.fromEntries(
+    Object.entries((m.plugins || {}) as Record<string, unknown>)
+      .filter(([id, s]) => isExternalSection(s) && !Object.hasOwn(BUILTIN_PLUGINS, id) && Array.isArray(s.keys))
+      .map(([id, s]) => [id, (s as { keys: string[] }).keys]),
+  );
 }
 
 /** the layers with built-in behaviour (X cutaway hides roof and ceiling, U hides roofs, O toggles doors) */
@@ -285,6 +294,21 @@ export function checkRules(m: SiteManifest): ValidationResult {
     warnings.push({
       path: 'plugins["home-assistant"].url',
       message: 'no URL: only ?ha=mock will work',
+    });
+
+  // external plugins' declared keys: free of the core's, the built-in plugins' and each other's (the site's layers are
+  // checked against them above, through reservedKeys)
+  const builtinIds = Object.keys(p);
+  if (p['home-assistant']) builtinIds.push('lights');
+  const taken = new Map<string, string>([
+    ...CORE_KEYS.map((k) => [k, "the viewer's"] as [string, string]),
+    ...pluginKeys(builtinIds).map((k) => [k, "a built-in plugin's"] as [string, string]),
+  ]);
+  for (const [id, ks] of Object.entries(externalKeys(m)))
+    ks.forEach((k, i) => {
+      const who = taken.get(k);
+      if (who) errors.push({ path: `${join(join('plugins', id), 'keys')}[${i}]`, message: `${k} is already ${who}` });
+      else taken.set(k, `plugins.${id}'s`);
     });
 
   // external plugins: an absolute module URL on an origin pluginOrigins doesn't list loads only from the viewer's own

@@ -188,14 +188,17 @@ export async function checkSite(manifestUrl: string, read: Reader, opts: CheckOp
   const taken = new Map<string, string>();
   for (const k of reservedKeys(site.manifest))
     taken.set(k, (CORE_KEYS as readonly string[]).includes(k) ? "the viewer's" : "a built-in plugin's");
+  for (const [id, ks] of Object.entries(site.external)) for (const k of ks.keys ?? []) taken.set(k, `plugins.${id}'s`);
   for (const l of site.layers) if (l.key) taken.set(l.key, `layer ${l.id}'s`);
-  for (const [id, { module }] of Object.entries(site.external)) {
+  for (const [id, { module, keys: declared }] of Object.entries(site.external)) {
     const what = `plugin ${id}`;
     const b = await file(module, `${what} module`, true);
     if (!b) continue;
+    // keys the section declares win, and were checked with the manifest's rules
+    const siteKeys = declared ? `, keys ${declared.join(' ') || 'none'} (the site's)` : '';
     if (!opts.importModule) {
       notes.push(
-        `${what}: ${short(module)} is there; its exports, keys and section weren't checked (--run-plugin-code runs it to check them)`,
+        `${what}: ${short(module)} is there${siteKeys}; its exports${declared ? '' : ', keys'} and section weren't checked (--run-plugin-code runs it to check them)`,
       );
       continue;
     }
@@ -211,13 +214,16 @@ export async function checkSite(manifestUrl: string, read: Reader, opts: CheckOp
     const { def, problems } = pluginOf(mod, id);
     errors.push(...problems.map((l) => `${what}: ${short(module)}: ${l}`));
     if (!def) continue;
-    for (const k of def.keys ?? []) {
-      const who = taken.get(k);
-      if (who) errors.push(`${what}: its key ${k} is already ${who}`);
-      else taken.set(k, `plugin ${id}'s`);
-    }
+    if (!declared)
+      for (const k of def.keys ?? []) {
+        const who = taken.get(k);
+        if (who) errors.push(`${what}: its key ${k} is already ${who}`);
+        else taken.set(k, `plugin ${id}'s`);
+      }
     errors.push(...configProblems(def, p[id]).map((l) => `plugins.${id}: ${l}`));
-    notes.push(`${what}: ${short(module)}: ${def.name}${def.keys?.length ? `, keys ${def.keys.join(' ')}` : ''}`);
+    notes.push(
+      `${what}: ${short(module)}: ${def.name}${siteKeys || (def.keys?.length ? `, keys ${def.keys.join(' ')}` : '')}`,
+    );
   }
   report.ok = !errors.length;
   return report;

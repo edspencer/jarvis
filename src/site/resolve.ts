@@ -92,9 +92,9 @@ export interface Site {
     blueprints: BlueprintsConfig | null;
     energy: EnergyConfig | null;
   } & Record<string, unknown>;
-  /** the plugins loaded from the site (a section with a `module`), by id: the module's URL. Their sections, without
-   * `module`, are in `plugins` with the others. */
-  external: Record<string, { module: string }>;
+  /** the plugins loaded from the site (a section with a `module`), by id: the module's URL, and the keys the section
+   * declares (they win over the plugin's own). Their sections, without `module` and `keys`, are in `plugins`. */
+  external: Record<string, { module: string; keys?: string[] }>;
   /** where an external plugin's module may come from besides the viewer's origin (src/site/external.ts) */
   pluginOrigins: string[];
 }
@@ -208,7 +208,7 @@ export function resolveSite(m: SiteManifest, url: string): Site {
     floorPrefix: m.rooms?.floorPrefix || DEFAULTS.floorPrefix,
     walk: { ...DEFAULTS.walk, ...m.walk },
     plugins: {
-      ...Object.fromEntries(ext.map(([id, { module: _, ...config }]) => [id, config])),
+      ...Object.fromEntries(ext.map(([id, { module: _, keys: __, ...config }]) => [id, config])),
       'home-assistant': ha
         ? {
             ...ha,
@@ -232,7 +232,9 @@ export function resolveSite(m: SiteManifest, url: string): Site {
       blueprints: p.blueprints ? { ...p.blueprints, index: r(p.blueprints.index) } : null,
       energy: p.energy ? { ...p.energy, map: r(p.energy.map) } : null,
     },
-    external: Object.fromEntries(ext.map(([id, x]) => [id, { module: r(x.module) }])),
+    external: Object.fromEntries(
+      ext.map(([id, x]) => [id, { module: r(x.module), ...(x.keys ? { keys: x.keys } : {}) }]),
+    ),
     pluginOrigins: m.pluginOrigins || [],
   };
 }

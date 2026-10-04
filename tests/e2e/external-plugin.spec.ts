@@ -130,8 +130,10 @@ test('loads it from another origin the manifest allows', async ({ page }) => {
 });
 
 /** the demo manifest with Measure from its own folder, and that folder's origin allowed */
+const viewer = () => test.info().project.use.baseURL!;
 const hostile = (m: Manifest) => {
   m.plugins.measure = { module: 'plugins/measure.js' };
+  m.plugins['own-file'] = { module: `${viewer()}plugins/measure.js` }; // a file on the viewer's own origin
   m.pluginOrigins = [new URL(elsewhere()).origin];
 };
 
@@ -141,6 +143,7 @@ test("a manifest from another origin (?site=) can't bring code, whatever its plu
   expect(await twin<string>(page, 'twin.site.url')).toBe(`${base}site.json`);
   expect(await twin<boolean>(page, 'twin.host.running("measure")')).toBe(false);
   expect(measureJs(requests, base)).toBe(false);
+  expect(measureJs(requests, viewer())).toBe(false); // not even the viewer's own file
   await refused(page, /a manifest from another origin can't bring code/);
 });
 
@@ -152,7 +155,10 @@ test("an open redirect on the viewer's origin doesn't make another origin's mani
     models: { main: { url: string; parts?: string }; extra?: unknown[] };
   };
   m.models = { main: { url: `${base}${m.models.main.url}`, parts: `${base}${m.models.main.parts}` } };
-  m.plugins = { measure: { module: 'plugins/measure.js' } };
+  m.plugins = {
+    measure: { module: 'plugins/measure.js' },
+    'own-file': { module: `${viewer()}plugins/measure.js` }, // a file on the viewer's own origin
+  };
   m.pluginOrigins = [new URL(base).origin];
   mkdirSync('test-results/hostile-site', { recursive: true });
   writeFileSync('test-results/hostile-site/site.json', JSON.stringify(m));
@@ -162,6 +168,7 @@ test("an open redirect on the viewer's origin doesn't make another origin's mani
   expect(await twin<string>(page, 'twin.site.url')).toBe(target); // where it really came from
   expect(await twin<boolean>(page, 'twin.host.running("measure")')).toBe(false);
   expect(measureJs(requests, base)).toBe(false);
+  expect(measureJs(requests, viewer())).toBe(false); // not even the viewer's own file
   await refused(page, /a manifest from another origin can't bring code/);
 });
 

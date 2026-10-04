@@ -40,10 +40,13 @@ describe('moduleRefusal: where a module may come from', () => {
     expect(moduleRefusal('https://cdn.example.com/m.js', here)).toMatch(/isn't the viewer's origin: list it/);
     expect(moduleRefusal('https://cdn.example.com/m.js', { ...here, origins: ['https://cdn.example.com'] })).toBeNull();
   });
-  it("ignores a cross-origin manifest's pluginOrigins: a ?site= link can't bring code", () => {
+  it('a cross-origin manifest loads no external module at all, whatever its pluginOrigins say', () => {
     const away = { page, manifest: 'https://evil.example.net/site.json', origins: ['https://evil.example.net'] };
     expect(moduleRefusal('https://evil.example.net/m.js', away)).toMatch(/a manifest from another origin can't/);
-    expect(moduleRefusal('https://twin.example.org/plugins/m.js', away)).toBeNull(); // the viewer's own files
+    // not even a file on the viewer's own origin: its top-level code would run before it could be rejected
+    expect(moduleRefusal('https://twin.example.org/plugins/m.js', away)).toMatch(
+      /a manifest from another origin can't/,
+    );
   });
   it('only http(s)', () => {
     expect(moduleRefusal('data:text/javascript,export default 1', here)).toMatch(/^data: URLs aren't loaded/);
@@ -154,6 +157,46 @@ describe('the manifest', () => {
   });
 });
 
+describe("a section's keys win over the plugin's", () => {
+  it('are checked with the manifest: against the core, the built-ins, other plugins and the layers', () => {
+    const msgs = (p: Record<string, unknown>, layers?: SiteManifest['layers']) =>
+      validateManifest(withPlugins(p, layers ? { layers } : {})).errors.map((e) => `${e.path}: ${e.message}`);
+    expect(msgs({ measure: { module: 'm.js', keys: ['M'] } })).toEqual([]);
+    expect(msgs({ measure: { module: 'm.js', keys: ['W'] } })).toEqual([
+      "plugins.measure.keys[0]: W is already the viewer's",
+    ]);
+    expect(msgs({ measure: { module: 'm.js', keys: ['m'] } })[0]).toMatch(
+      /^plugins.measure.keys\[0\]: "m" doesn't match/,
+    );
+    expect(msgs({ a: { module: 'a.js', keys: ['Y'] }, b: { module: 'b.js', keys: ['Y'] } })).toEqual([
+      "plugins.b.keys[0]: Y is already plugins.a's",
+    ]);
+    expect(msgs({ measure: { module: 'm.js', keys: ['M'] } }, [{ id: 'mezz', label: 'Mezz', key: 'M' }])[0]).toMatch(
+      /^layers\[0\].key: M is one of the viewer's own keys/,
+    );
+  });
+  it("aren't ctx.config, and are what the runtime declares for the plugin", async () => {
+    const site = resolveSite(
+      withPlugins({ measure: { module: 'm.js', keys: ['Y'], decimals: 1 } }),
+      'https://t.example/site.json',
+    );
+    expect(site.plugins.measure).toEqual({ decimals: 1 });
+    expect(site.external.measure).toEqual({ module: 'https://t.example/m.js', keys: ['Y'] });
+    const r = await loadPlugins(
+      { ...site, url: 'https://t.example/site.json' },
+      {
+        enabled: () => true,
+        page: 'https://t.example/',
+        failed: () => {},
+        importModule: async () => ({ default: measure }),
+        fetch: ok,
+        builtins: {},
+      },
+    );
+    expect(r.keys).toEqual({ measure: ['Y'] }); // not the plugin's own ['M']
+  });
+});
+
 describe('validate-site', () => {
   const files = (extra: Record<string, string | undefined> = {}) => {
     const enc = (v: Uint8Array | string) => (typeof v === 'string' ? new TextEncoder().encode(v) : v);
@@ -181,6 +224,15 @@ describe('validate-site', () => {
     expect(importModule).toHaveBeenCalledWith('file:///site/plugins/measure.js');
     expect(r.errors).toEqual([]);
     expect(r.notes).toContain('plugin measure: plugins/measure.js: Measure, keys M');
+  });
+
+  it("knows a section's keys without running the plugin's code", async () => {
+    const m = withPlugins({ measure: { module: 'plugins/measure.js', keys: ['M'] } });
+    const r = await checkSite('file:///site/site.json', files({ 'site.json': site(m) }));
+    expect(r.errors).toEqual([]);
+    expect(r.notes).toContain(
+      "plugin measure: plugins/measure.js is there, keys M (the site's); its exports and section weren't checked (--run-plugin-code runs it to check them)",
+    );
   });
 
   it('reports a missing module, a key taken by a layer, and the problems validate() finds', async () => {

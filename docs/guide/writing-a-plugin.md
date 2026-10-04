@@ -136,10 +136,12 @@ ctx.keys.add({
 - **Esc** is shared, in a fixed order: one press closes the topmost modal, else is a text field's, else releases the
   mouse, else closes a menu or the search; then it goes to a plugin's Esc binding, the first whose `when` holds (an
   active tool is cancelled before the inspector closes, as in a CAD program); only then does it close the inspector.
-  So bind Esc with a `when` that holds only while there is something to cancel: plugins share the key that way.
+  So bind Esc with a `when` that holds only while there is something to cancel (one without a `when` is refused): plugins
+  share the key that way.
   Measure stops measuring with it; the next press closes the inspector the last measurement opened.
-- Every letter key is listed in the plugin's `keys` (step 2), so the site validator keeps a site layer's key off it;
-  the key registry warns about a letter that isn't listed.
+- Every letter key is listed in the plugin's `keys` (step 2), so the key registry can warn about a letter that isn't
+  listed and the site validator can keep a site layer's key off them; a site can declare them in its section too
+  (step 11), and then the site's list wins.
 
 ## 5. Take clicks: events and picking
 
@@ -457,12 +459,13 @@ npm run build-plugin -- docs/examples/measure.ts sites/measure-demo/plugins/meas
 run-time `import … from 'three'` is an error, since the viewer's own copy is `ctx.three.THREE`.
 
 **Turn it on.** Add the section to `plugins` in `sites/measure-demo/site.json`. `module` is resolved against the
-manifest; the other fields are the plugin's own (`ctx.config`, without `module`):
+manifest; `keys` (optional) declares the plugin's letter keys for the site; the other fields are the plugin's own
+(`ctx.config`, without `module` and `keys`):
 
 ```jsonc
 "plugins": {
   // …
-  "measure": { "module": "plugins/measure.js", "decimals": 2 }
+  "measure": { "module": "plugins/measure.js", "keys": ["M"], "decimals": 2 }
 }
 ```
 
@@ -471,23 +474,26 @@ npm run validate-site -- sites/measure-demo --run-plugin-code
 JARVIS_SITE=sites/measure-demo npm run dev
 ```
 
-`validate-site` checks that the module is there. `--run-plugin-code` also imports it (in Node: its code runs, so use it
-for code you trust) to check that it exports a plugin with this id, that its `keys` are free, and runs its `validate`
-on the section; without the flag none of the plugin's code runs. Open `http://localhost:5173/?ha=mock` (the demo's
+`validate-site` checks that the module is there and that the section's `keys` (the site's say about the plugin's
+letters, which wins over the plugin's own) are free. `--run-plugin-code` also imports the module (in Node: its code
+runs, so use it for code you trust) to check that it exports a plugin with this id, and runs its `validate` on the
+section; without the flag none of the plugin's code runs. Open `http://localhost:5173/?ha=mock` (the demo's
 Home Assistant is a placeholder: `ha=mock` makes up its states). Press Tab for the overview, M to measure, and click
 two points on the house: the line appears, the inspector opens on it, and the rail has a Measure button with a count.
 H lists its keys under Measure. If the plugin fails to load or start, a toast says why and the console has the stack.
 `tests/e2e/external-plugin.spec.ts` does all of this in a browser.
 
-**Outside a JARVIS checkout.** Any ES module bundler works; the plugin's project needs JARVIS only for the types
-(`npm install --save-dev github:edspencer/jarvis`, whose `jarvis/plugin` export is the API's TypeScript source). With
-esbuild:
+**A plugin in its own project.** Keep its source wherever you like and build it with a JARVIS checkout's
+`build-plugin`, which bundles the plugin's own imports too:
 
 ```sh
-npx esbuild src/measure.ts --bundle --format=esm --target=es2022 --external:three --outfile=dist/measure.js
+npm run build-plugin -- ../my-plugin/src/index.ts ../my-site/plugins/my-plugin.js
 ```
 
-A plugin can also skip the build: plain JavaScript with no imports at all, typed by a JSDoc comment if you like.
+That is the supported way: the viewer has no import map, so a module that still imports `jarvis/plugin` at run time
+doesn't load. (For the types in the plugin's own project, `npm install --save-dev github:edspencer/jarvis`: its
+`jarvis/plugin` export is the API's TypeScript source.) A plugin can also skip the build: plain JavaScript with no
+imports at all, typed by a JSDoc comment if you like.
 
 ```js
 /** @type {import('jarvis/plugin').PluginDef} */
@@ -499,10 +505,9 @@ export default {
 ```
 
 **Where the module may come from.** The site owner chooses the code their site runs, and the module runs with the
-viewer's full rights (it can read Home Assistant's tokens: see the README). So the viewer imports a module only from
-its own origin, unless the manifest lists another origin in `pluginOrigins` (and then only if the manifest itself is on
-the viewer's origin: a manifest opened with `?site=https://elsewhere/…` can bring data, never code), and never through
-a redirect. The container's Content-Security-Policy enforces the same in the browser; another origin has to be in its
+viewer's full rights (it can read Home Assistant's tokens: see the README). So the viewer imports external plugins only for a manifest
+on its own origin (one opened with `?site=https://elsewhere/…` can bring data, never code), only from its own origin
+or one the manifest lists in `pluginOrigins`, and never through a redirect. The container's Content-Security-Policy enforces the same in the browser; another origin has to be in its
 `JARVIS_PLUGIN_ORIGINS` too. [The reference](../plugins.md#external-plugins) has the details.
 
 **Building one into JARVIS** instead (a plugin for everyone, in a pull request) takes three edits: the code under

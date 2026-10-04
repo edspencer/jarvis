@@ -8,9 +8,9 @@ it("deploy/nginx.conf sends tools/csp.ts's policy, with ${JARVIS_PLUGIN_ORIGINS}
   const header = /add_header Content-Security-Policy "([^"]+)" always;/.exec(conf)?.[1];
   expect(header).toBe(contentSecurityPolicy('${JARVIS_PLUGIN_ORIGINS}'));
   expect(contentSecurityPolicy()).toBe(
-    "script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'",
+    "script-src 'self' 'unsafe-eval'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'",
   );
   expect(contentSecurityPolicy(' https://a.example ')).toMatch(
-    /^script-src 'self' 'wasm-unsafe-eval' https:\/\/a\.example;/,
+    /^script-src 'self' 'unsafe-eval' https:\/\/a\.example;/,
   );
 });

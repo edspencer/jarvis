@@ -30,14 +30,15 @@ there are no back-ports to older versions.
   authentication, or keep it on your LAN or VPN. The container sends `X-Robots-Tag: noindex` and a `robots.txt` that
   disallows everything, which keeps out well-behaved crawlers and nothing else.
 - **External plugins are code the site owner chooses.** A manifest section with a `module` loads that ES module into the
-  viewer, with the viewer's full rights (the tokens above included); JARVIS doesn't sandbox it. The viewer imports a
-  module only from its own origin, or from an origin the manifest lists in `pluginOrigins`, and that list counts only
-  for a manifest on the viewer's own origin (after redirects: a redirect to another host makes it that host's
-  manifest). A module URL that redirects is refused. An origin is scheme, host and port: a viewer under a sub-path
+  viewer, with the viewer's full rights (the tokens above included); JARVIS doesn't sandbox it. Only a manifest on
+  the viewer's own origin (after redirects: a redirect to another host makes it that host's manifest) loads external
+  plugins at all, and only from the viewer's origin or one the manifest lists in `pluginOrigins`. A module URL that redirects is refused. An origin is scheme, host and port: a viewer under a sub-path
   trusts its whole host, so don't serve it next to other people's scripts. These checks run in the page; the
-  enforcement is the Content-Security-Policy the container sends (`script-src 'self'` plus `JARVIS_PLUGIN_ORIGINS`):
-  behind your own server, send the same header (docs/deploy.md). Review a plugin's code as you would anything you
+  enforcement is the Content-Security-Policy the container sends (`script-src 'self' 'unsafe-eval'` plus
+  `JARVIS_PLUGIN_ORIGINS`): behind your own server, send the same header (docs/deploy.md). `'unsafe-eval'` is there
+  because three.js's Basis (KTX2) texture transcoder, an Emscripten build, creates functions with `new Function` in a
+  worker; without it a model with KTX2 textures doesn't load. It doesn't widen where script may come from. Review a plugin's code as you would anything you
   deploy there. `npm run validate-site` runs no plugin code unless you pass `--run-plugin-code`.
-- **`?site=<url>`** loads a manifest from any URL the browser can reach (with CORS). The manifest is data, not code (its
-  plugins load only from the viewer's own origin), but a hostile one can point the Home Assistant plugin at a server of its choosing, which would then get the OAuth
+- **`?site=<url>`** loads a manifest from any URL the browser can reach (with CORS). The manifest is data, not code (a
+  manifest from another origin loads no external plugin), but a hostile one can point the Home Assistant plugin at a server of its choosing, which would then get the OAuth
   redirect. Don't follow viewer links with a `?site=` you don't trust.

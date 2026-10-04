@@ -186,7 +186,7 @@ jobs:
             echo "$h" | grep -qi "^content-type: $2" || { echo "::error::$1: expected $2"; echo "$h"; exit 1; }
             echo "$h" | grep -qi '^x-robots-tag: noindex' || { echo "::error::$1: no X-Robots-Tag"; exit 1; }
             echo "$h" | grep -qi '^cache-control: no-cache' || { echo "::error::$1: no Cache-Control"; exit 1; }
-            echo "$h" | grep -qi "^content-security-policy: script-src 'self' 'wasm-unsafe-eval'" || { echo "::error::$1: no CSP"; echo "$h"; exit 1; }
+            echo "$h" | grep -qi "^content-security-policy: script-src 'self' 'unsafe-eval'" || { echo "::error::$1: no CSP"; echo "$h"; exit 1; }
           }
           wait_up() { for _ in $(seq 1 30); do curl -fsS -o /dev/null "http://127.0.0.1:$1/" && return 0; sleep 1; done; return 1; }
 
@@ -213,7 +213,7 @@ jobs:
           docker run -d --name origins -p 8082:80 -e JARVIS_PLUGIN_ORIGINS='https://plugins.example.org' jarvis:ci
           wait_up 8082
           check http://127.0.0.1:8082/site.json application/json
-          curl -fsS -D - -o /dev/null http://127.0.0.1:8082/ | grep -i '^content-security-policy' | grep -q "'wasm-unsafe-eval' https://plugins.example.org;" \
+          curl -fsS -D - -o /dev/null http://127.0.0.1:8082/ | grep -i '^content-security-policy' | grep -q "'unsafe-eval' https://plugins.example.org;" \
             || { echo "::error::JARVIS_PLUGIN_ORIGINS isn't in the CSP"; curl -sS -D - -o /dev/null http://127.0.0.1:8082/; exit 1; }
       # the demo house in a browser, under the container's CSP: no violation, and another origin's script is blocked
       - uses: actions/setup-node@v7

@@ -64,16 +64,19 @@ A section with a `module` loads a plugin from the site:
 - **Building one.** `jarvis/plugin`'s run-time exports are `definePlugin`, which returns its argument, and plain
   constants (`MATERIAL_PRIORITY`); everything else is types. So a bundled plugin is one self-contained file that needs nothing from the viewer at run time but `ctx`:
   three.js is `ctx.three.THREE` (import three's types with `import type`), and the HUD's components are custom elements
-  (`<jv-blocks>`, …). In a JARVIS checkout, `npm run build-plugin -- my-plugin.ts out.js` bundles one (and refuses a
-  run-time import of `three`); elsewhere, any bundler does (esbuild: `--bundle --format=esm --external:three`); plain
-  JavaScript with no imports needs no build at all. A module that still says `import … from 'jarvis/plugin'` at run
-  time doesn't load: the viewer has no import map for it. [The tutorial, step 11](guide/writing-a-plugin.md#11-load-it-on-the-demo-house)
+  (`<jv-blocks>`, …). **Build it with `npm run build-plugin -- path/to/plugin.ts out.js`** in a JARVIS checkout (the
+  plugin's source can live anywhere; its own imports are bundled in, and a run-time import of `three` is refused). A
+  module that still says `import … from 'jarvis/plugin'` at run time doesn't load: the viewer has no import map for
+  it, so bundle it (another bundler works too, the same way) or write plain JavaScript with no imports. [The tutorial, step 11](guide/writing-a-plugin.md#11-load-it-on-the-demo-house)
   walks through it.
-- **Keys.** List the letter keys the plugin binds in its `keys` (`keys: ['M']`): `validate-site --run-plugin-code`
-  reports one that a layer, the core or another plugin already has, and the key registry warns about a letter that
-  isn't listed. At run time the first binding of a key wins and a second is ignored with a warning, except that
+- **Keys.** List the letter keys the plugin binds in its `keys` (`keys: ['M']`); the key registry warns about a
+  letter that isn't listed. The site's section may declare them too (`"measure": { "module": "…", "keys": ["M"] }`),
+  and then the section wins: the site owner can see and check them without running the plugin, and `validate-site`
+  reports one that a layer, the core or another plugin already has (without a section `keys`, it learns the plugin's
+  own only with `--run-plugin-code`). `keys` isn't part of `ctx.config`. At run time the first binding of a key wins and a second is ignored with a warning, except that
   bindings which both have a `when` share the key (a press runs the first whose `when` holds): that is how several
-  plugins bind Esc.
+  plugins bind Esc. A plugin's Esc binding must have a `when` (one without is refused with a warning), so it can't take
+  the presses that close the inspector.
 - **Checking the section.** A plugin may export `validate(config)`, returning a list of problems. The viewer runs it
   before `setup` (a problem keeps the plugin off, with a toast). `npm run validate-site` checks that the module file is
   there and where it may load from; it runs no plugin code unless you ask: with `--run-plugin-code` it imports the
@@ -88,23 +91,29 @@ the site's data; JARVIS doesn't sandbox it. What is enforced is where code comes
 
 - An **origin** is a scheme, host and port (`https://twin.example.org`), never a path. A viewer deployed under a
   sub-path (`https://example.org/jarvis/`) trusts every script on its whole host.
-- A module on the **viewer's own origin** is allowed: whoever can put files there controls the page already.
+- **Only a manifest on the viewer's own origin loads external plugins.** A manifest opened from elsewhere
+  (`?site=https://other.example/site.json`) may show its building, but none of its external plugins load, whatever its
+  `pluginOrigins` say, not even a module on the viewer's own origin (any `.js` file there would run its top-level code
+  before the viewer could see it isn't a plugin, and an owner-hosted plugin would start with the stranger's config): a
+  link can't bring code onto your viewer. Built-in plugins still start.
+- From such a manifest, a module on the **viewer's own origin** is allowed: whoever can put files there controls the
+  page already.
 - A module on **another origin** loads only if the manifest lists that origin in `pluginOrigins`
-  (`"pluginOrigins": ["https://plugins.example.org"]`, one origin per entry), and only if the manifest itself is on
-  the viewer's origin. A manifest opened from elsewhere (`?site=https://other.example/site.json`) may show its
-  building, but its plugins load only from the viewer's origin, whatever its `pluginOrigins` say: a link can't bring
-  code onto your viewer. A cross-origin module also needs CORS headers on its server.
+  (`"pluginOrigins": ["https://plugins.example.org"]`, one origin per entry). A cross-origin module also needs CORS
+  headers on its server.
 - **Redirects** count where they end. The manifest's origin is the one it was finally fetched from, so a `?site=` that
   goes through a redirect on the viewer's origin to another host is a manifest from that host. A module URL that
   redirects is refused: the viewer fetches it once without following redirects before it imports it.
 - Only `http(s)` URLs: no `data:`, `blob:` or `javascript:` modules.
 - **The Content-Security-Policy enforces it.** The checks above run in the viewer's own code, and a server could still
   answer the import differently from the check. The container sends
-  `Content-Security-Policy: script-src 'self' 'wasm-unsafe-eval' <JARVIS_PLUGIN_ORIGINS>; worker-src 'self' blob:; …`
+  `Content-Security-Policy: script-src 'self' 'unsafe-eval' <JARVIS_PLUGIN_ORIGINS>; worker-src 'self' blob:; …`
   (`deploy/nginx.conf`, `tools/csp.ts`), so the browser itself runs scripts only from the viewer's origin and the
   origins you list when you start it (`docker run -e JARVIS_PLUGIN_ORIGINS="https://plugins.example.org" …`), wherever
   a redirect points. A plugin origin has to be in both lists: the manifest's `pluginOrigins` and the server's CSP.
-  Behind another server, send the same header ([deploying](deploy.md)).
+  Behind another server, send the same header ([deploying](deploy.md)). The policy allows `'unsafe-eval'`, because
+  three.js's Basis (KTX2) texture transcoder compiles with `new Function` in a worker; that doesn't widen where script
+  may come from, which stays the trust boundary.
 
 So review a plugin's code as you would anything you deploy on the viewer's origin, and prefer a copy on your own
 server to a third party's URL.

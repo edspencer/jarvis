@@ -13,9 +13,11 @@ export const isExternalSection = (v: unknown): v is { module: string } & Record<
 /**
  * Why the viewer won't import a plugin module from `moduleUrl`, or null if it may. The site owner chooses the code a
  * site runs, so the rule follows who controls what:
- * - a module on the viewer's own origin is always allowed (whoever can put files there already controls the page);
- * - one on another origin only if the manifest lists that origin in `pluginOrigins`, and the manifest itself is on the
- *   viewer's origin: a manifest opened from elsewhere (`?site=https://…`) can show its data but never bring code;
+ * - a manifest that isn't on the viewer's origin (`?site=https://…`, or a redirect there) loads no external plugin at
+ *   all: it can show its data but never run code, not even a same-origin file it names (any .js there would run its
+ *   top-level code before it could be rejected) nor the owner's own plugins with its config;
+ * - from a manifest on the viewer's origin: a module on that origin (whoever can put files there already controls the
+ *   page), or on another origin the manifest lists in `pluginOrigins`;
  * - only http(s): no data:, blob: or javascript: URLs.
  * An origin is scheme, host and port, never a path: a viewer under a sub-path trusts its whole host. The module's URL
  * must not redirect (moduleFetchRefusal), and the server's CSP enforces all this for the browser itself.
@@ -33,10 +35,10 @@ export function moduleRefusal(
   if (u.protocol !== 'https:' && u.protocol !== 'http:')
     return `${u.protocol} URLs aren't loaded: serve the module over http(s)`;
   const page = new URL(o.page).origin;
-  if (u.origin === page) return null;
   const manifest = new URL(o.manifest).origin;
   if (manifest !== page)
-    return `the module is on ${u.origin} and the site manifest on ${manifest}, not the viewer's origin (${page}): a manifest from another origin can't bring code`;
+    return `the site manifest is on ${manifest}, not the viewer's origin (${page}): a manifest from another origin can't bring code`;
+  if (u.origin === page) return null;
   if (o.origins.includes(u.origin)) return null;
   return `${u.origin} isn't the viewer's origin: list it in the manifest's pluginOrigins to allow it`;
 }

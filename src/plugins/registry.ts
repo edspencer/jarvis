@@ -1,6 +1,7 @@
 // The plugins that ship with the viewer, and the letter keys each one claims. Each is its own chunk, downloaded only
 // when the site enables it (a manifest section) or it starts on its own (`autoStart`, repeated here so the viewer
-// knows without loading the module; tests/unit/registry.test.ts checks the two agree). The keys are listed here, not
+// knows without loading the module; tests/unit/external-plugins.test.ts, "the registry's autoStart", checks
+// the two agree). The keys are listed here, not
 // only where the plugin registers them, so the site validator (which runs in Node, without the plugins) keeps a site
 // layer's key off them; the key registry warns if a plugin uses a letter it doesn't declare. A plugin that isn't
 // built in is loaded from the site instead (`plugins.<id>.module`, docs/plugins.md).

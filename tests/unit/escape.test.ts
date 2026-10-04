@@ -58,9 +58,12 @@ describe('Esc', () => {
     a = true;
     keys.handle(esc);
     expect(ran).toEqual(['b', 'a']);
-    // a binding without `when` still can't take a key that is already bound
+    // a plugin's Esc without `when` is refused: it would swallow the inspector's Esc
     keys.add('c', 'C', { code: 'Escape', label: 'always', run: () => ran.push('c') });
-    expect(keys.conflicts).toHaveLength(1);
+    expect(keys.conflicts).toEqual([
+      'keys: Esc (always, c) needs a `when`: bind Esc only while there is something to cancel; ignored',
+    ]);
+    expect(keys.list().map((k) => k.owner)).toEqual(['a', 'b']);
   });
 
   it("leaves a text field's Esc to the field (a plugin doesn't get it)", () => {

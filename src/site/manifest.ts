@@ -251,6 +251,8 @@ export interface EnergyConfig {
 export interface ExternalPluginConfig {
   /** the ES module whose default export is the plugin, relative to the manifest */
   module: string;
+  /** the letter keys it binds, as the site declares them: wins over the plugin's own `keys` (not in ctx.config) */
+  keys?: string[];
   [field: string]: unknown;
 }
 
