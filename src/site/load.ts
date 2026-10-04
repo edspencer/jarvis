@@ -48,7 +48,10 @@ export async function loadSite(
   const v = validateManifest(json);
   const warnings = formatIssues(v.warnings);
   if (!v.ok) throw new SiteError(url, formatIssues(v.errors), warnings);
-  return { site: resolveSite(json as Parameters<typeof resolveSite>[0], url), warnings };
+  // the manifest's own URL is where it came from after any redirects: its paths resolve there, and its origin decides
+  // whether it may bring plugin code (src/site/external.ts). A redirect on the viewer's origin to another one makes
+  // it a manifest from that other origin.
+  return { site: resolveSite(json as Parameters<typeof resolveSite>[0], res.url || url), warnings };
 }
 
 export type { Issue, Site };

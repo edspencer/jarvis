@@ -433,8 +433,9 @@ after click. Selected rows: accent left border plus raised surface.
 
 - Every control reachable by Tab when the pointer isn't locked; the rail is a `toolbar` (arrow keys move), the dock
   and inspector are `region`s with labels; the inspector's sections are disclosure buttons.
-- `F6` cycles regions (rail → dock → inspector → status → canvas); `Esc` closes the innermost (menu, modal,
-  inspector) after releasing pointer lock.
+- `F6` cycles regions (rail → dock → inspector → status → canvas); `Esc` closes the innermost (modal, menu, search)
+  after releasing pointer lock, then cancels a plugin's active tool (its Esc binding), then closes the inspector
+  (`src/core/escape.ts`).
 - Live values announce politely only on user request (no `aria-live` for streaming W); toasts are `aria-live=polite`,
   errors `assertive`.
 - Contrast ≥ 4.5:1 for text and 3:1 for UI boundaries on the surface over a white scene (worst case: the sky).

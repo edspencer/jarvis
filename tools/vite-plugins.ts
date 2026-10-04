@@ -14,6 +14,7 @@ const MIME: Record<string, string> = {
   '.ktx2': 'image/ktx2',
   '.wasm': 'application/wasm',
   '.js': 'text/javascript',
+  '.mjs': 'text/javascript',
   '.md': 'text/markdown; charset=utf-8',
 };
 

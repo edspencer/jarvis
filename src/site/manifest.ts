@@ -41,8 +41,12 @@ export interface SiteManifest {
   colliders?: Colliders;
   rooms?: Rooms;
   walk?: WalkParams;
-  /** each optional layer's configuration, keyed by plugin id; a plugin that isn't listed doesn't start */
+  /** each optional layer's configuration, keyed by plugin id; a plugin that isn't listed doesn't start. A section that
+   * isn't a built-in plugin's, with a `module`, loads that plugin from the site (an ExternalPluginConfig). */
   plugins?: PluginConfigs;
+  /** origins ('https://plugins.example.org') an external plugin's module may come from besides the viewer's own;
+   * honoured only when the manifest itself is on the viewer's origin */
+  pluginOrigins?: string[];
 }
 
 export interface Geo {
@@ -243,6 +247,16 @@ export interface EnergyConfig {
   map: string;
 }
 
+/** a plugin loaded from the site: its module, and whatever fields the plugin itself reads (its ctx.config) */
+export interface ExternalPluginConfig {
+  /** the ES module whose default export is the plugin, relative to the manifest */
+  module: string;
+  /** the letter keys it binds, as the site declares them: wins over the plugin's own `keys` (not in ctx.config) */
+  keys?: string[];
+  [field: string]: unknown;
+}
+
+/** the built-in plugins' sections (an external plugin's is an ExternalPluginConfig under its own id) */
 export interface PluginConfigs {
   'home-assistant'?: HomeAssistantConfig;
   lights?: LightsConfig;

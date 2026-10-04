@@ -27,6 +27,7 @@
     "screenshots": "node tools/screenshots.ts",
     "notices": "node tools/third-party-notices.ts",
     "bundle-size": "node tools/bundle-size.ts",
+    "build-plugin": "node tools/build-plugin.ts",
     "changeset": "changeset",
     "changeset:version": "changeset version && npm install --package-lock-only --ignore-scripts"
   },
@@ -55,6 +56,7 @@
     "eslint-config-prettier": "10.1.8",
     "globals": "17.13.0",
     "jsdom": "30.1.1",
+    "ktx2-encoder": "0.6.0",
     "meshoptimizer": "1.3.0",
     "prettier": "3.9.9",
     "typescript": "6.0.3",
