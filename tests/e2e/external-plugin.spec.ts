@@ -5,7 +5,7 @@
 // on another origin, even one reached through a redirect on the viewer's origin; never through a redirect. Another
 // variant drops the energy and blueprints sections, and their code is never fetched.
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type APIResponse, type Page, type Route } from '@playwright/test';
 import { buildPlugin } from '../../tools/build-plugin';
 import { openViewer, twin, waitForLayers } from './helpers';
 
@@ -21,6 +21,20 @@ type Manifest = { id: string; plugins: Record<string, unknown>; pluginOrigins?: 
 /** the dev server under another origin (localhost and 127.0.0.1 are different origins for the same server) */
 const elsewhere = () => test.info().project.use.baseURL!.replace('//localhost:', '//127.0.0.1:');
 
+/** answer a request from the real server, changed by `answer`; if the fetch fails (the page closed meanwhile, or the
+ * server dropped it), abort it instead of failing the test */
+async function proxy(
+  route: Route,
+  answer: (res: APIResponse) => Parameters<Route['fulfill']>[0] | Promise<Parameters<Route['fulfill']>[0]>,
+) {
+  try {
+    const res = await route.fetch();
+    await route.fulfill(await answer(res));
+  } catch {
+    await route.abort().catch(() => {});
+  }
+}
+
 /** open the viewer on the dev site with its manifest patched, serving the built Measure plugin at any
  * …/plugins/measure.js and answering /go?u=<url> with a redirect there (an open redirect on the viewer's origin);
  * the other origin answers with CORS headers, as a hostile host would. Returns every URL the page requested. */
@@ -30,22 +44,21 @@ async function openPatched(page: Page, patch: (m: Manifest) => void, query = 'ha
   const cors = { 'access-control-allow-origin': '*' };
   await page.route(
     (u) => u.origin === new URL(elsewhere()).origin,
-    async (route) => {
-      const res = await route.fetch();
-      await route.fulfill({ response: res, headers: { ...res.headers(), ...cors } });
-    },
+    // (a load still in flight when the test ends, or one the dev server drops under load, is just aborted)
+    (route) => proxy(route, (res) => ({ response: res, headers: { ...res.headers(), ...cors } })),
   );
   await page.route(
     (u) => u.pathname === '/go',
     (route) =>
       route.fulfill({ status: 302, headers: { location: new URL(route.request().url()).searchParams.get('u')! } }),
   );
-  await page.route('**/site.json', async (route) => {
-    const res = await route.fetch();
-    const m = (await res.json()) as Manifest;
-    patch(m);
-    await route.fulfill({ response: res, json: m, headers: { ...res.headers(), ...cors } });
-  });
+  await page.route('**/site.json', (route) =>
+    proxy(route, async (res) => {
+      const m = (await res.json()) as Manifest;
+      patch(m);
+      return { response: res, json: m, headers: { ...res.headers(), ...cors } };
+    }),
+  );
   await page.route('**/plugins/measure.js', (route) =>
     route.fulfill({ body: code, contentType: 'text/javascript', headers: cors }),
   );
