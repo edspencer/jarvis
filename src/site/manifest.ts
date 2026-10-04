@@ -243,6 +243,16 @@ export interface EnergyConfig {
   map: string;
 }
 
+/** The voice assistant's companion server (docs/design/voice-assistant.md). With no server reachable the plugin stays
+ * quiet: its status item says "Assistant offline" and it keeps retrying. */
+export interface AssistantConfig {
+  /** the server's base URL: '/assistant' (same origin, through the reverse proxy) or 'https://host:8787/assistant';
+   * relative to the page. The WebSocket is <server>/ws; transcription is POST <server>/transcribe */
+  server: string;
+  /** speak replies with the browser's speech synthesis (default true; the panel's toggle overrides it per browser) */
+  tts?: boolean;
+}
+
 export interface PluginConfigs {
   'home-assistant'?: HomeAssistantConfig;
   lights?: LightsConfig;
@@ -251,4 +261,5 @@ export interface PluginConfigs {
   switches?: SwitchesConfig;
   blueprints?: BlueprintsConfig;
   energy?: EnergyConfig;
+  assistant?: AssistantConfig;
 }

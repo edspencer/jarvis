@@ -140,6 +140,9 @@
     },
     "energy": {
       "map": "energy.json"
+    },
+    "assistant": {
+      "server": "/assistant"
     }
   }
 }

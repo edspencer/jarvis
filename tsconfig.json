@@ -18,5 +18,5 @@
     "resolveJsonModule": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["src", "tests", "docs/examples", "*.config.ts", "tools"]
+  "include": ["src", "tests", "docs/examples", "*.config.ts", "tools", "server/src/core", "server/test/*.ts"]
 }

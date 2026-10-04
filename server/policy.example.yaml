@@ -1,0 +1,58 @@
+# An EXAMPLE assistant policy for the demo building (examples/demo-site, served by the mock Home Assistant). It shows
+# every feature; it is not a recommendation. What the real defaults should be (what's "just do it", what's "ask first",
+# whether a garage door may be closed from a room speaker) is an open question (docs/design/voice-assistant.md §11.2).
+#
+# How it's read (server/src/core/policy.ts):
+#   - every entity of a call is matched against the rules in order; the FIRST matching rule wins;
+#   - nothing matches → denied. `default` can only be deny (and may be left out);
+#   - a rule has exactly one of allow / confirm / deny, holding its matcher. Matcher keys (all must match; a list means
+#     any of): domain, entity (globs with *), service ('*' for any), device_class, surface (screen | speaker);
+#   - a call's data may only carry keys the matching rule names: numbers in `bounds` ([min, max], outside → refused,
+#     never clamped) or strings / true / false in `data`. Anything else is refused;
+#   - the strictest entity decides the call (deny > confirm > allow), and one deny refuses the whole call;
+#   - unknown keys anywhere are errors, so a typo can't quietly widen the policy.
+# Not yet supported (open questions): `who:` (per-person rules) and area matching.
+version: 1
+default: deny
+
+# a call on more than 8 entities asks first, even if each one is allowed ("turn off every light")
+bulk: { confirm_over: 8 }
+
+rules:
+  # ---------------------------------------------------------------- never, however it's asked
+  - deny: { domain: lock, service: unlock }
+    reason: Unlocking is never done by the assistant
+  - deny: { domain: cover, device_class: garage, service: open_cover }
+    reason: The assistant doesn't open the garage door
+  - deny: { entity: ['switch.*network*', 'switch.*camera*'] }
+    reason: That switch powers the network or a camera
+  - deny: { domain: [homeassistant, automation, update, button], service: '*' }
+
+  # ---------------------------------------------------------------- ask first
+  # closing the garage door: only from a screen, where the person can see it ...
+  - confirm: { domain: cover, device_class: garage, service: close_cover, surface: screen }
+    reason: Closing the garage door; make sure nothing is in the way
+    risk: high
+  # ... and never from a voice-only speaker (this rule is reached only when the one above didn't match)
+  - deny: { domain: cover, device_class: garage }
+    reason: The garage door can only be closed from a screen
+  - confirm: { domain: lock, service: lock }
+  - confirm: { domain: climate, service: [set_temperature, set_hvac_mode] }
+    bounds: { temperature: [60, 85] }
+    data: [hvac_mode]
+  - confirm: { entity: script.goodnight, service: turn_on }
+    reason: Good night turns off every light in the house
+  # irrigation: ask, and never run longer than 30 minutes (closed again automatically)
+  - confirm: { domain: valve, service: [open_valve, close_valve] }
+    max_minutes: 30
+
+  # ---------------------------------------------------------------- just do it
+  - allow: { domain: light, service: [turn_on, turn_off, toggle] }
+    bounds: { brightness_pct: [1, 100], color_temp_kelvin: [2000, 6500] }
+  - allow: { entity: switch.bathroom_vanity, service: [turn_on, turn_off, toggle] }
+  - allow: { domain: [scene, script], service: turn_on }
+  - allow: { domain: fan, service: [turn_on, turn_off, set_percentage] }
+    bounds: { percentage: [0, 100] }
+  # the pond pump runs for at most an hour; `minutes` (≤ 60) may shorten it
+  - allow: { entity: 'switch.pond_pump', service: [turn_on, turn_off] }
+    max_minutes: 60

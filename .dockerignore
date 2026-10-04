@@ -8,3 +8,5 @@ playwright-report
 .github
 docs/design/img
 *.log
+# the optional assistant server is its own service, not part of the viewer image
+server

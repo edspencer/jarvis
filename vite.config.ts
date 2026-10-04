@@ -13,7 +13,9 @@ export default defineConfig({
   preview: { port: 4173, host: true },
   build: { target: 'es2022', sourcemap: true, chunkSizeWarningLimit: 1500 },
   test: {
-    include: ['tests/unit/**/*.test.ts'],
+    // server/test/*.test.ts: the assistant server's dependency-free core (policy, gate, hub); server/test/integration
+    // needs the server's own npm install and runs there (npm --prefix server test)
+    include: ['tests/unit/**/*.test.ts', 'server/test/*.test.ts'],
     environment: 'node',
     coverage: {
       provider: 'v8',

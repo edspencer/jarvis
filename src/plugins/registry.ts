@@ -21,6 +21,7 @@ export const BUILTIN_PLUGINS: Record<string, BuiltinPlugin> = {
   pins: { keys: ['P'], load: () => import('./pins/index.ts') },
   switches: { keys: ['L'], load: () => import('./switches/index.ts') },
   energy: { keys: ['J'], load: () => import('./energy/index.ts') },
+  assistant: { keys: ['M'], load: () => import('./assistant/index.ts') },
 };
 
 /** the letter keys of the built-in plugins a manifest enables (autoStart ones always count) */

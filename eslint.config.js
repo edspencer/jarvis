@@ -15,6 +15,9 @@ export default tseslint.config(
       'no-empty': ['error', { allowEmptyCatch: true }],
     },
   },
-  { files: ['*.config.{js,ts}', 'tools/**', 'tests/**'], languageOptions: { globals: { ...globals.node } } },
+  {
+    files: ['*.config.{js,ts}', 'tools/**', 'tests/**', 'server/**'],
+    languageOptions: { globals: { ...globals.node } },
+  },
   prettier,
 );

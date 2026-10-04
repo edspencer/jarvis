@@ -1,6 +1,7 @@
 // A validated manifest with every default filled in and every path turned into a URL: what the viewer and the plugins
 // read at run time. Pure (no DOM), so tests and the validate-site tool use it too.
 import type {
+  AssistantConfig,
   BlueprintsConfig,
   EnergyConfig,
   FaultsConfig,
@@ -88,6 +89,8 @@ export interface Site {
     switches: SwitchesConfig | null;
     blueprints: BlueprintsConfig | null;
     energy: EnergyConfig | null;
+    /** `server` as written, minus a trailing slash (the plugin resolves it against the page, not the manifest) */
+    assistant: AssistantConfig | null;
   };
 }
 
@@ -218,6 +221,7 @@ export function resolveSite(m: SiteManifest, url: string): Site {
       switches: p.switches || null,
       blueprints: p.blueprints ? { ...p.blueprints, index: r(p.blueprints.index) } : null,
       energy: p.energy ? { ...p.energy, map: r(p.energy.map) } : null,
+      assistant: p.assistant ? { ...p.assistant, server: p.assistant.server.replace(/\/+$/, '') } : null,
     },
   };
 }

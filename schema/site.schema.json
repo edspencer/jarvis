@@ -435,6 +435,24 @@
               "description": "The energy map (schema/energy.schema.json): meters, their power and energy entities, and what they feed in the model."
             }
           }
+        },
+        "assistant": {
+          "type": "object",
+          "required": ["server"],
+          "additionalProperties": false,
+          "description": "The voice assistant (a dock panel, hold M to talk) through its companion server. With no server reachable the plugin stays quiet: its status item says \"Assistant offline\".",
+          "properties": {
+            "server": {
+              "type": "string",
+              "minLength": 1,
+              "pattern": "^(https?://|/|\\./|\\.\\./)",
+              "description": "The assistant server's base URL, relative to the page: \"/assistant\" (same origin, through the reverse proxy) or \"https://host:8787/assistant\". The WebSocket is <server>/ws (http becomes ws); transcription is POST <server>/transcribe."
+            },
+            "tts": {
+              "type": "boolean",
+              "description": "Speak replies with the browser's speech synthesis (default true); the panel's toggle overrides it per browser."
+            }
+          }
         }
       }
     }
