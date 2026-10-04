@@ -38,9 +38,9 @@ merge. If a test fails only in CI, the workflow run has the Playwright report an
 - **Changesets.** If users would notice the change (the viewer, the manifest or model format, the tools, the
   container), add a changeset: `npx changeset`, choose patch / minor / major, write one line for the changelog. Docs,
   tests and CI changes don't need one. See [RELEASING.md](RELEASING.md).
-- **The demo house is generated.** Change `tools/make-demo-site.ts`, run `npm run demo-site`, commit the result. CI
-  fails if `examples/demo-site` isn't what the script writes. When you add a viewer feature, consider giving the demo
-  house something that exercises it, and an e2e test.
+- **The demo house is generated.** Change `tools/make-demo-site.ts` (or its modules in `tools/demo-site/`), run
+  `npm run demo-site`, commit the result. CI fails if `examples/demo-site` isn't what the script writes. When you add
+  a viewer feature, consider giving the demo house something that exercises it, and an e2e test.
 - **Formats are public.** The manifest (`schema/site.schema.json`), the model format (`docs/model-format.md`) and the
   plugins' data files are what people build sites against. Keep changes backwards compatible within `jarvis-site/1` /
   `jarvis-model/1`, and update the schema, the docs and `validate-site` together.
