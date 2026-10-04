@@ -1,6 +1,6 @@
 {
   "name": "jarvis",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "description": "A browser walkthrough for a building's digital twin (three.js), with live data layered on through plugins.",
   "license": "MIT",
