@@ -29,6 +29,11 @@ there are no back-ports to older versions.
   plan of a home with its devices. The viewer has no access control of its own: put it behind your reverse proxy's
   authentication, or keep it on your LAN or VPN. The container sends `X-Robots-Tag: noindex` and a `robots.txt` that
   disallows everything, which keeps out well-behaved crawlers and nothing else.
-- **`?site=<url>`** loads a manifest from any URL the browser can reach (with CORS). The manifest is data, not code,
-  but a hostile one can point the Home Assistant plugin at a server of its choosing, which would then get the OAuth
+- **External plugins are code the site owner chooses.** A manifest section with a `module` loads that ES module into the
+  viewer, with the viewer's full rights (the tokens above included); JARVIS doesn't sandbox it. The viewer imports a
+  module only from its own origin, or from an origin the manifest lists in `pluginOrigins`, and that list counts only
+  for a manifest on the viewer's own origin. Review a plugin's code as you would anything you deploy there.
+  `npm run validate-site` imports a site's local plugin modules in Node to check them (`--no-plugin-code` doesn't).
+- **`?site=<url>`** loads a manifest from any URL the browser can reach (with CORS). The manifest is data, not code (its
+  plugins load only from the viewer's own origin), but a hostile one can point the Home Assistant plugin at a server of its choosing, which would then get the OAuth
   redirect. Don't follow viewer links with a `?site=` you don't trust.

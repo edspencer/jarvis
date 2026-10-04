@@ -66,7 +66,9 @@ export function createKeyRegistry(
     const letter = /^Key([A-Z])$/.exec(k.code)?.[1];
     const declared = opts.declared?.(owner);
     if (letter && k.run && declared && !declared.includes(letter))
-      warn(`keys: ${owner} uses ${letter} but doesn't declare it (src/plugins/registry.ts)`);
+      warn(
+        `keys: ${owner} uses ${letter} but doesn't declare it (src/plugins/registry.ts, or an external plugin's keys)`,
+      );
     const e: KeyEntry = { ...k, owner, ownerName };
     entries.push(e);
     return {

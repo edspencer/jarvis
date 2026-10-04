@@ -147,9 +147,12 @@ More of the manifest, all optional (the [schema](schema/site.schema.json) docume
 ```
 
 A plugin starts only if the manifest has its section under `plugins` (the sun panel and the wall plates start on
-their own; the plates only if the model has some). Everything on screen comes from plugins through one API, the core
-included: see [Writing a plugin](docs/guide/writing-a-plugin.md) and the API reference,
-[docs/plugins.md](docs/plugins.md).
+their own; the plates only if the model has some), and only its code is downloaded. Everything on screen comes from
+plugins through one API, the core included: see [Writing a plugin](docs/guide/writing-a-plugin.md) and the API
+reference, [docs/plugins.md](docs/plugins.md). A plugin of your own needs no fork: build it into one ES module and give
+the site a section that names it (`"measure": { "module": "plugins/measure.js" }`), loaded from the viewer's own origin
+(or one the manifest lists in `pluginOrigins`). It runs with the viewer's full rights, so load only code you trust:
+[External plugins](docs/plugins.md#external-plugins).
 
 ### Home Assistant
 
@@ -184,7 +187,8 @@ that runs nothing else. More in [SECURITY.md](SECURITY.md).
 | `npm test` / `npm run test:watch`                 | unit tests (Vitest), once / watching                                                                              |
 | `npm run test:coverage`                           | unit tests with a coverage report in `coverage/`                                                                  |
 | `npm run test:e2e`                                | Playwright smoke tests against a dev server it starts (port 5192) on the site folder, in `?ha=mock`               |
-| `npm run validate-site -- <dir>`                  | check a site folder: manifest, files, models (exit 1 on errors)                                                   |
+| `npm run validate-site -- <dir>`                  | check a site folder: manifest, files, models, external plugins (exit 1 on errors)                                 |
+| `npm run build-plugin -- <plugin.ts> <out.js>`    | bundle a plugin into one ES module a site loads (`plugins.<id>.module`: docs/plugins.md)                          |
 | `npm run demo-site`                               | regenerate the demo house in `examples/demo-site`                                                                 |
 | `npm run screenshots`                             | re-render the docs' pictures of the demo house (this README's, the HUD mockup's backgrounds)                      |
 | `npm run notices`                                 | regenerate `THIRD_PARTY_NOTICES.md` from the build (`npm run build` first; `-- --check` to only compare)          |
@@ -237,8 +241,8 @@ src/
     switches/             wall plates
     energy/               power and energy by meter: the panel, energy mode, the map (map.ts) and its maths (tree.ts)
 schema/site.schema.json   the manifest's JSON Schema; energy.schema.json, the energy map's
-tools/                    the Vite site-folder plugin, the validate-site CLI, the demo-house generator (and
-                          demo-site/), the docs' screenshots
+tools/                    the Vite site-folder plugin, the validate-site CLI, build-plugin (an external plugin's
+                          module), the demo-house generator (and demo-site/), the docs' screenshots
 examples/demo-site/       the demo house (generated: npm run demo-site)
 tests/unit/               Vitest (tests/fixtures/site: a synthetic site)
 tests/e2e/                Playwright
@@ -276,7 +280,7 @@ lists only the keys of the plugins that are running.
 | P / Shift-P      | equipment pins / through walls (dimmed)                                                                |
 | L / Shift-L      | wall plates / through walls                                                                            |
 | J / Shift-J      | energy mode: the house ghosted, metered rooms and objects tinted by load / the Energy panel            |
-| Esc              | release the mouse; then close the innermost menu, the search or the inspector                          |
+| Esc              | release the mouse; then close the innermost menu, the search or the inspector; then a plugin's own     |
 | Alt-← / Alt-→    | back / forward through what the inspector has shown                                                    |
 | F6 / Shift-F6    | move between the HUD's regions: the rail, the dock, the inspector, the status strip, the view          |
 

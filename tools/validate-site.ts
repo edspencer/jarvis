@@ -1,15 +1,19 @@
-// npm run validate-site -- <site folder | site.json>
+// npm run validate-site -- <site folder | site.json> [--no-plugin-code]
 // Checks a site folder: the manifest against its schema, the files it names, the models against docs/model-format.md.
-// Exits 1 if there are errors (warnings alone pass).
+// An external plugin's module is imported (run, in Node) to check what it exports, its keys and its section; with
+// --no-plugin-code only its presence is checked. Exits 1 if there are errors (warnings alone pass).
 import { readFile, stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { checkSite } from '../src/site/check-site.ts';
 
-const arg = process.argv[2];
-if (!arg || arg === '-h' || arg === '--help') {
-  console.log('usage: npm run validate-site -- <site folder | path to site.json>');
-  process.exit(arg ? 0 : 2);
+const args = process.argv.slice(2);
+const noCode = args.includes('--no-plugin-code');
+const arg = args.find((a) => !a.startsWith('-'));
+const help = args.includes('-h') || args.includes('--help');
+if (!arg || help) {
+  console.log('usage: npm run validate-site -- <site folder | path to site.json> [--no-plugin-code]');
+  process.exit(help ? 0 : 2);
 }
 let path = resolve(arg);
 if ((await stat(path).catch(() => null))?.isDirectory()) path = resolve(path, 'site.json');
@@ -22,7 +26,9 @@ const read = async (url: string): Promise<Uint8Array | null> => {
   }
 };
 
-const r = await checkSite(pathToFileURL(path).href, read);
+const r = await checkSite(pathToFileURL(path).href, read, {
+  importModule: noCode ? undefined : (url) => import(url),
+});
 const tty = process.stdout.isTTY;
 const c = (code: number, s: string) => (tty ? `\x1b[${code}m${s}\x1b[0m` : s);
 console.log(`${path}${r.site ? `: ${r.site.name} (${r.site.id})` : ''}`);

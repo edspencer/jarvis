@@ -863,9 +863,17 @@ export interface PluginDef<C = unknown> {
   requires?: string[];
   /** start after these if they are present (soft ordering) */
   after?: string[];
-  /** start even without a manifest section */
+  /** start even without a manifest section (built-in plugins only: an external one starts from its section) */
   autoStart?: boolean;
+  /** the letter keys it binds ('M' for KeyM), so `validate-site` keeps a site layer's key off them and the key
+   * registry warns about a letter it uses but doesn't list (a built-in plugin's are in src/plugins/registry.ts) */
+  keys?: readonly string[];
+  /** check the manifest section before setup: return the problems ('decimals: expected a whole number'), or nothing
+   * when it is fine. A problem stops the plugin, with a toast; `validate-site` runs it too. */
+  validate?(config: unknown): string[] | void;
   setup(ctx: PluginContext<C>): void | PluginInstance | Promise<void | PluginInstance>;
 }
 
+/** Types a plugin, and returns it unchanged: the API's only run-time export. A plugin bundled outside JARVIS inlines
+ * it, and needs nothing else from the viewer at run time but `ctx` (docs/plugins.md, "External plugins"). */
 export const definePlugin = <C = unknown>(def: PluginDef<C>): PluginDef<C> => def;

@@ -27,6 +27,7 @@
     "screenshots": "node tools/screenshots.ts",
     "notices": "node tools/third-party-notices.ts",
     "bundle-size": "node tools/bundle-size.ts",
+    "build-plugin": "node tools/build-plugin.ts",
     "changeset": "changeset",
     "changeset:version": "changeset version && npm install --package-lock-only --ignore-scripts"
   },

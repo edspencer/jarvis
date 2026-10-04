@@ -1,10 +1,13 @@
 // Checks a whole site: the manifest against its schema and rules, every file it names (present, parseable), each
 // model against the model format, and the parts and blueprint files. The caller supplies `read` (bytes for a URL, or
 // null if there is no such file), so the CLI reads the disk and the tests read memory. Files on another origin than
-// the manifest's are listed as not checked.
+// the manifest's are listed as not checked. An external plugin's module is imported (opts.importModule: the CLI runs
+// it in Node) to check what it exports.
 import { checkModel, checkParts, readGltfJson, type ModelReport } from './model-check.ts';
 import { resolveSite, type Site } from './resolve.ts';
-import { formatIssues, validateManifest } from './validate.ts';
+import { formatIssues, reservedKeys, validateManifest } from './validate.ts';
+import { configProblems, pluginOf } from './external.ts';
+import { CORE_KEYS } from '../core/plugin/keys.ts';
 import type { SiteManifest } from './manifest.ts';
 import { PLUGIN_FILE_CHECKS } from '../plugins/checks.ts';
 
@@ -22,7 +25,13 @@ export interface SiteReport {
 
 const text = (b: Uint8Array) => new TextDecoder().decode(b);
 
-export async function checkSite(manifestUrl: string, read: Reader): Promise<SiteReport> {
+export interface CheckOptions {
+  /** import an external plugin's module (a local file) to check what it exports, its keys and its section; without
+   * it, only the file's presence is checked */
+  importModule?: (url: string) => Promise<unknown>;
+}
+
+export async function checkSite(manifestUrl: string, read: Reader, opts: CheckOptions = {}): Promise<SiteReport> {
   const errors: string[] = [],
     warnings: string[] = [],
     notes: string[] = [];
@@ -172,6 +181,41 @@ export async function checkSite(manifestUrl: string, read: Reader): Promise<Site
       warnings.push(...formatIssues(v.warnings).map((l) => `${c.what}: ${l}`));
       for (const n of v.notes || []) notes.push(`${c.what}: ${n}`);
     }
+  }
+
+  // external plugins (src/site/external.ts): the module is there and exports a plugin, its keys are free, and its
+  // section passes the plugin's own validate()
+  const taken = new Map<string, string>();
+  for (const k of reservedKeys(site.manifest))
+    taken.set(k, (CORE_KEYS as readonly string[]).includes(k) ? "the viewer's" : "a built-in plugin's");
+  for (const l of site.layers) if (l.key) taken.set(l.key, `layer ${l.id}'s`);
+  for (const [id, { module }] of Object.entries(site.external)) {
+    const what = `plugin ${id}`;
+    const b = await file(module, `${what} module`, true);
+    if (!b) continue;
+    if (!opts.importModule) {
+      notes.push(`${what}: ${short(module)} (not run: its exports, keys and section are checked in the viewer)`);
+      continue;
+    }
+    let mod: unknown;
+    try {
+      mod = await opts.importModule(module);
+    } catch (e) {
+      warnings.push(
+        `${what}: ${short(module)} doesn't run outside a browser (${(e as Error).message}): its exports, keys and section are checked in the viewer only`,
+      );
+      continue;
+    }
+    const { def, problems } = pluginOf(mod, id);
+    errors.push(...problems.map((l) => `${what}: ${short(module)}: ${l}`));
+    if (!def) continue;
+    for (const k of def.keys ?? []) {
+      const who = taken.get(k);
+      if (who) errors.push(`${what}: its key ${k} is already ${who}`);
+      else taken.set(k, `plugin ${id}'s`);
+    }
+    errors.push(...configProblems(def, p[id]).map((l) => `plugins.${id}: ${l}`));
+    notes.push(`${what}: ${short(module)}: ${def.name}${def.keys?.length ? `, keys ${def.keys.join(' ')}` : ''}`);
   }
   report.ok = !errors.length;
   return report;

@@ -1,7 +1,8 @@
 // The example plugin of docs/guide/writing-a-plugin.md: measure the distance between two points on the model. M turns
-// measuring on and off; while it is on, a click takes a point instead of inspecting, and every two points make a
-// measurement: a line in the scene, a row in the Measure panel and a subject the inspector can show. Shift-M clears
-// them. tests/unit/measure-example.test.ts runs it.
+// measuring on and off (Esc stops it too); while it is on, a click takes a point instead of inspecting, and every two
+// points make a measurement: a line in the scene, a row in the Measure panel and a subject the inspector can show.
+// Shift-M clears them. tests/unit/measure-example.test.ts runs it; tests/e2e/external-plugin.spec.ts loads it into the
+// demo house as an external plugin (npm run build-plugin).
 import { definePlugin, type Subject } from 'jarvis/plugin';
 import type { Line, Vector3 } from 'three';
 
@@ -29,6 +30,19 @@ const RULER =
 export default definePlugin<MeasureConfig>({
   id: 'measure',
   name: 'Measure',
+  keys: ['M'], // the letters it binds: validate-site keeps a site layer's key off them
+  validate(config) {
+    const c = config as Record<string, unknown>;
+    return [
+      ...Object.keys(c)
+        .filter((k) => k !== 'colour' && k !== 'decimals')
+        .map((k) => `${k}: unknown field (expected colour, decimals)`),
+      c.colour !== undefined && typeof c.colour !== 'string' && "colour: expected a CSS colour ('#ffb000')",
+      c.decimals !== undefined &&
+        !(Number.isInteger(c.decimals) && (c.decimals as number) >= 0) &&
+        'decimals: expected a whole number',
+    ].filter((x): x is string => !!x);
+  },
   setup(ctx) {
     const colour = ctx.config.colour ?? '#ffb000';
     const decimals = ctx.config.decimals ?? 2;
@@ -114,6 +128,12 @@ export default definePlugin<MeasureConfig>({
       label: 'Clear the measurements',
       when: () => list.length > 0 || !!first,
       run: clear,
+    });
+    ctx.keys.add({
+      code: 'Escape',
+      label: 'Stop measuring',
+      when: () => measuring, // Esc is the core's first: a plugin gets it only when nothing else is open
+      run: () => setMeasuring(false),
     });
 
     ctx.events.on('click', (e) => {

@@ -6,6 +6,7 @@ import schema from '../../schema/site.schema.json' with { type: 'json' };
 import { MANIFEST_VERSION, type SiteManifest } from './manifest.ts';
 import { CORE_KEYS } from '../core/plugin/keys.ts';
 import { BUILTIN_PLUGINS, pluginKeys } from '../plugins/registry.ts';
+import { isExternalSection, PLUGIN_ID } from './external.ts';
 
 export interface Issue {
   /** where in the manifest, e.g. 'layers[1].key' ('' = the whole manifest) */
@@ -285,13 +286,29 @@ export function checkRules(m: SiteManifest): ValidationResult {
       path: 'plugins["home-assistant"].url',
       message: 'no URL: only ?ha=mock will work',
     });
+
+  // external plugins: an absolute module URL on an origin pluginOrigins doesn't list loads only from the viewer's own
+  const origins = m.pluginOrigins || [];
+  origins.forEach((o, i) => {
+    if (new URL(o).origin !== o)
+      errors.push({ path: `pluginOrigins[${i}]`, message: `not an origin (did you mean "${new URL(o).origin}"?)` });
+  });
+  for (const [id, section] of Object.entries(p as Record<string, unknown>)) {
+    if (!isExternalSection(section) || !/^[a-z][a-z\d+.-]*:/i.test(section.module)) continue; // relative: the manifest's origin
+    const origin = new URL(section.module).origin;
+    if (!origins.includes(origin))
+      warnings.push({
+        path: join(join('plugins', id), 'module'),
+        message: `${origin} isn't in pluginOrigins: the module loads only if the viewer is served from there`,
+      });
+  }
   return { ok: !errors.length, errors, warnings };
 }
 
+/** the built-in plugins' sections the schema describes */
+const SECTIONS: readonly string[] = Object.keys(ROOT.properties?.plugins?.properties || {});
 /** the plugin sections this build knows: the schema's, and the built-in plugins (sun has no section of its own) */
-export const KNOWN_PLUGINS: readonly string[] = [
-  ...new Set([...Object.keys(ROOT.properties?.plugins?.properties || {}), ...Object.keys(BUILTIN_PLUGINS)]),
-];
+export const KNOWN_PLUGINS: readonly string[] = [...new Set([...SECTIONS, ...Object.keys(BUILTIN_PLUGINS)])];
 
 /** edit distance, for "did you mean" (small strings only) */
 function distance(a: string, b: string): number {
@@ -306,17 +323,42 @@ function distance(a: string, b: string): number {
 /**
  * A plugins section this build doesn't know (written for a newer viewer, or a plugin that isn't built in) is a
  * warning, not an error: the plugin is skipped and the rest of the site loads. A typo inside a known plugin's section
- * is still an error (the schema). Returns the manifest without those sections, and the warnings.
+ * is still an error (the schema). A section with a `module` is an external plugin's: it stays, for the schema to check
+ * its `module` (the rest is the plugin's own), as long as its id is one a built-in plugin doesn't have. Returns the
+ * manifest without the skipped sections, and the issues.
  */
 function splitUnknownPlugins(value: unknown): { value: unknown; errors: Issue[]; warnings: Issue[] } {
   const v = value as { plugins?: unknown } | null;
   const p = v?.plugins;
   if (!p || typeof p !== 'object' || Array.isArray(p)) return { value, errors: [], warnings: [] };
-  const unknown = Object.keys(p).filter((k) => !KNOWN_PLUGINS.includes(k));
-  if (!unknown.length) return { value, errors: [], warnings: [] };
   const errors: Issue[] = [],
     warnings: Issue[] = [];
-  for (const k of unknown) {
+  const drop = new Set<string>();
+  for (const [k, section] of Object.entries(p)) {
+    const known = KNOWN_PLUGINS.includes(k);
+    if (isExternalSection(section)) {
+      if (known) {
+        errors.push({
+          path: join(join('plugins', k), 'module'),
+          message: `"${k}" is a built-in plugin: give an external plugin an id of its own`,
+        });
+        drop.add(k);
+      } else if (!PLUGIN_ID.test(k)) {
+        errors.push({
+          path: join('plugins', k),
+          message: `an external plugin's id is lower-case letters, digits and '-', starting with a letter`,
+        });
+        drop.add(k);
+      }
+      continue;
+    }
+    if (known && !SECTIONS.includes(k)) {
+      // a built-in plugin with no section (sun starts on its own)
+      errors.push({ path: join('plugins', k), message: `unknown field (the ${k} plugin takes no section)` });
+      drop.add(k);
+    }
+    if (known) continue;
+    drop.add(k);
     // a near miss of a known plugin ('Pins', 'light') is a typo: an error, as a typo in a known field is
     const near = KNOWN_PLUGINS.find(
       (x) => x.toLowerCase() === k.toLowerCase() || (k.length >= 4 && distance(x, k.toLowerCase()) <= 1),
@@ -328,7 +370,8 @@ function splitUnknownPlugins(value: unknown): { value: unknown; errors: Issue[];
         message: `site config for plugin '${k}', which this build doesn't have: skipped`,
       });
   }
-  const kept = Object.fromEntries(Object.entries(p).filter(([k]) => KNOWN_PLUGINS.includes(k)));
+  if (!drop.size) return { value, errors, warnings };
+  const kept = Object.fromEntries(Object.entries(p).filter(([k]) => !drop.has(k)));
   return { value: { ...v, plugins: kept }, errors, warnings };
 }
 

@@ -305,7 +305,9 @@
     },
     "plugins": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": {
+        "$ref": "#/$defs/externalPlugin"
+      },
       "properties": {
         "home-assistant": {
           "type": "object",
@@ -436,7 +438,16 @@
             }
           }
         }
-      }
+      },
+      "description": "Each optional plugin's configuration, keyed by plugin id; a plugin that isn't listed doesn't start (sun and switches start on their own). A section that isn't a built-in plugin's and has a module loads that plugin from the site (docs/plugins.md, External plugins)."
+    },
+    "pluginOrigins": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^https?://[^/?#]+$"
+      },
+      "description": "Origins (https://plugins.example.org) an external plugin's module may come from besides the viewer's own. Only honoured when the manifest itself is on the viewer's origin."
     }
   },
   "$defs": {
@@ -507,6 +518,17 @@
           "$ref": "#/$defs/names"
         }
       }
+    },
+    "externalPlugin": {
+      "type": "object",
+      "required": ["module"],
+      "properties": {
+        "module": {
+          "$ref": "#/$defs/path",
+          "description": "The plugin's ES module (its default export is the plugin), relative to the manifest. Its other fields are the plugin's own configuration (ctx.config)."
+        }
+      },
+      "description": "A plugin loaded from the site: module, plus whatever fields the plugin reads."
     }
   }
 }

@@ -3,6 +3,7 @@
 import type {
   BlueprintsConfig,
   EnergyConfig,
+  ExternalPluginConfig,
   FaultsConfig,
   Geo,
   HomeAssistantConfig,
@@ -17,6 +18,8 @@ import type {
   SwitchesConfig,
   Viewpoint,
 } from './manifest.ts';
+import { isExternalSection } from './external.ts';
+import { BUILTIN_PLUGINS } from '../plugins/registry.ts';
 
 export type Match = Required<LayerMatch>;
 
@@ -88,7 +91,12 @@ export interface Site {
     switches: SwitchesConfig | null;
     blueprints: BlueprintsConfig | null;
     energy: EnergyConfig | null;
-  };
+  } & Record<string, unknown>;
+  /** the plugins loaded from the site (a section with a `module`), by id: the module's URL. Their sections, without
+   * `module`, are in `plugins` with the others. */
+  external: Record<string, { module: string }>;
+  /** where an external plugin's module may come from besides the viewer's origin (src/site/external.ts) */
+  pluginOrigins: string[];
 }
 
 const FT = 0.3048;
@@ -168,6 +176,10 @@ export function resolveSite(m: SiteManifest, url: string): Site {
 
   const p = m.plugins || {};
   const ha = p['home-assistant'];
+  // the external plugins' sections (validateManifest kept only those with an id of their own)
+  const ext = Object.entries(p as Record<string, unknown>).filter(
+    (e): e is [string, ExternalPluginConfig] => isExternalSection(e[1]) && !Object.hasOwn(BUILTIN_PLUGINS, e[0]),
+  );
   return {
     manifest: m,
     url,
@@ -196,6 +208,7 @@ export function resolveSite(m: SiteManifest, url: string): Site {
     floorPrefix: m.rooms?.floorPrefix || DEFAULTS.floorPrefix,
     walk: { ...DEFAULTS.walk, ...m.walk },
     plugins: {
+      ...Object.fromEntries(ext.map(([id, { module: _, ...config }]) => [id, config])),
       'home-assistant': ha
         ? {
             ...ha,
@@ -219,6 +232,8 @@ export function resolveSite(m: SiteManifest, url: string): Site {
       blueprints: p.blueprints ? { ...p.blueprints, index: r(p.blueprints.index) } : null,
       energy: p.energy ? { ...p.energy, map: r(p.energy.map) } : null,
     },
+    external: Object.fromEntries(ext.map(([id, x]) => [id, { module: r(x.module) }])),
+    pluginOrigins: m.pluginOrigins || [],
   };
 }
 

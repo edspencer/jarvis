@@ -19,9 +19,10 @@ import { createPlayer, createWalker } from './player';
 import { createBus } from './plugin/events';
 import { createStorage, createUrl } from './plugin/env';
 import { createPluginHost } from './plugin/host';
+import { loadPlugins } from './plugin/load';
 import { createKeyRegistry } from './plugin/keys';
 import { createStore } from './plugin/store';
-import type { PluginDef, Subject, ViewApi } from './plugin/types';
+import type { Subject, ViewApi } from './plugin/types';
 import { createStage } from './stage';
 import { createSunlight } from './sunlight';
 import type { Keys, Mode, ViewState } from './types';
@@ -100,7 +101,10 @@ function startSite(site: Site, loading: Loading): void {
 
   const bus = createBus();
   const store = createStore();
-  const keyReg = createKeyRegistry({ declared: (owner) => BUILTIN_PLUGINS[owner]?.keys ?? null });
+  const externalKeys: Record<string, readonly string[]> = {}; // filled in when the external plugins have loaded
+  const keyReg = createKeyRegistry({
+    declared: (owner) => BUILTIN_PLUGINS[owner]?.keys ?? externalKeys[owner] ?? null,
+  });
   const services = new Map<string, unknown>();
   const extraProgress = new Map<string, { done(): void }>();
   const announced = new Set<string>();
@@ -508,24 +512,16 @@ function startSite(site: Site, loading: Loading): void {
       console.error(err);
     });
 
-  // The built-in plugins the site enables (and the autoStart ones), each its own chunk; a module that fails to load
-  // is reported and left out.
+  // The plugins the site enables (and the autoStart ones): only their code is downloaded (plugin/load.ts). One that
+  // fails to load is reported and left out.
   async function startPlugins(): Promise<void> {
-    const ids = Object.keys(BUILTIN_PLUGINS);
     const prog = hud.addProgress('Starting plugins…');
-    const defs: PluginDef[] = [];
-    await Promise.all(
-      ids.map(async (id) => {
-        try {
-          const m = await BUILTIN_PLUGINS[id].load();
-          if (enabled(id) || m.default.autoStart) defs.push(m.default as PluginDef);
-        } catch (err) {
-          console.warn(`plugin ${id} didn't load (${(err as Error).message})`);
-          if (enabled(id)) hud.toast({ text: `The ${id} plugin didn't load`, tone: 'warn' });
-        }
-      }),
-    );
-    defs.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+    const { defs, keys } = await loadPlugins(site, {
+      enabled,
+      page: location.href,
+      failed: (id, why) => hud.toast({ text: `The ${id} plugin didn't load: ${why}`, tone: 'warn', sticky: true }),
+    });
+    Object.assign(externalKeys, keys);
     await host.start(defs);
     bus.emit('ready', {});
     prog.done();

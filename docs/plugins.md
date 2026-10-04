@@ -25,49 +25,95 @@ export default definePlugin<{ zones: string }>({
 ```
 
 **When it starts.** Once the main model is in, for every plugin whose section is in the manifest (`plugins.<id>`), or
-that is marked `autoStart`. `ctx.config` is that section: a built-in plugin's, with its file paths resolved against the
-manifest; any other, as written (`ctx.load` resolves a relative path against the manifest either way). Plugins start in
-parallel; one waits only for those named in `requires` and `after`. Plugins caught in a cycle of `requires` / `after`
-don't start (a toast names the cycle); the others do.
+that is marked `autoStart` (built-in plugins only). Only those plugins' code is downloaded: a site without an energy
+section never fetches the energy plugin. `ctx.config` is that section: a built-in plugin's, with its file paths
+resolved against the manifest; any other, as written (`ctx.load` resolves a relative path against the manifest either
+way). If the plugin has a `validate(config)`, it runs first: any problem it returns keeps the plugin off, with a toast.
+Plugins start in parallel; one waits only for those named in `requires` and `after`. Plugins caught in a cycle of
+`requires` / `after` don't start (a toast names the cycle); the others do.
 
-**A section for a plugin this build doesn't have** (a site written for a newer viewer) is skipped with a warning in
-the console and from `validate-site`; the rest of the site loads. Inside a known plugin's section, an unknown field is
-still an error.
+**A section for a plugin this build doesn't have**, and without a `module` (a site written for a newer viewer), is
+skipped with a warning in the console and from `validate-site`; the rest of the site loads. Inside a built-in plugin's
+section, an unknown field is still an error.
 
 **When it fails.** If `setup` throws or rejects, or a required plugin isn't running, the plugin is stopped, everything
 it registered so far is disposed, and a toast says so ("Equipment pins is off: registry.json: HTTP 404"). The rest of
 the walkthrough carries on. An event handler that throws later is logged once and reported once; the frame loop keeps
 running.
 
-**Built-in plugins** are listed in [`src/plugins/registry.ts`](../src/plugins/registry.ts), each loaded as its own
-chunk, with the letter keys it claims (the site validator keeps a site layer's key off them; the key registry warns if a
-plugin uses a letter it didn't declare). That list is the only way a plugin is loaded: one of your own is added to it,
-and its section to the manifest schema (`schema/site.schema.json`), which names every section it checks ([the tutorial,
-step 11](guide/writing-a-plugin.md#11-register-it-and-try-it-on-the-demo-house)). The energy plugin and its map file
-have their own page, [`plugins/energy.md`](plugins/energy.md).
+**Where plugins come from.** The built-in ones are listed in [`src/plugins/registry.ts`](../src/plugins/registry.ts),
+each its own chunk, with the letter keys it claims. Any other plugin is an [external plugin](#external-plugins): the
+site loads it from a module of its own, and nothing in JARVIS changes. The energy plugin and its map file have their
+own page, [`plugins/energy.md`](plugins/energy.md).
+
+## External plugins
+
+A section with a `module` loads a plugin from the site:
+
+```jsonc
+// site.json
+"plugins": {
+  "measure": { "module": "plugins/measure.js", "decimals": 2 }
+}
+```
+
+- **The module** is an ES module, resolved against the manifest, whose default export is the plugin
+  (`export default definePlugin({ … })`). Its `id` must be the section's key. `ctx.config` is the section without
+  `module`. The id is lower-case letters, digits and `-`, and can't be a built-in plugin's.
+- **Building one.** `jarvis/plugin` has one run-time export, `definePlugin`, which returns its argument; everything else
+  is types. So a bundled plugin is one self-contained file that needs nothing from the viewer at run time but `ctx`:
+  three.js is `ctx.three.THREE` (import three's types with `import type`), and the HUD's components are custom elements
+  (`<jv-blocks>`, …). In a JARVIS checkout, `npm run build-plugin -- my-plugin.ts out.js` bundles one (and refuses a
+  run-time import of `three`); elsewhere, any bundler does (esbuild: `--bundle --format=esm --external:three`); plain
+  JavaScript with no imports needs no build at all. [The tutorial, step 11](guide/writing-a-plugin.md#11-load-it-on-the-demo-house)
+  walks through it.
+- **Keys.** List the letter keys the plugin binds in its `keys` (`keys: ['M']`): `validate-site` reports one that a
+  layer, the core or another plugin already has, and the key registry warns about a letter that isn't listed. At run
+  time the first binding of a key wins and a second is ignored with a warning, as for any plugin.
+- **Checking the section.** A plugin may export `validate(config)`, returning a list of problems. The viewer runs it
+  before `setup` (a problem keeps the plugin off, with a toast), and so does `validate-site`, which imports the module
+  in Node to check what it exports. A module that only runs in a browser is reported and checked in the viewer only;
+  `--no-plugin-code` skips importing it.
+- **Lazy.** The module is fetched only for a site that has the section, once the main model is in, like a built-in
+  plugin's chunk. A module that doesn't load or doesn't export a plugin is reported with a toast; the rest start.
+
+**Trust.** A plugin runs with the viewer's full rights: it sees the whole page, including Home Assistant's login tokens
+in `localStorage`, and can call the store like any plugin. The site owner chooses the code, the same way they choose
+the site's data; JARVIS doesn't sandbox it. What the viewer does enforce is where code comes from:
+
+- A module on the **viewer's own origin** is always allowed: whoever can put files there controls the page already.
+- A module on **another origin** loads only if the manifest lists that origin in `pluginOrigins`
+  (`"pluginOrigins": ["https://plugins.example.org"]`, an origin per entry, no path), and only if the manifest itself
+  is on the viewer's origin. A manifest opened from elsewhere (`?site=https://other.example/site.json`) may show its
+  building, but its plugins load only from the viewer's origin, whatever its `pluginOrigins` say: a link can't bring
+  code onto your viewer. A cross-origin module also needs CORS headers on its server.
+- Only `http(s)` URLs: no `data:`, `blob:` or `javascript:` modules.
+
+So review a plugin's code as you would anything you deploy on the viewer's origin, and prefer a copy on your own
+server to a third party's URL.
 
 ## `ctx`: what a plugin gets
 
-| Field                       | What                                                                                                                                                                                                                                                                                                                              |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`, `site`, `config`      | This plugin's id; the resolved manifest; this plugin's section                                                                                                                                                                                                                                                                    |
-| `load(path)`                | Fetch JSON relative to the manifest (a site mapping file: `ctx.load('irrigation.json')`)                                                                                                                                                                                                                                          |
-| `three`                     | `THREE`, `scene`, `camera`, `renderer`, `model` (root, fixtures, rooms, owners, groups, box, `ownerOf`), `P()` plan → world, `toPlan()` world → plan, `unit`                                                                                                                                                                      |
-| `view`                      | `state` (mode, cutaway, …), `setMode`, `fly(target, centre)` (stand off towards `centre`; `null`: away from the building), `flyTo(subject)`, `teleport`, `here()` (the walker's room), `aim()` (crosshair or mouse), `seen(p)`, `addVisibilityRule(fn)`, `applyVisibility`, `toggleLayer`, `layers()`, `requestShadows()`         |
-| `pick`                      | `at(ndc)` → subject; `model(ndc)`; `addScreenPicker` for markers drawn in screen space; `addResolver` to turn a model hit into your subject                                                                                                                                                                                       |
-| `events`                    | `frame`, `select`, `mode`, `visibility`, `model`, `pointerlock`, `click` (set `handled` to stop the inspect), `ready` (every plugin has started), and your own `'<id>:<name>'`                                                                                                                                                    |
-| `keys`                      | `add({ code, shift?, alt?, label, group?, when?, run, release? })`; help and tooltips are generated from it; `release` makes it a hold key (hold to talk): `run` once per press, `release` when it goes up. The movement keys (W A S D Q E C, Space, the arrows, Shift) are the core's, and so is Esc (it never reaches a plugin) |
-| `store`                     | The entity store (below)                                                                                                                                                                                                                                                                                                          |
-| `hud`                       | `addPanel` (a dock panel and its rail button), `addLegend`, `invalidate()`                                                                                                                                                                                                                                                        |
-| `inspector`                 | `addSection`, `registerSubject`, `describeObject`, `open`, `close`, `current`, `refresh`, `describe`, `resolve`, `refOf`                                                                                                                                                                                                          |
-| `status`                    | `addItem` (status strip), `addToggle` (a chip; its key and variants are registered for you), `progress(label)`                                                                                                                                                                                                                    |
-| `hover`, `search`           | Hover-label providers ("· on 82 %"), global search providers (`/`)                                                                                                                                                                                                                                                                |
-| `toast`, `confirm`, `modal` | Transient messages (`aria-live`; errors stay until dismissed), the standard confirm (never `window.confirm`), modals with blocks or your own content                                                                                                                                                                              |
-| `url`, `storage`            | Query parameters (`has`, `get`, `num`, `set`); per-site, per-plugin `localStorage`                                                                                                                                                                                                                                                |
-| `services`, `plugins`       | `services.provide(name, api)` / `get(name)` between plugins (looked up lazily: order doesn't matter); `plugins.has(id)`                                                                                                                                                                                                           |
-| `log`                       | `info`, `warn`, `error` to the console, prefixed with the plugin's id                                                                                                                                                                                                                                                             |
-| `expose(name, api)`         | Put an API on the console hook, `window.twin.<name>`                                                                                                                                                                                                                                                                              |
-| `own(disposer)`             | Tie anything else to the plugin's life                                                                                                                                                                                                                                                                                            |
+| Field                       | What                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`, `site`, `config`      | This plugin's id; the resolved manifest; this plugin's section                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `load(path)`                | Fetch JSON relative to the manifest (a site mapping file: `ctx.load('irrigation.json')`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `three`                     | `THREE`, `scene`, `camera`, `renderer`, `model` (root, fixtures, rooms, owners, groups, box, `ownerOf`), `P()` plan → world, `toPlan()` world → plan, `unit`                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `view`                      | `state` (mode, cutaway, …), `setMode`, `fly(target, centre)` (stand off towards `centre`; `null`: away from the building), `flyTo(subject)`, `teleport`, `here()` (the walker's room), `aim()` (crosshair or mouse), `seen(p)`, `addVisibilityRule(fn)`, `applyVisibility`, `toggleLayer`, `layers()`, `requestShadows()`                                                                                                                                                                                                                                          |
+| `pick`                      | `at(ndc)` → subject; `model(ndc)`; `addScreenPicker` for markers drawn in screen space; `addResolver` to turn a model hit into your subject                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `events`                    | `frame`, `select`, `mode`, `visibility`, `model`, `pointerlock`, `click` (set `handled` to stop the inspect), `ready` (every plugin has started), and your own `'<id>:<name>'`                                                                                                                                                                                                                                                                                                                                                                                     |
+| `keys`                      | `add({ code, shift?, alt?, label, group?, when?, run, release? })`; help and tooltips are generated from it; `release` makes it a hold key (hold to talk): `run` once per press, `release` when it goes up. The movement keys (W A S D Q E C, Space, the arrows, Shift) are the core's. **Esc** goes to a plugin last: one press closes the topmost modal, else is a text field's, else releases the mouse, else closes a menu, the search or the inspector; only then does it run a plugin's Esc binding (the first whose `when` holds), so bind it with a `when` |
+| `store`                     | The entity store (below)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `hud`                       | `addPanel` (a dock panel and its rail button), `addLegend`, `invalidate()`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `inspector`                 | `addSection`, `registerSubject`, `describeObject`, `open`, `close`, `current`, `refresh`, `describe`, `resolve`, `refOf`                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `status`                    | `addItem` (status strip), `addToggle` (a chip; its key and variants are registered for you), `progress(label)`                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `hover`, `search`           | Hover-label providers ("· on 82 %"), global search providers (`/`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `toast`, `confirm`, `modal` | Transient messages (`aria-live`; errors stay until dismissed), the standard confirm (never `window.confirm`), modals with blocks or your own content                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `url`, `storage`            | Query parameters (`has`, `get`, `num`, `set`); per-site, per-plugin `localStorage`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `services`, `plugins`       | `services.provide(name, api)` / `get(name)` between plugins (looked up lazily: order doesn't matter); `plugins.has(id)`                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `log`                       | `info`, `warn`, `error` to the console, prefixed with the plugin's id                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `expose(name, api)`         | Put an API on the console hook, `window.twin.<name>`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `own(disposer)`             | Tie anything else to the plugin's life                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 ## Subjects and the inspector
 

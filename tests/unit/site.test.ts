@@ -67,6 +67,7 @@ const FULL: SiteManifest = {
     blueprints: { index: 'bp/index.json', default: 'A-1' },
     energy: { map: 'e.json' },
   },
+  pluginOrigins: ['https://plugins.example.org'],
 };
 
 describe('the schema and the types agree', () => {

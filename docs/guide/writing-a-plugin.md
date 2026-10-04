@@ -10,7 +10,7 @@ so this page can't drift from working code.
 
 ## 1. What you'll build
 
-- **M** turns measuring on and off. While it is on, the status strip says what to click, and a click on the model takes
+- **M** turns measuring on and off (**Esc** stops it too). While it is on, the status strip says what to click, and a click on the model takes
   a point instead of inspecting.
 - Every two points make a measurement: a line in the scene, a row in a **Measure** panel, and an inspector page with the
   distance, its horizontal and vertical parts, the two ends in plan coordinates and a Delete button.
@@ -43,12 +43,17 @@ interface MeasureConfig {
 export default definePlugin<MeasureConfig>({
   id: 'measure',
   name: 'Measure',
+  keys: ['M'], // the letters it binds: validate-site keeps a site layer's key off them
+  // …
   setup(ctx) {
 ```
 
 - `id` is the manifest key (`plugins.measure`), the prefix of the plugin's own events (`measure:added`) and of its
   storage. `name` is what help, toasts and the inspector show.
-- `definePlugin<MeasureConfig>` types `ctx.config`. It does nothing at run time: it is there for the types.
+- `definePlugin<MeasureConfig>` types `ctx.config`. It does nothing at run time (it returns its argument): it is there
+  for the types. So a plugin needs nothing from JARVIS at run time but `ctx`, which is what lets it be built on its own
+  and loaded by a site (step 11).
+- `keys` lists the letter keys it binds (step 4).
 - No `requires` or `after`: Measure uses no other plugin. A plugin that reads Home Assistant's entities says
   `after: ['home-assistant']` (start after it if it is there); one that can't work without another says `requires`.
 - `setup` may be `async` (await a data file with `ctx.load`), and may return `{ dispose() }`. Measure needs neither.
@@ -78,6 +83,25 @@ let units = ctx.storage.get<Units>('units', ctx.site.units); // the person's cho
 - A data file (a mapping, a list of zones) is a path in the section, read with `ctx.load(ctx.config.file)`, which
   resolves it against the manifest. A failed load in `setup` is a failed start: the plugin is off with a toast.
 
+The section is the site's, so check it. `validate(config)` runs before `setup`, and `npm run validate-site` runs it
+too; it returns the problems, and any problem keeps the plugin off with a toast that lists them:
+
+```ts
+// docs/examples/measure.ts
+validate(config) {
+  const c = config as Record<string, unknown>;
+  return [
+    ...Object.keys(c)
+      .filter((k) => k !== 'colour' && k !== 'decimals')
+      .map((k) => `${k}: unknown field (expected colour, decimals)`),
+    c.colour !== undefined && typeof c.colour !== 'string' && "colour: expected a CSS colour ('#ffb000')",
+    c.decimals !== undefined &&
+      !(Number.isInteger(c.decimals) && (c.decimals as number) >= 0) &&
+      'decimals: expected a whole number',
+  ].filter((x): x is string => !!x);
+},
+```
+
 ## 4. Claim keys
 
 ```ts
@@ -94,6 +118,12 @@ ctx.keys.add({
   when: () => list.length > 0 || !!first,
   run: clear,
 });
+ctx.keys.add({
+  code: 'Escape',
+  label: 'Stop measuring',
+  when: () => measuring, // Esc is the core's first: a plugin gets it only when nothing else is open
+  run: () => setMeasuring(false),
+});
 ```
 
 - `code` is `KeyboardEvent.code` (`'KeyM'`, `'Digit1'`, `'Slash'`), so the key is the same on every keyboard layout.
@@ -102,10 +132,13 @@ ctx.keys.add({
   again; `release` makes a hold key.
 - Taken keys are reported, not shared: the movement keys (W A S D Q E C, Space, the arrows, Shift) and the core's view
   keys (X U G H N, Tab, `/`, `?`, and 1–9 for the viewpoints) are the core's, and a second binding of a taken key is
-  ignored with a console warning. **Esc** never reaches a plugin: the core uses it to close menus, search and the
-  inspector (and the browser to release the mouse). That is why Measure clears with Shift-M.
-- A letter key is declared again in the plugin registry (step 11), so the site validator keeps a site layer's key off
-  it.
+  ignored with a console warning.
+- **Esc** is shared, and the core goes first: one press closes the topmost modal, else leaves a text field to itself,
+  else releases the mouse, else closes a menu, the search or the inspector, in that order. Only when there is none of
+  those does it go to a plugin's Esc binding (the first whose `when` holds). So bind Esc with a `when`, for something
+  to cancel: Measure stops measuring with it, and the inspector it opened after a measurement takes the first press.
+- Every letter key is listed in the plugin's `keys` (step 2), so the site validator keeps a site layer's key off it;
+  the key registry warns about a letter that isn't listed.
 
 ## 5. Take clicks: events and picking
 
@@ -405,56 +438,73 @@ handler is left. The test lives in `tests/unit/` and runs with `npx vitest run`;
 [`tests/unit/doc-example.test.ts`](../../tests/unit/doc-example.test.ts): it runs the irrigation example against the
 real store and Home Assistant's allow-list.
 
-## 11. Register it and try it on the demo house
+## 11. Load it on the demo house
 
-The viewer loads only the plugins in [`src/plugins/registry.ts`](../../src/plugins/registry.ts); there is no other
-way in. Adding one takes three edits in your checkout:
+A site loads a plugin that isn't built into JARVIS from a module of its own: a section with a `module`, an ES module
+whose default export is the plugin. Nothing in JARVIS changes, and no fork is needed.
 
-1. **The code.** Put the plugin under `src/plugins/`, e.g. `src/plugins/measure/index.ts` (a copy of
-   `docs/examples/measure.ts`; the `jarvis/plugin` import works from anywhere in the repo).
-2. **The registry.** One line in `BUILTIN_PLUGINS`, with the letter keys it claims (each plugin is its own
-   chunk):
-
-   ```ts
-   measure: { keys: ['M'], load: () => import('./measure/index.ts') },
-   ```
-
-3. **The manifest schema.** `site.json` is validated against
-   [`schema/site.schema.json`](../../schema/site.schema.json) before anything starts, and its `plugins` object takes
-   only the sections it names. Without this, a site with a `measure` section doesn't load at all
-   (`plugins.measure: unknown field`). Add a property next to the others:
-
-   ```json
-   "measure": {
-     "type": "object",
-     "additionalProperties": false,
-     "properties": {
-       "colour": { "type": "string" },
-       "decimals": { "type": "integer", "minimum": 0 }
-     }
-   }
-   ```
-
-   (`src/site/manifest.ts`'s `PluginConfigs` is the same list as a type; add the section there too to keep them
-   alike.)
-
-A plugin marked `autoStart: true` starts without a section, so it skips the schema edit, but then it has no
-configuration and can't be turned off per site.
-
-**Try it.** Don't edit `examples/demo-site/`: it is generated by `tools/make-demo-site.ts`, and CI fails if it differs.
-Copy it into `sites/`, which git ignores, and add the section there:
+**Build the module.** A plugin's only run-time import from `jarvis/plugin` is `definePlugin`, which returns its
+argument, so a bundler inlines it and the result is one self-contained file. In a JARVIS checkout:
 
 ```sh
-cp -r examples/demo-site sites/measure-demo
-# add "measure": { "decimals": 2 } to "plugins" in sites/measure-demo/site.json
+cp -r examples/demo-site sites/measure-demo   # sites/ is git-ignored; examples/demo-site is generated, don't edit it
+npm run build-plugin -- docs/examples/measure.ts sites/measure-demo/plugins/measure.js
+```
+
+`build-plugin` (`tools/build-plugin.ts`) bundles everything the plugin imports into the one file, except three.js: a
+run-time `import … from 'three'` is an error, since the viewer's own copy is `ctx.three.THREE`.
+
+**Turn it on.** Add the section to `plugins` in `sites/measure-demo/site.json`. `module` is resolved against the
+manifest; the other fields are the plugin's own (`ctx.config`, without `module`):
+
+```jsonc
+"plugins": {
+  // …
+  "measure": { "module": "plugins/measure.js", "decimals": 2 }
+}
+```
+
+```sh
 npm run validate-site -- sites/measure-demo
 JARVIS_SITE=sites/measure-demo npm run dev
 ```
 
-Open `http://localhost:5173/?ha=mock` (the demo's Home Assistant is a placeholder: `ha=mock` makes up its states).
-Press Tab for the overview, M to measure, and click two points on the house: the line appears, the inspector opens on
-it, and the rail has a Measure button with a count. H lists the two keys under Measure. If the plugin fails to start, a
-toast says why and the console has the stack.
+`validate-site` checks that the module is there, imports it (in Node) to check that it exports a plugin with this id,
+that its `keys` are free, and runs its `validate` on the section. Open `http://localhost:5173/?ha=mock` (the demo's
+Home Assistant is a placeholder: `ha=mock` makes up its states). Press Tab for the overview, M to measure, and click
+two points on the house: the line appears, the inspector opens on it, and the rail has a Measure button with a count.
+H lists its keys under Measure. If the plugin fails to load or start, a toast says why and the console has the stack.
+`tests/e2e/external-plugin.spec.ts` does all of this in a browser.
+
+**Outside a JARVIS checkout.** Any ES module bundler works; the plugin's project needs JARVIS only for the types
+(`npm install --save-dev github:edspencer/jarvis`, whose `jarvis/plugin` export is the API's TypeScript source). With
+esbuild:
+
+```sh
+npx esbuild src/measure.ts --bundle --format=esm --target=es2022 --external:three --outfile=dist/measure.js
+```
+
+A plugin can also skip the build: plain JavaScript with no imports at all, typed by a JSDoc comment if you like.
+
+```js
+/** @type {import('jarvis/plugin').PluginDef} */
+export default {
+  id: 'hello',
+  name: 'Hello',
+  setup: (ctx) => void ctx.toast(`Hello from ${ctx.site.name}`),
+};
+```
+
+**Where the module may come from.** The site owner chooses the code their site runs, and the module runs with the
+viewer's full rights (it can read Home Assistant's tokens: see the README). So the viewer imports a module only from
+its own origin, unless the manifest lists another origin in `pluginOrigins` (and then only if the manifest itself is on
+the viewer's origin: a manifest opened with `?site=https://elsewhere/…` can bring data, never code).
+[The reference](../plugins.md#external-plugins) has the details.
+
+**Building one into JARVIS** instead (a plugin for everyone, in a pull request) takes three edits: the code under
+`src/plugins/<id>/`, a line in [`src/plugins/registry.ts`](../../src/plugins/registry.ts) with its keys (each built-in
+plugin is its own chunk, downloaded only by the sites that enable it), and its section in
+[`schema/site.schema.json`](../../schema/site.schema.json) and `PluginConfigs` (`src/site/manifest.ts`).
 
 ## 12. Where next
 

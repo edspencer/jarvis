@@ -1,10 +1,11 @@
 // Keyboard and mouse. Every key that does something is in the key registry (help is generated from it); this file
 // holds the held movement keys, the pointer lock, the mouse look, clicks (inspect) and the HUD's keyboard rules:
-// F6 cycles the regions, Esc closes the innermost thing (the browser has already released the lock), and while a
+// F6 cycles the regions, Esc closes the innermost thing, else goes to a plugin (escape.ts), and while a
 // HUD control has focus, Space, Enter, Tab and the arrows belong to it.
 import * as THREE from 'three';
 import type { Hud } from '../ui/hud';
 import type { JvHud } from '../ui/shell';
+import { handleEscape } from './escape';
 import type { Picker } from './inspect';
 import type { Bus } from './plugin/events';
 import type { KeyRegistry } from './plugin/keys';
@@ -80,20 +81,30 @@ export function bindInput({
       hudEl.cycle(e.shiftKey);
       return;
     }
-    // a modal is open: no key reaches the view (the modal handles Esc and Tab itself; this catches focus that left it)
-    if (hud.modals.length) {
-      if (e.key === 'Escape') hud.closeModal(hud.modals.at(-1)!, false);
-      return;
-    }
     const tag = t?.tagName;
-    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || t?.isContentEditable) return;
+    const typing = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || !!t?.isContentEditable;
     if (e.key === 'Escape') {
-      // the browser releases the pointer lock itself; with the lock gone, Esc closes the innermost thing
-      if (hudEl.closeMenus()) return;
-      if (hud.searchOpen) return hud.closeSearch();
-      if (hud.subject) return hud.closeInspector();
+      // one thing per press, the core's first (escape.ts): the modal, the field, the lock, a menu, the search, the
+      // inspector; then a plugin's Esc binding
+      const to = handleEscape({
+        modal: () => hud.modals.length > 0,
+        closeModal: () => hud.closeModal(hud.modals.at(-1)!, false),
+        typing: () => typing,
+        locked: () => document.pointerLockElement === canvas,
+        unlock: () => document.exitPointerLock(),
+        closeMenus: () => hudEl.closeMenus(),
+        searchOpen: () => hud.searchOpen,
+        closeSearch: () => hud.closeSearch(),
+        inspectorOpen: () => !!hud.subject,
+        closeInspector: () => hud.closeInspector(),
+        plugin: () => keyReg.handle(e),
+      });
+      if (to === 'plugin') e.preventDefault();
       return;
     }
+    // a modal is open: no key reaches the view (the modal handles its keys itself; this catches focus that left it)
+    if (hud.modals.length) return;
+    if (typing) return;
     // a HUD control focused from the keyboard wants these; one focused by a mouse click doesn't keep the keys
     const inHud = path.includes(hudEl) && t !== hudEl;
     if (inHud && CONTROL_KEYS.includes(e.code) && keyboardFocus) return;
