@@ -127,7 +127,7 @@ Home Assistant's own frontend keeps them, so any code running on the viewer's or
 script injected by an extension) can read them and call Home Assistant directly with that user's rights. The
 allow-list guards against bugs and misclicks in the viewer and its plugins, not against hostile code on the page.
 **Log the viewer in as a dedicated, non-admin Home Assistant user**, not your own account, and serve it from an origin
-that runs nothing else.
+that runs nothing else. More in [SECURITY.md](SECURITY.md).
 
 ## Scripts
 

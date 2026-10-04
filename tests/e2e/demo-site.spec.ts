@@ -1,5 +1,5 @@
 // Checks that need a known building: the demo house (examples/demo-site, the default dev site), skipped on any other
-// site. The walker climbs the stair to the first floor and "where am I" names the room it arrives in.
+// site. The walker climbs the stair to the first floor and the status strip's place item names the room it arrives in.
 import { expect, test, type Page } from '@playwright/test';
 import { openViewer, twin } from './helpers';
 
@@ -47,6 +47,7 @@ test('walks up the stair to the landing', async () => {
   const p = await at();
   expect(p.Z, `standing on the first floor (at ${JSON.stringify(p)})`).toBeCloseTo(3.2, 1);
   await twin(page, 'twin.updateWhere()');
-  await expect(page.locator('#where')).toContainText('landing');
-  await expect(page.locator('#where')).toContainText('first floor');
+  const place = page.locator('jv-status [data-item="core.place"]'); // the status strip's "where am I"
+  await expect(place).toContainText(/landing/i);
+  await expect(place).toContainText('first floor');
 });

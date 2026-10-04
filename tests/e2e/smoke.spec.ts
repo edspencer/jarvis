@@ -182,11 +182,11 @@ test('V shows faults through walls (mock): chip, markers, legend, badge, and the
   await press('v');
   expect(await twin<boolean>(page, 'twin.faults.on')).toBe(true);
   await expect(chip('faults')).toHaveAttribute('aria-pressed', 'true');
-  await page.waitForFunction(
-    () => (window as unknown as { twin: { faults: { points: { visible: boolean } } } }).twin.faults.points.visible,
-    null,
-    { timeout: 180_000 },
-  );
+  // step the markers' update in the page instead of waiting for frames (a CI runner renders a frame or two a second)
+  expect(
+    await twin<boolean>(page, '(twin.faults.update(0.05), twin.faults.points.visible)'),
+    'fault markers drawn',
+  ).toBe(true);
   await expect(page.locator('jv-legend [data-legend="faults"]')).toContainText('Device health');
   await expect(page.locator('jv-rail button[data-panel="faults"] .badge')).not.toBeEmpty();
   await page.locator('jv-rail button[data-panel="faults"]').click();
@@ -396,7 +396,9 @@ test("the HUD's components work as custom elements for a plugin's own UI (<jv-me
     m.setAttribute('value', '1210');
     m.setAttribute('unit', 'W');
     const l = Object.assign(document.createElement('jv-list'), { rows: [{ text: 'Coffee machine', value: '900 W' }] });
-    const b = Object.assign(document.createElement('jv-blocks'), { blocks: [{ type: 'kv', rows: [['Today', '3.2 kWh']] }] });
+    const b = Object.assign(document.createElement('jv-blocks'), {
+      blocks: [{ type: 'kv', rows: [['Today', '3.2 kWh']] }],
+    });
     box.append(m, l, b);
     document.body.append(box);
   });
