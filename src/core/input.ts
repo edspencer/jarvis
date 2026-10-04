@@ -1,6 +1,6 @@
 // Keyboard and mouse. Every key that does something is in the key registry (help is generated from it); this file
 // holds the held movement keys, the pointer lock, the mouse look, clicks (inspect) and the HUD's keyboard rules:
-// F6 cycles the regions, Esc closes the innermost thing, else goes to a plugin (escape.ts), and while a
+// F6 cycles the regions, Esc cancels or closes the innermost thing (escape.ts), and while a
 // HUD control has focus, Space, Enter, Tab and the arrows belong to it.
 import * as THREE from 'three';
 import type { Hud } from '../ui/hud';
@@ -84,8 +84,8 @@ export function bindInput({
     const tag = t?.tagName;
     const typing = tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || !!t?.isContentEditable;
     if (e.key === 'Escape') {
-      // one thing per press, the core's first (escape.ts): the modal, the field, the lock, a menu, the search, the
-      // inspector; then a plugin's Esc binding
+      // one thing per press (escape.ts): the modal, the field, the lock, a menu, the search, a plugin's Esc binding
+      // (an active tool), then the inspector
       const to = handleEscape({
         modal: () => hud.modals.length > 0,
         closeModal: () => hud.closeModal(hud.modals.at(-1)!, false),

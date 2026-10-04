@@ -1,5 +1,5 @@
-// Esc: one thing per press, the core's first (modal, text field, pointer lock, menu, search, inspector), then a
-// plugin's Esc binding through the real key registry.
+// Esc: one thing per press: modal, text field, pointer lock, menu, search, then a plugin's Esc binding (through the
+// real key registry; several plugins share Esc by their `when`), then the inspector.
 import { describe, expect, it, vi } from 'vitest';
 import { handleEscape, type EscapeDeps } from '../../src/core/escape';
 import { createKeyRegistry } from '../../src/core/plugin/keys';
@@ -28,12 +28,39 @@ function setup(open: Partial<Record<'modal' | 'typing' | 'locked' | 'menu' | 'se
 }
 
 describe('Esc', () => {
-  it('closes one thing per press, innermost first, and reaches a plugin only when nothing is open', () => {
-    const { press, cancel } = setup({ modal: true, locked: true, menu: true, search: true, inspector: true });
-    expect([press(), press(), press(), press(), press()]).toEqual(['modal', 'lock', 'menu', 'search', 'inspector']);
+  it('closes one thing per press: modal, lock, menu, search, then the active tool, then the inspector', () => {
+    const { press, cancel, stopCancelling } = setup({
+      modal: true,
+      locked: true,
+      menu: true,
+      search: true,
+      inspector: true,
+    });
+    expect([press(), press(), press(), press()]).toEqual(['modal', 'lock', 'menu', 'search']);
     expect(cancel).not.toHaveBeenCalled();
-    expect(press()).toBe('plugin');
+    expect(press()).toBe('plugin'); // the active tool is cancelled before the inspector closes (CAD convention)
     expect(cancel).toHaveBeenCalledTimes(1);
+    stopCancelling(); // (its own run would do this: nothing left to cancel)
+    expect(press()).toBe('inspector');
+    expect(press()).toBeNull();
+  });
+
+  it('several plugins share Esc: the first whose `when` holds runs', () => {
+    const keys = createKeyRegistry({ warn: () => {} });
+    const ran: string[] = [];
+    let a = false;
+    const b = true;
+    keys.add('a', 'A', { code: 'Escape', label: 'cancel A', when: () => a, run: () => ran.push('a') });
+    keys.add('b', 'B', { code: 'Escape', label: 'cancel B', when: () => b, run: () => ran.push('b') });
+    expect(keys.conflicts).toEqual([]);
+    const esc = { code: 'Escape', shiftKey: false, altKey: false, ctrlKey: false, metaKey: false } as KeyboardEvent;
+    keys.handle(esc);
+    a = true;
+    keys.handle(esc);
+    expect(ran).toEqual(['b', 'a']);
+    // a binding without `when` still can't take a key that is already bound
+    keys.add('c', 'C', { code: 'Escape', label: 'always', run: () => ran.push('c') });
+    expect(keys.conflicts).toHaveLength(1);
   });
 
   it("leaves a text field's Esc to the field (a plugin doesn't get it)", () => {
@@ -52,5 +79,6 @@ describe('Esc', () => {
   it('the modal goes first even while typing in it, and the mouse lock before any panel', () => {
     expect(setup({ modal: true, typing: true }).press()).toBe('modal');
     expect(setup({ locked: true, inspector: true }).press()).toBe('lock');
+    expect(setup({ search: true }).press()).toBe('search'); // the search before the tool
   });
 });

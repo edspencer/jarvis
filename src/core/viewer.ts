@@ -103,7 +103,12 @@ function startSite(site: Site, loading: Loading): void {
   const store = createStore();
   const externalKeys: Record<string, readonly string[]> = {}; // filled in when the external plugins have loaded
   const keyReg = createKeyRegistry({
-    declared: (owner) => BUILTIN_PLUGINS[owner]?.keys ?? externalKeys[owner] ?? null,
+    declared: (owner) =>
+      Object.hasOwn(BUILTIN_PLUGINS, owner)
+        ? BUILTIN_PLUGINS[owner].keys
+        : Object.hasOwn(externalKeys, owner)
+          ? externalKeys[owner]
+          : null,
   });
   const services = new Map<string, unknown>();
   const extraProgress = new Map<string, { done(): void }>();
@@ -298,9 +303,9 @@ function startSite(site: Site, loading: Loading): void {
 
   const three = { THREE, scene, camera, renderer, model, P, toPlan, unit: site.unit };
   // a plugin with a manifest section (resolved: the lights plugin also reads the old home-assistant.map)
-  const enabled = (id: string) =>
-    !!(site.plugins as Record<string, unknown>)[id] ||
-    !!(site.manifest.plugins as Record<string, unknown> | undefined)?.[id];
+  const own = (o: object | undefined, id: string) =>
+    !!o && Object.hasOwn(o, id) && !!(o as Record<string, unknown>)[id];
+  const enabled = (id: string) => own(site.plugins, id) || own(site.manifest.plugins, id);
   const twin: Record<string, unknown> = {};
   const makeContext = createContextFactory({
     site,

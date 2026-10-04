@@ -91,14 +91,20 @@ describe('the manifest', () => {
     const v = validateManifest(withPlugins({ measure: { module: 'plugins/measure.js', decimals: 2, anything: [1] } }));
     expect(v).toEqual({ ok: true, errors: [], warnings: [] });
   });
-  it('needs a module to be a string, an id of its own, and a lower-case id', () => {
+  it("skips (with a warning) an external plugin whose id is a built-in's: a new release may add one", () => {
+    const v = validateManifest(withPlugins({ energy: { module: 'e.js' }, sun: { module: 's.js' } }));
+    expect(v.ok).toBe(true);
+    expect(v.warnings.map((w) => `${w.path}: ${w.message}`)).toEqual([
+      'plugins.energy.module: "energy" is a built-in plugin\'s id: this external plugin is skipped (give it an id of its own)',
+      'plugins.sun.module: "sun" is a built-in plugin\'s id: this external plugin is skipped (give it an id of its own)',
+    ]);
+    const site = resolveSite(withPlugins({ energy: { module: 'e.js' } }), 'https://example.org/site.json');
+    expect(site.external).toEqual({});
+  });
+  it('needs a module to be a string and a lower-case id', () => {
     const msgs = (p: Record<string, unknown>) =>
       validateManifest(withPlugins(p)).errors.map((e) => `${e.path}: ${e.message}`);
     expect(msgs({ measure: { module: 3 } })).toEqual(['plugins.measure.module: expected a string, got a number']);
-    expect(msgs({ energy: { module: 'e.js' } })).toEqual([
-      'plugins.energy.module: "energy" is a built-in plugin: give an external plugin an id of its own',
-    ]);
-    expect(msgs({ sun: { module: 's.js' } })[0]).toMatch(/^plugins.sun.module: "sun" is a built-in plugin/);
     expect(msgs({ My_Plugin: { module: 'p.js' } })).toEqual([
       "plugins.My_Plugin: an external plugin's id is lower-case letters, digits and '-', starting with a letter",
     ]);
@@ -126,6 +132,16 @@ describe('the manifest', () => {
     ]);
     const upper = validateManifest(withPlugins({}, { pluginOrigins: ['https://Cdn.example.com'] }));
     expect(upper.errors.map((e) => e.message)).toEqual(['not an origin (did you mean "https://cdn.example.com"?)']);
+  });
+  it('a protocol-relative or backslashed module URL is another origin too; only http(s)', () => {
+    const w = (module: string) =>
+      validateManifest(withPlugins({ m: { module } })).warnings.map((x) => x.message.split(' ')[0]);
+    expect(w('//evil.example/x.js')).toEqual(['https://evil.example']);
+    expect(w('\\\\evil.example\\x.js')).toEqual(['https://evil.example']);
+    expect(w('plugins/x.js')).toEqual([]);
+    expect(validateManifest(withPlugins({ m: { module: 'data:text/javascript,1' } })).errors[0].message).toBe(
+      'only an http(s) URL loads',
+    );
   });
   it('resolves the module against the manifest; ctx.config is the section without it', () => {
     const m = withPlugins({ measure: { module: 'plugins/measure.js', decimals: 2 } });
@@ -203,10 +219,12 @@ describe('validate-site', () => {
     ]);
     const noRun = await checkSite('file:///site/site.json', files({ 'site.json': m }));
     expect(noRun.notes).toContain(
-      'plugin measure: plugins/measure.js (not run: its exports, keys and section are checked in the viewer)',
+      "plugin measure: plugins/measure.js is there; its exports, keys and section weren't checked (--run-plugin-code runs it to check them)",
     );
   });
 });
+
+const ok = (async () => new Response('export default {}')) as unknown as typeof fetch;
 
 describe('loading the plugins: only the code a site needs', () => {
   const fake = (id: string, autoStart = false): BuiltinPlugin & { loads: number } => {
@@ -242,6 +260,7 @@ describe('loading the plugins: only the code a site needs', () => {
       page: 'https://twin.example.org/',
       failed: (id, why) => failed.push(`${id}: ${why}`),
       importModule,
+      fetch: ok,
       builtins,
     });
     expect(r.defs.map((d) => d.id)).toEqual(['sun', 'pins', 'measure']);
@@ -268,6 +287,7 @@ describe('loading the plugins: only the code a site needs', () => {
         page: 'https://twin.example.org/',
         failed: (id, why) => failed.push(`${id}: ${why}`),
         importModule,
+        fetch: ok,
         builtins: {},
       },
     );
@@ -277,6 +297,43 @@ describe('loading the plugins: only the code a site needs', () => {
       "far: https://cdn.example.com isn't the viewer's origin: list it in the manifest's pluginOrigins to allow it",
       'bad: the module has no default export: export default definePlugin({ … })',
     ]);
+  });
+});
+
+describe('a module URL that redirects is never imported', () => {
+  const load = (f: typeof fetch) => {
+    const importModule = vi.fn(async () => ({ default: measure }));
+    const failed: string[] = [];
+    return loadPlugins(
+      {
+        url: 'https://twin.example.org/site.json',
+        external: { measure: { module: 'https://twin.example.org/go?u=https://evil.example/pwn.js' } },
+        pluginOrigins: [],
+      },
+      {
+        enabled: () => true,
+        page: 'https://twin.example.org/',
+        failed: (_, why) => failed.push(why),
+        importModule,
+        fetch: f,
+        builtins: {},
+      },
+    ).then((r) => ({ r, failed, importModule }));
+  };
+  it('a manual-redirect probe that sees a redirect (opaque, or a 3xx) refuses it', async () => {
+    const seen: RequestInit[] = [];
+    const opaque = (async (_: string, init: RequestInit) => (
+      seen.push(init),
+      { type: 'opaqueredirect', status: 0, ok: false, redirected: false }
+    )) as unknown as typeof fetch;
+    const a = await load(opaque);
+    expect(seen[0].redirect).toBe('manual');
+    expect(a.importModule).not.toHaveBeenCalled();
+    expect(a.failed[0]).toMatch(/redirects: a plugin module is loaded only from its own URL/);
+    const status = (async () => new Response(null, { status: 302 })) as unknown as typeof fetch;
+    expect((await load(status)).failed[0]).toMatch(/redirects/);
+    const missing = (async () => new Response('', { status: 404 })) as unknown as typeof fetch;
+    expect((await load(missing)).failed[0]).toMatch(/HTTP 404$/);
   });
 });
 

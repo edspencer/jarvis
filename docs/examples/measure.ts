@@ -132,7 +132,7 @@ export default definePlugin<MeasureConfig>({
     ctx.keys.add({
       code: 'Escape',
       label: 'Stop measuring',
-      when: () => measuring, // Esc is the core's first: a plugin gets it only when nothing else is open
+      when: () => measuring, // only while there is something to cancel: then Esc is ours before the inspector's
       run: () => setMeasuring(false),
     });
 

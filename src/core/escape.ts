@@ -1,6 +1,7 @@
-// What Esc does: one thing per press, the first that applies, the core's before a plugin's. A plugin can bind Esc
-// (keys.add({ code: 'Escape', when, run })) to cancel something of its own; it gets the key only when the core has
-// nothing to close. Pure: input.ts supplies the state, tests/unit/escape.test.ts checks the order.
+// What Esc does: one thing per press, the first that applies. A plugin can bind Esc (keys.add({ code: 'Escape', when,
+// run })) to cancel something of its own, an active tool: it gets the key after the modal, a text field, the mouse
+// lock, a menu and the search, and before the inspector closes (the active tool is cancelled first, as in a CAD
+// program). Pure: input.ts supplies the state, tests/unit/escape.test.ts checks the order.
 
 /** what an Esc press went to */
 export type EscapeTarget = 'modal' | 'field' | 'lock' | 'menu' | 'search' | 'inspector' | 'plugin' | null;
@@ -25,14 +26,14 @@ export interface EscapeDeps {
   plugin(): boolean;
 }
 
-/** Handle an Esc press: modal, text field, pointer lock, menu, search, inspector, then a plugin's binding. */
+/** Handle an Esc press: modal, text field, pointer lock, menu, search, a plugin's binding, then the inspector. */
 export function handleEscape(d: EscapeDeps): EscapeTarget {
   if (d.modal()) return (d.closeModal(), 'modal');
   if (d.typing()) return 'field';
   if (d.locked()) return (d.unlock(), 'lock');
   if (d.closeMenus()) return 'menu';
   if (d.searchOpen()) return (d.closeSearch(), 'search');
-  if (d.inspectorOpen()) return (d.closeInspector(), 'inspector');
   if (d.plugin()) return 'plugin';
+  if (d.inspectorOpen()) return (d.closeInspector(), 'inspector');
   return null;
 }

@@ -54,8 +54,11 @@ export function createKeyRegistry(
   const conflicts: string[] = [];
 
   function add(owner: string, ownerName: string, k: KeyBinding): Disposable {
-    // a clash: the same key already runs something, or the core holds it for movement (help-only entries)
-    const clash = k.run && entries.find((e) => (e.run || e.owner === 'core') && sig(e) === sig(k));
+    // a clash: the same key already runs something, or the core holds it for movement (help-only entries). Bindings
+    // that both have a `when` share the key (Esc to cancel whatever is active): a press runs the first whose `when`
+    // holds, in the order they were added.
+    const shares = (e: KeyEntry) => !!(e.run && e.when && k.when);
+    const clash = k.run && entries.find((e) => (e.run || e.owner === 'core') && sig(e) === sig(k) && !shares(e));
     if (clash) {
       const m = `keys: ${keyName(k)} (${k.label}, ${owner}) is already ${clash.owner}'s (${clash.label}); ignored`;
       conflicts.push(m);

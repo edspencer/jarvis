@@ -151,7 +151,8 @@ their own; the plates only if the model has some), and only its code is download
 plugins through one API, the core included: see [Writing a plugin](docs/guide/writing-a-plugin.md) and the API
 reference, [docs/plugins.md](docs/plugins.md). A plugin of your own needs no fork: build it into one ES module and give
 the site a section that names it (`"measure": { "module": "plugins/measure.js" }`), loaded from the viewer's own origin
-(or one the manifest lists in `pluginOrigins`). It runs with the viewer's full rights, so load only code you trust:
+(or one the manifest lists in `pluginOrigins`, and the container's `JARVIS_PLUGIN_ORIGINS` adds to its
+Content-Security-Policy). It runs with the viewer's full rights, so load only code you trust:
 [External plugins](docs/plugins.md#external-plugins).
 
 ### Home Assistant
@@ -257,32 +258,32 @@ docs/                     the plugin API, the model format, deploying; examples/
 H shows them all in the viewer (and opens by itself on a first visit). Help is generated from the key registry, so it
 lists only the keys of the plugins that are running.
 
-|                  |                                                                                                        |
-| ---------------- | ------------------------------------------------------------------------------------------------------ |
-| Click            | walk (captures the mouse); click again to inspect what the crosshair is on. In the overview: inspect   |
-| W A S D / arrows | move; Shift runs                                                                                       |
-| Q / E            | turn without the mouse                                                                                 |
-| Space            | jump (walking) · rise (ghost)                                                                          |
-| C (hold)         | crouch and creep (walking) · sink (ghost)                                                              |
-| G                | ghost: fly through walls (on at start); again to walk with collision                                   |
-| Tab              | walk ↔ overview (drag to rotate, right-drag to pan, wheel to zoom)                                     |
-| 1 – 9            | the site's viewpoints                                                                                  |
-| N                | the Navigate panel: rooms by storey, viewpoints, a link to this view                                   |
-| /                | search: rooms, viewpoints, light fixtures, and what the plugins add (equipment, plates, devices)       |
-| H (or ?)         | keys and help                                                                                          |
-| X                | cutaway: hide roofs and ceilings                                                                       |
-| U                | hide the upper storey (and roofs); only on a site with more than one storey                            |
-| O                | show / hide the door leaves (hidden at start, so doors read as open)                                   |
-| the site's own   | its layer toggles (the demo house: K the pergola, F the furniture)                                     |
-| B                | blueprints: show / hide the last sheet chosen                                                          |
-| T, Shift-click   | switch the light under the crosshair (walking) or the mouse (overview)                                 |
-| V / Shift-V      | faults through walls / the healthy devices too (without the faults plugin, V shows unavailable lights) |
-| P / Shift-P      | equipment pins / through walls (dimmed)                                                                |
-| L / Shift-L      | wall plates / through walls                                                                            |
-| J / Shift-J      | energy mode: the house ghosted, metered rooms and objects tinted by load / the Energy panel            |
-| Esc              | release the mouse; then close the innermost menu, the search or the inspector; then a plugin's own     |
-| Alt-← / Alt-→    | back / forward through what the inspector has shown                                                    |
-| F6 / Shift-F6    | move between the HUD's regions: the rail, the dock, the inspector, the status strip, the view          |
+|                  |                                                                                                            |
+| ---------------- | ---------------------------------------------------------------------------------------------------------- |
+| Click            | walk (captures the mouse); click again to inspect what the crosshair is on. In the overview: inspect       |
+| W A S D / arrows | move; Shift runs                                                                                           |
+| Q / E            | turn without the mouse                                                                                     |
+| Space            | jump (walking) · rise (ghost)                                                                              |
+| C (hold)         | crouch and creep (walking) · sink (ghost)                                                                  |
+| G                | ghost: fly through walls (on at start); again to walk with collision                                       |
+| Tab              | walk ↔ overview (drag to rotate, right-drag to pan, wheel to zoom)                                         |
+| 1 – 9            | the site's viewpoints                                                                                      |
+| N                | the Navigate panel: rooms by storey, viewpoints, a link to this view                                       |
+| /                | search: rooms, viewpoints, light fixtures, and what the plugins add (equipment, plates, devices)           |
+| H (or ?)         | keys and help                                                                                              |
+| X                | cutaway: hide roofs and ceilings                                                                           |
+| U                | hide the upper storey (and roofs); only on a site with more than one storey                                |
+| O                | show / hide the door leaves (hidden at start, so doors read as open)                                       |
+| the site's own   | its layer toggles (the demo house: K the pergola, F the furniture)                                         |
+| B                | blueprints: show / hide the last sheet chosen                                                              |
+| T, Shift-click   | switch the light under the crosshair (walking) or the mouse (overview)                                     |
+| V / Shift-V      | faults through walls / the healthy devices too (without the faults plugin, V shows unavailable lights)     |
+| P / Shift-P      | equipment pins / through walls (dimmed)                                                                    |
+| L / Shift-L      | wall plates / through walls                                                                                |
+| J / Shift-J      | energy mode: the house ghosted, metered rooms and objects tinted by load / the Energy panel                |
+| Esc              | release the mouse; then close a menu or the search; then cancel a plugin's active tool; then the inspector |
+| Alt-← / Alt-→    | back / forward through what the inspector has shown                                                        |
+| F6 / Shift-F6    | move between the HUD's regions: the rail, the dock, the inspector, the status strip, the view              |
 
 T and V need Home Assistant, live or `?ha=mock`.
 

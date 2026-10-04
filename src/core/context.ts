@@ -72,9 +72,9 @@ export function createContextFactory(core: CoreServices) {
         tone: 'warn',
       });
     };
-    const config = ((core.site.plugins as Record<string, unknown>)[id] ??
-      (core.site.manifest.plugins as Record<string, unknown> | undefined)?.[id] ??
-      {}) as never;
+    const section = (o: object | undefined) =>
+      o && Object.hasOwn(o, id) ? (o as Record<string, unknown>)[id] : undefined;
+    const config = (section(core.site.plugins) ?? section(core.site.manifest.plugins) ?? {}) as never;
     const inspector = hud.inspector(id);
     const ctx: PluginContext = {
       id,

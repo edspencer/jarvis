@@ -1,8 +1,8 @@
 // Checks a whole site: the manifest against its schema and rules, every file it names (present, parseable), each
 // model against the model format, and the parts and blueprint files. The caller supplies `read` (bytes for a URL, or
 // null if there is no such file), so the CLI reads the disk and the tests read memory. Files on another origin than
-// the manifest's are listed as not checked. An external plugin's module is imported (opts.importModule: the CLI runs
-// it in Node) to check what it exports.
+// the manifest's are listed as not checked. An external plugin's module is imported to check what it exports only if
+// the caller passes opts.importModule (the CLI's --run-plugin-code).
 import { checkModel, checkParts, readGltfJson, type ModelReport } from './model-check.ts';
 import { resolveSite, type Site } from './resolve.ts';
 import { formatIssues, reservedKeys, validateManifest } from './validate.ts';
@@ -194,7 +194,9 @@ export async function checkSite(manifestUrl: string, read: Reader, opts: CheckOp
     const b = await file(module, `${what} module`, true);
     if (!b) continue;
     if (!opts.importModule) {
-      notes.push(`${what}: ${short(module)} (not run: its exports, keys and section are checked in the viewer)`);
+      notes.push(
+        `${what}: ${short(module)} is there; its exports, keys and section weren't checked (--run-plugin-code runs it to check them)`,
+      );
       continue;
     }
     let mod: unknown;

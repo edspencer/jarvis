@@ -293,9 +293,25 @@ export function checkRules(m: SiteManifest): ValidationResult {
     if (new URL(o).origin !== o)
       errors.push({ path: `pluginOrigins[${i}]`, message: `not an origin (did you mean "${new URL(o).origin}"?)` });
   });
+  // (resolved against a stand-in for the manifest's own URL, so '//host/x.js' and '\\host\x.js' count as elsewhere)
+  const here = 'https://manifest.invalid/site.json';
   for (const [id, section] of Object.entries(p as Record<string, unknown>)) {
-    if (!isExternalSection(section) || !/^[a-z][a-z\d+.-]*:/i.test(section.module)) continue; // relative: the manifest's origin
-    const origin = new URL(section.module).origin;
+    if (!isExternalSection(section) || typeof section.module !== 'string') continue;
+    let origin: string;
+    try {
+      origin = new URL(section.module, here).origin;
+    } catch {
+      errors.push({
+        path: join(join('plugins', id), 'module'),
+        message: `not a URL: ${JSON.stringify(section.module)}`,
+      });
+      continue;
+    }
+    if (origin === new URL(here).origin) continue; // the manifest's origin
+    if (!/^https?:/.test(new URL(section.module, here).protocol)) {
+      errors.push({ path: join(join('plugins', id), 'module'), message: 'only an http(s) URL loads' });
+      continue;
+    }
     if (!origins.includes(origin))
       warnings.push({
         path: join(join('plugins', id), 'module'),
@@ -338,9 +354,10 @@ function splitUnknownPlugins(value: unknown): { value: unknown; errors: Issue[];
     const known = KNOWN_PLUGINS.includes(k);
     if (isExternalSection(section)) {
       if (known) {
-        errors.push({
+        // a warning, so a site keeps loading when a new release adds a built-in plugin of the same name
+        warnings.push({
           path: join(join('plugins', k), 'module'),
-          message: `"${k}" is a built-in plugin: give an external plugin an id of its own`,
+          message: `"${k}" is a built-in plugin's id: this external plugin is skipped (give it an id of its own)`,
         });
         drop.add(k);
       } else if (!PLUGIN_ID.test(k)) {

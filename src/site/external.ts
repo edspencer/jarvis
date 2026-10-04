@@ -17,6 +17,8 @@ export const isExternalSection = (v: unknown): v is { module: string } & Record<
  * - one on another origin only if the manifest lists that origin in `pluginOrigins`, and the manifest itself is on the
  *   viewer's origin: a manifest opened from elsewhere (`?site=https://…`) can show its data but never bring code;
  * - only http(s): no data:, blob: or javascript: URLs.
+ * An origin is scheme, host and port, never a path: a viewer under a sub-path trusts its whole host. The module's URL
+ * must not redirect (moduleFetchRefusal), and the server's CSP enforces all this for the browser itself.
  */
 export function moduleRefusal(
   moduleUrl: string,
@@ -37,6 +39,25 @@ export function moduleRefusal(
     return `the module is on ${u.origin} and the site manifest on ${manifest}, not the viewer's origin (${page}): a manifest from another origin can't bring code`;
   if (o.origins.includes(u.origin)) return null;
   return `${u.origin} isn't the viewer's origin: list it in the manifest's pluginOrigins to allow it`;
+}
+
+/**
+ * Fetch the module once without following redirects, before importing it: import() follows redirects, so a URL on an
+ * allowed origin that redirects (an open redirect on the viewer's own origin) would bring code from anywhere. Returns
+ * why it won't be imported, or null. Best effort (the server could answer the import differently): the real
+ * enforcement is the server's Content-Security-Policy (script-src), as deploy/nginx.conf sends it.
+ */
+export async function moduleFetchRefusal(url: string, f: typeof fetch): Promise<string | null> {
+  let r: Response;
+  try {
+    r = await f(url, { redirect: 'manual', credentials: 'same-origin', cache: 'no-cache' });
+  } catch (e) {
+    return `couldn't fetch ${url} (${(e as Error).message})`;
+  }
+  if (r.type === 'opaqueredirect' || r.redirected || (r.status >= 300 && r.status < 400))
+    return `${url} redirects: a plugin module is loaded only from its own URL, never through a redirect`;
+  if (!r.ok) return `${url}: HTTP ${r.status}`;
+  return null;
 }
 
 const strings = (v: unknown) => Array.isArray(v) && v.every((x) => typeof x === 'string');

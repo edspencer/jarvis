@@ -83,8 +83,8 @@ let units = ctx.storage.get<Units>('units', ctx.site.units); // the person's cho
 - A data file (a mapping, a list of zones) is a path in the section, read with `ctx.load(ctx.config.file)`, which
   resolves it against the manifest. A failed load in `setup` is a failed start: the plugin is off with a toast.
 
-The section is the site's, so check it. `validate(config)` runs before `setup`, and `npm run validate-site` runs it
-too; it returns the problems, and any problem keeps the plugin off with a toast that lists them:
+The section is the site's, so check it. `validate(config)` runs before `setup`, and
+`npm run validate-site -- <site> --run-plugin-code` runs it too; it returns the problems, and any problem keeps the plugin off with a toast that lists them:
 
 ```ts
 // docs/examples/measure.ts
@@ -121,7 +121,7 @@ ctx.keys.add({
 ctx.keys.add({
   code: 'Escape',
   label: 'Stop measuring',
-  when: () => measuring, // Esc is the core's first: a plugin gets it only when nothing else is open
+  when: () => measuring, // only while there is something to cancel: then Esc is ours before the inspector's
   run: () => setMeasuring(false),
 });
 ```
@@ -133,10 +133,11 @@ ctx.keys.add({
 - Taken keys are reported, not shared: the movement keys (W A S D Q E C, Space, the arrows, Shift) and the core's view
   keys (X U G H N, Tab, `/`, `?`, and 1–9 for the viewpoints) are the core's, and a second binding of a taken key is
   ignored with a console warning.
-- **Esc** is shared, and the core goes first: one press closes the topmost modal, else leaves a text field to itself,
-  else releases the mouse, else closes a menu, the search or the inspector, in that order. Only when there is none of
-  those does it go to a plugin's Esc binding (the first whose `when` holds). So bind Esc with a `when`, for something
-  to cancel: Measure stops measuring with it, and the inspector it opened after a measurement takes the first press.
+- **Esc** is shared, in a fixed order: one press closes the topmost modal, else is a text field's, else releases the
+  mouse, else closes a menu or the search; then it goes to a plugin's Esc binding, the first whose `when` holds (an
+  active tool is cancelled before the inspector closes, as in a CAD program); only then does it close the inspector.
+  So bind Esc with a `when` that holds only while there is something to cancel: plugins share the key that way.
+  Measure stops measuring with it; the next press closes the inspector the last measurement opened.
 - Every letter key is listed in the plugin's `keys` (step 2), so the site validator keeps a site layer's key off it;
   the key registry warns about a letter that isn't listed.
 
@@ -465,12 +466,13 @@ manifest; the other fields are the plugin's own (`ctx.config`, without `module`)
 ```
 
 ```sh
-npm run validate-site -- sites/measure-demo
+npm run validate-site -- sites/measure-demo --run-plugin-code
 JARVIS_SITE=sites/measure-demo npm run dev
 ```
 
-`validate-site` checks that the module is there, imports it (in Node) to check that it exports a plugin with this id,
-that its `keys` are free, and runs its `validate` on the section. Open `http://localhost:5173/?ha=mock` (the demo's
+`validate-site` checks that the module is there. `--run-plugin-code` also imports it (in Node: its code runs, so use it
+for code you trust) to check that it exports a plugin with this id, that its `keys` are free, and runs its `validate`
+on the section; without the flag none of the plugin's code runs. Open `http://localhost:5173/?ha=mock` (the demo's
 Home Assistant is a placeholder: `ha=mock` makes up its states). Press Tab for the overview, M to measure, and click
 two points on the house: the line appears, the inspector opens on it, and the rail has a Measure button with a count.
 H lists its keys under Measure. If the plugin fails to load or start, a toast says why and the console has the stack.
@@ -498,8 +500,9 @@ export default {
 **Where the module may come from.** The site owner chooses the code their site runs, and the module runs with the
 viewer's full rights (it can read Home Assistant's tokens: see the README). So the viewer imports a module only from
 its own origin, unless the manifest lists another origin in `pluginOrigins` (and then only if the manifest itself is on
-the viewer's origin: a manifest opened with `?site=https://elsewhere/…` can bring data, never code).
-[The reference](../plugins.md#external-plugins) has the details.
+the viewer's origin: a manifest opened with `?site=https://elsewhere/…` can bring data, never code), and never through
+a redirect. The container's Content-Security-Policy enforces the same in the browser; another origin has to be in its
+`JARVIS_PLUGIN_ORIGINS` too. [The reference](../plugins.md#external-plugins) has the details.
 
 **Building one into JARVIS** instead (a plugin for everyone, in a pull request) takes three edits: the code under
 `src/plugins/<id>/`, a line in [`src/plugins/registry.ts`](../../src/plugins/registry.ts) with its keys (each built-in

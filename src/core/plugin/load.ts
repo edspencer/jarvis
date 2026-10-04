@@ -3,7 +3,7 @@
 // Nothing else is downloaded: a site without energy never fetches the energy chunk. A module that fails to load, or
 // isn't a plugin, is reported and left out; the rest start.
 import type { Site } from '../../site';
-import { moduleRefusal, pluginOf } from '../../site/external';
+import { moduleFetchRefusal, moduleRefusal, pluginOf } from '../../site/external';
 import { BUILTIN_PLUGINS, builtinsToLoad, type BuiltinPlugin } from '../../plugins/registry';
 import type { PluginDef } from './types';
 
@@ -25,6 +25,8 @@ export async function loadPlugins(
     failed(id: string, why: string): void;
     /** import an external module (default: the browser's import()) */
     importModule?: (url: string) => Promise<unknown>;
+    /** fetch, to check a module's URL doesn't redirect before importing it (default: the browser's) */
+    fetch?: typeof fetch;
     builtins?: Record<string, BuiltinPlugin>;
   },
 ): Promise<LoadedPlugins> {
@@ -49,6 +51,12 @@ export async function loadPlugins(
       if (refused) {
         console.warn(`plugin ${id}: not loading ${module}: ${refused}`);
         o.failed(id, refused);
+        return null;
+      }
+      const redirect = await moduleFetchRefusal(module, o.fetch ?? fetch);
+      if (redirect) {
+        console.warn(`plugin ${id}: not loading ${module}: ${redirect}`);
+        o.failed(id, redirect);
         return null;
       }
       let mod: unknown;
