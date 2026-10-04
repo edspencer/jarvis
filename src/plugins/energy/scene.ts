@@ -4,7 +4,7 @@
 // materials are swapped, not edited, through the core's material overrides (one per mesh, priority 0: over the lights'
 // glowing copies and the blueprint fade), which put back whatever is beneath when the mode goes off.
 import * as THREE from 'three';
-import type { MaterialOverride, MaterialsApi, ModelInfo } from '../../plugin-api';
+import { MATERIAL_PRIORITY, type MaterialOverride, type MaterialsApi, type ModelInfo } from '../../plugin-api';
 
 export interface Anchor {
   /** the store reference ('pins:elec.panel.a', 'plates:KIT-O-H', 'fixture:den.lamp', 'node:Furn_fridge') */
@@ -88,7 +88,7 @@ export function createEnergyScene(deps: {
 
   function swap(mesh: THREE.Mesh, m: THREE.Material): void {
     const cur = overrides.get(mesh);
-    if (!cur) overrides.set(mesh, { o: materials.push(mesh, m), m });
+    if (!cur) overrides.set(mesh, { o: materials.push(mesh, m, { priority: MATERIAL_PRIORITY.energy }), m });
     else if (cur.m !== m) {
       cur.m = m;
       cur.o.set(m);

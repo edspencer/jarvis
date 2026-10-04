@@ -8,7 +8,7 @@ import * as THREE from 'three';
 import type { BlueprintsConfig } from '../../site';
 import { isMesh } from '../../core/three-utils';
 import type { Groups } from '../../core/types';
-import type { MaterialOverride, MaterialsApi } from '../../plugin-api';
+import { MATERIAL_PRIORITY, type MaterialOverride, type MaterialsApi } from '../../plugin-api';
 import { P, planUnit } from '../../core/units';
 
 type Corner = [number, number, number];
@@ -44,9 +44,6 @@ const normaliseSheet = (s: SheetEntry): BlueprintSheet => ({
   z_floor: s.z_floor ?? s.z_floor_ft ?? null,
   rms: s.rms ?? s.rms_ft ?? null,
 });
-
-/** the fade's place in each mesh's material stack: over the lights' glowing copies, under energy mode */
-const FADE_PRIORITY = -5;
 
 export interface BlueprintState {
   index: BlueprintSheet[] | null;
@@ -128,17 +125,25 @@ export function createBlueprints({
 
   // model fade: every mesh in the model is drawn with a copy of its material (or of whatever is beneath the fade in its
   // stack: a light's glowing copy), transparent at fade x its own opacity, without depth writes
+  // (one copy per material, made the first time a mesh shows it; the copy of a light's glow that a fixture's mesh
+  // leaves behind when the lights stop stays cached until the fade goes off)
   let fade: MaterialOverride | null = null;
-  function fadedOf(below: THREE.Material): THREE.Material {
-    let f = bp.faded.get(below);
+  type Lit = THREE.Material & { emissive?: THREE.Color; emissiveIntensity?: number };
+  function fadedOf(below: Lit): THREE.Material {
+    let f = bp.faded.get(below) as Lit | undefined;
     if (!f) {
-      f = below.clone();
+      f = below.clone() as Lit;
       // a wire screen's shader tweak (core/materials.ts) isn't part of a clone
       f.onBeforeCompile = below.onBeforeCompile;
       f.customProgramCacheKey = below.customProgramCacheKey;
+      Object.assign(f, { transparent: true, opacity: below.opacity * bp.fade, depthWrite: false });
       bp.faded.set(below, f);
-    } else f.copy(below); // again: the fade changed, or what is beneath it did (a light's glow)
-    return Object.assign(f, { transparent: true, opacity: below.opacity * bp.fade, depthWrite: false });
+    } else if (below.emissive && f.emissive) {
+      // the stack runs again: what changes live beneath the fade is a light's glow (lights refresh their override)
+      f.emissive.copy(below.emissive);
+      f.emissiveIntensity = below.emissiveIntensity;
+    }
+    return f;
   }
   function fadeModel(on: boolean): void {
     fade?.dispose();
@@ -149,7 +154,7 @@ export function createBlueprints({
         o.traverse((m) => {
           if (isMesh(m)) meshes.push(m);
         });
-      fade = materials.push(meshes, fadedOf, { priority: FADE_PRIORITY });
+      fade = materials.push(meshes, fadedOf, { priority: MATERIAL_PRIORITY.fade });
     } else {
       for (const f of bp.faded.values()) f.dispose();
       bp.faded.clear();
@@ -158,7 +163,7 @@ export function createBlueprints({
 
   function setBlueprintFade(f: number): void {
     bp.fade = THREE.MathUtils.clamp(f, 0, 1);
-    if (bp.active) fadeModel(true);
+    for (const [below, copy] of bp.faded) copy.opacity = below.opacity * bp.fade; // the copies are what is drawn
     onChange();
   }
 

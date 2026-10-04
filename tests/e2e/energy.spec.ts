@@ -45,7 +45,21 @@ const energyMeshes = () =>
       return n;
     })()`,
   );
-/** meshes drawn fainter than their own material (the blueprint fade): see-through or without depth writes */
+/** every model mesh's material as drawn: its id and how see-through it is */
+const drawn = () =>
+  twin<string[]>(
+    page,
+    `(() => {
+      const out = [];
+      twin.root.traverse((o) => {
+        if (!o.isMesh) return;
+        for (const m of Array.isArray(o.material) ? o.material : [o.material])
+          out.push([o.uuid, m.id, m.opacity, m.transparent, m.depthWrite].join('|'));
+      });
+      return out;
+    })()`,
+  );
+/** meshes drawn more see-through than their own material, or without its depth writes: faded */
 const fadedMeshes = () =>
   twin<number>(
     page,
@@ -54,9 +68,24 @@ const fadedMeshes = () =>
       twin.root.traverse((o) => {
         if (!o.isMesh || Array.isArray(o.material)) return;
         const own = twin.materials.base(o);
-        if (o.material !== own && (o.material.opacity < own.opacity - 1e-6 || o.material.depthWrite !== own.depthWrite)) n++;
+        if (o.material.name.startsWith('energy.')) return; // energy mode's own look
+        if (o.material.opacity < own.opacity - 1e-6 || o.material.depthWrite !== own.depthWrite) n++;
       });
       return n;
+    })()`,
+  );
+/** has any material the model's meshes use (their own) been edited from what it was? */
+const ownSnapshot = () =>
+  twin<string[]>(
+    page,
+    `(() => {
+      const out = [];
+      twin.root.traverse((o) => {
+        if (!o.isMesh || Array.isArray(o.material)) return;
+        const m = twin.materials.base(o);
+        out.push([o.uuid, m.id, m.opacity, m.transparent, m.depthWrite].join('|'));
+      });
+      return out;
     })()`,
   );
 const insp = () => page.locator('jv-inspector aside');
@@ -91,20 +120,26 @@ test('J toggles energy mode: chip, legend, ghosted materials; off puts the mater
 });
 
 test('blueprint fade and energy mode share the materials: B on, J on, B off, J off puts everything back', async () => {
+  const before = await drawn();
+  const own = await ownSnapshot();
   expect(await fadedMeshes()).toBe(0);
   await press('b');
   await expect.poll(() => twin<boolean>(page, 'twin.bp.mesh !== null')).toBe(true);
-  await expect.poll(fadedMeshes).toBeGreaterThan(0);
+  await expect.poll(drawn).not.toEqual(before); // the model is faded
   await press('j');
   await expect.poll(energyOn).toBe(true);
   await expect.poll(energyMeshes).toBeGreaterThan(0);
   await press('b');
-  await expect.poll(() => twin<boolean>(page, 'twin.bp.active === null && twin.bp.faded.size === 0')).toBe(true);
-  expect(await energyMeshes()).toBeGreaterThan(0); // energy mode is still on
+  await expect.poll(() => twin<boolean>(page, 'twin.bp.active === null')).toBe(true);
+  // energy mode is still on, and nothing else is faded: not the meshes, nor the materials they own
+  expect(await energyMeshes()).toBeGreaterThan(0);
+  expect(await fadedMeshes()).toBe(0);
+  expect(await ownSnapshot()).toEqual(own);
   await press('j');
   await expect.poll(energyOn).toBe(false);
   expect(await energyMeshes()).toBe(0);
-  expect(await fadedMeshes()).toBe(0); // the house isn't left faded
+  // every mesh is drawn exactly as before: the same material, unedited
+  expect(await drawn()).toEqual(before);
 });
 
 test('Shift+J opens the Energy panel: top consumers, and the house load in the status strip', async () => {

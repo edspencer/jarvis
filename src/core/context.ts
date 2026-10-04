@@ -83,7 +83,7 @@ export function createContextFactory(core: CoreServices) {
       id,
       site: core.site,
       config,
-      three: { ...core.three, materials: core.materials.scoped(own) },
+      three: { ...core.three, materials: core.materials.scoped(own, log.warn) },
       view: {
         ...core.view,
         state: core.view.state,

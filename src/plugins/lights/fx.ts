@@ -5,11 +5,8 @@
 // unchanged from the prototype's Home Assistant layer, so the scene renders exactly as before.
 import * as THREE from 'three';
 import { isMesh, isShown } from '../../core/three-utils';
-import type { MaterialOverride, MaterialsApi } from '../../plugin-api';
+import { MATERIAL_PRIORITY, type MaterialOverride, type MaterialsApi } from '../../plugin-api';
 import type { Look } from './look';
-
-/** a fixture's glowing copy sits at the bottom of the mesh's material stack: a fade or energy mode draws over it */
-const GLOW_PRIORITY = -10;
 
 const LINE_MIN = 1.2; // m: an emitter longer than this is treated as a line (cove, strip)
 const LINE_STEP = 0.6; // m between halos along a line
@@ -107,7 +104,7 @@ export function createLightFx({
     const parts: Emitter[] = em.map((o) => {
       const base = matOf(o);
       const mat = base.clone();
-      const override = materials.push(o, mat, { priority: GLOW_PRIORITY });
+      const override = materials.push(o, mat, { priority: MATERIAL_PRIORITY.glow }); // under a fade or energy mode
       return { mesh: o, mat, base: { emissive: base.emissive.clone(), intensity: base.emissiveIntensity }, override };
     });
     const box = new THREE.Box3();

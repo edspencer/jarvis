@@ -18,13 +18,15 @@ interface Stack {
 }
 
 export interface MaterialStack extends MaterialsApi {
-  /** the same, with every override still alive disposed by `own`'s disposer (a plugin's stop) */
-  scoped(own: (d: { dispose(): void }) => void): MaterialsApi;
+  /** the same, with every override still alive disposed by `own`'s disposer (a plugin's stop), and its warning
+   * (something pushed that isn't a mesh with one material) through `warn` */
+  scoped(own: (d: { dispose(): void }) => void, warn?: (msg: string) => void): MaterialsApi;
   /** how many meshes have layers (tests) */
   size(): number;
 }
 
-const isMeshLike = (x: unknown): x is THREE.Mesh => (x as THREE.Mesh)?.isMesh === true;
+const isObject3D = (x: unknown): x is THREE.Object3D => (x as THREE.Object3D)?.isObject3D === true;
+const SKIPPED = 'materials.push: skipped what is not a mesh with one material (this warning shows once)';
 
 export function createMaterialStack(): MaterialStack {
   const stacks = new Map<THREE.Mesh, Stack>();
@@ -45,12 +47,18 @@ export function createMaterialStack(): MaterialStack {
   }
 
   function push(
-    meshes: THREE.Mesh | Iterable<THREE.Mesh>,
+    objects: THREE.Object3D | Iterable<THREE.Object3D>,
     m: MaterialLayer,
     opts: { priority?: number } = {},
+    warn: () => void = () => {},
   ): MaterialOverride {
     const layer: Layer = { m, priority: opts.priority ?? 0, seq: seq++ };
-    const list = [...new Set(isMeshLike(meshes) ? [meshes] : meshes)];
+    const list: THREE.Mesh[] = [];
+    for (const o of new Set(isObject3D(objects) ? [objects] : objects)) {
+      const mesh = o as THREE.Mesh;
+      if (mesh.isMesh && mesh.material && !Array.isArray(mesh.material)) list.push(mesh);
+      else warn();
+    }
     for (const mesh of list) {
       let s = stacks.get(mesh);
       if (!s) {
@@ -87,17 +95,34 @@ export function createMaterialStack(): MaterialStack {
 
   const base = (mesh: THREE.Mesh): THREE.Material => (stacks.get(mesh)?.base ?? mesh.material) as THREE.Material;
 
+  /** a warning that shows once */
+  const once = (say: (msg: string) => void) => {
+    let said = false;
+    return () => {
+      if (!said) say(SKIPPED);
+      said = true;
+    };
+  };
+  const warnCore = once((msg) => console.warn(msg));
+
   return {
-    push,
+    push: (objects, m, opts) => push(objects, m, opts, warnCore),
     base,
     size: () => stacks.size,
-    scoped(own) {
+    scoped(own, say = (msg) => console.warn(msg)) {
       const alive = new Set<MaterialOverride>();
-      own({ dispose: () => [...alive].forEach((o) => o.dispose()) });
+      const warn = once(say);
+      own({
+        dispose: () => {
+          const all = [...alive];
+          alive.clear();
+          all.forEach((o) => o.dispose());
+        },
+      });
       return {
         base,
-        push(meshes, m, opts) {
-          const o = push(meshes, m, opts);
+        push(objects, m, opts) {
+          const o = push(objects, m, opts, warn);
           alive.add(o);
           return {
             set: o.set,

@@ -263,7 +263,7 @@ and `src`. So the Home Assistant section, or any connector's, shows the sensors 
 measure. Not onto a fixture (a fixture's bindings are its light entities, which the lights plugin reads) nor a node
 (which has no store reference); the Energy section still shows on both.
 
-Energy mode ghosts and tints through the core's material overrides (`ctx.three.materials`, priority 0: over the
+Energy mode ghosts and tints through the core's material overrides (`ctx.three.materials`, `MATERIAL_PRIORITY.energy`: over the
 lights' glowing copies and the blueprint fade), so turning it off puts back whatever is beneath, in any order with the
 others, and a plugin that prepares materials meanwhile (the lights) starts from the mesh's own (`materials.base(mesh)`),
 not the ghost. A meter's subject is `energy:<meter id>` (an _Other_ is

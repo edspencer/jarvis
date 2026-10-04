@@ -107,4 +107,24 @@ describe('material overrides', () => {
     expect(name(mesh)).toBe('faded oak');
     expect(stack.base(mesh)).toBe(own);
   });
+
+  it('skips what is not a mesh with one material, warning once per plugin; takes a single Object3D', () => {
+    const { own, mesh, stack, ghost } = setup();
+    const said: string[] = [];
+    const plugin = stack.scoped(
+      () => {},
+      (m) => said.push(m),
+    );
+    const group = new THREE.Group();
+    const multi = new THREE.Mesh(new THREE.BoxGeometry(), [own, own]);
+    const o = plugin.push([group, multi, mesh], ghost);
+    plugin.push(group, ghost);
+    expect(said).toHaveLength(1);
+    expect((group as unknown as { material?: unknown }).material).toBeUndefined();
+    expect(multi.material).toEqual([own, own]);
+    expect(mesh.material).toBe(ghost);
+    o.dispose();
+    expect(mesh.material).toBe(own);
+    expect(stack.size()).toBe(0);
+  });
 });
