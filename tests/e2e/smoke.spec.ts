@@ -316,7 +316,11 @@ test("the Light section's button switches the mock light, without re-rendering t
       .locator('h2')
       .evaluate((h) => h === (window as unknown as { __h: Element }).__h),
   ).toBe(true);
-  await expect(page.locator('jv-toasts [data-tone="ok"]').first()).toContainText(`Turned ${after}`);
+  // the ok toast times out after 4 s, which at a frame or two a second can pass before a DOM check runs: assert on
+  // the HUD's record of toasts instead (the error-toast test below checks the DOM: an error toast stays up)
+  await expect
+    .poll(() => twin<{ text: string; tone?: string }[]>(page, 'twin.hud.toastLog'))
+    .toContainEqual(expect.objectContaining({ tone: 'ok', text: expect.stringContaining(`Turned ${after}`) }));
 });
 
 test('a failed call (mock) shows an error toast and puts the real state back', async () => {
