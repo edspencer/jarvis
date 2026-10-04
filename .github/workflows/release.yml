@@ -1,0 +1,196 @@
+name: Release
+
+# The release flow, as in edspencer/paddock (see RELEASING.md):
+#   1. On every push to main, changesets keeps a "chore: version packages" PR open while there are changesets: it bumps
+#      package.json's version and writes CHANGELOG.md.
+#   2. Merging that PR changes the version. If no v<version> tag exists yet, this workflow waits for CI to pass on that
+#      commit, then publishes:
+#        - the container image  ghcr.io/<owner>/jarvis:<version> + :<major>.<minor> + :latest  (linux/amd64 + arm64)
+#        - jarvis-<version>.tgz (the built viewer, dist/) and its checksum, on a GitHub Release v<version>, which also
+#          creates the tag.
+# Both happen in the run of the merge commit's push, so nothing depends on a tag pushed with GITHUB_TOKEN triggering
+# another workflow (GitHub doesn't). Run it by hand (Actions -> Release -> Run workflow) to retry a failed release.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Version PR / detect release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    outputs:
+      should_release: ${{ steps.detect.outputs.should_release }}
+      version: ${{ steps.detect.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+
+      # Opens or updates the version PR while there are changesets. Nothing is published to npm (the package is private).
+      - name: Changesets version PR
+        id: changesets
+        uses: changesets/action@v2
+        with:
+          version-script: npm run changeset:version
+          commit-message: 'chore: version packages'
+          pr-title: 'chore: version packages'
+
+      # A release is a commit that changed the version (the merged version PR) and has no tag yet; a manual run
+      # releases the current version if it has no tag yet. An ordinary merge to main changes no version: no release.
+      - name: Detect release
+        id: detect
+        if: steps.changesets.outputs.has-changesets == 'false'
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          BEFORE="$(git show HEAD^:package.json 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).version)}catch{console.log("")}})')"
+          if git rev-parse -q --verify "refs/tags/v${VERSION}" >/dev/null; then
+            echo "v${VERSION} is already released: nothing to do"
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          elif [ "${EVENT}" != "workflow_dispatch" ] && [ "${VERSION}" = "${BEFORE}" ]; then
+            echo "version unchanged (${VERSION}): no release"
+            echo "should_release=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "new release: v${VERSION}"
+            echo "should_release=true" >> "$GITHUB_OUTPUT"
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          fi
+
+  # Never publish from a commit whose CI didn't pass. The version PR is opened by github-actions[bot], and GitHub can
+  # park CI runs on bot PRs waiting for approval, so the PR may merge without CI having run on it; CI on the push to
+  # main does run, and this job waits for it. To override a flake: re-run CI until green, then run this workflow by hand.
+  verify-ci:
+    name: Require CI green on this commit
+    needs: release
+    if: needs.release.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - name: Wait for CI on this commit, and require success
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          deadline=$(( SECONDS + 1800 ))
+          while :; do
+            line="$(gh api "repos/${REPO}/actions/workflows/ci.yml/runs?head_sha=${SHA}&event=push&per_page=1" \
+              --jq '.workflow_runs[0] // empty | "\(.status)\t\(.conclusion // "-")\t\(.html_url)"' 2>/dev/null || true)"
+            if [ -n "${line}" ]; then
+              IFS=$'\t' read -r status conclusion url <<< "${line}"
+              if [ "${status}" = "completed" ]; then
+                [ "${conclusion}" = "success" ] && { echo "CI passed on ${SHA}: ${url}"; exit 0; }
+                echo "::error::CI concluded '${conclusion}' on ${SHA}: not publishing. ${url}"
+                exit 1
+              fi
+              echo "CI is ${status} on ${SHA}: waiting. ${url}"
+            else
+              echo "no CI run for ${SHA} yet: waiting"
+            fi
+            [ "${SECONDS}" -ge "${deadline}" ] && { echo "::error::timed out waiting for CI on ${SHA}"; exit 1; }
+            sleep 20
+          done
+
+  image:
+    name: Publish container image
+    needs: [release, verify-ci]
+    if: needs.release.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/jarvis
+          tags: |
+            type=semver,pattern={{version}},value=v${{ env.VERSION }}
+            type=semver,pattern={{major}}.{{minor}},value=v${{ env.VERSION }}
+            type=raw,value=latest
+      # The Dockerfile builds dist/ on the build platform and only copies files into the nginx stage, so both
+      # architectures build on one runner without emulation.
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=image
+          cache-to: type=gha,mode=max,scope=image
+
+  github-release:
+    name: Tarball + GitHub Release
+    needs: [release, image]
+    if: needs.release.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      # jarvis-<version>/: the built viewer, ready to serve next to a site folder (docs/deploy.md). Also under a fixed
+      # name, so releases/latest/download/jarvis-latest.tgz always works.
+      - name: Tarball
+        run: |
+          set -euo pipefail
+          mkdir -p "stage/jarvis-${VERSION}"
+          cp -r dist/. "stage/jarvis-${VERSION}/"
+          cp LICENSE "stage/jarvis-${VERSION}/"
+          tar -C stage -czf "jarvis-${VERSION}.tgz" "jarvis-${VERSION}"
+          cp "jarvis-${VERSION}.tgz" jarvis-latest.tgz
+          for f in "jarvis-${VERSION}.tgz" jarvis-latest.tgz; do sha256sum "$f" > "$f.sha256"; done
+      - name: Release notes
+        run: |
+          # this version's section of CHANGELOG.md, then where to get it
+          awk -v v="## ${VERSION}" '$0==v{on=1;next} /^## /{if(on)exit} on' CHANGELOG.md > notes.md || true
+          cat >> notes.md <<EOF
+
+          ## Get it
+
+          - Container: \`docker run -p 8080:80 -v ./my-site:/usr/share/nginx/html/site:ro ghcr.io/${{ github.repository_owner }}/jarvis:${VERSION}\`
+          - Static files: \`jarvis-${VERSION}.tgz\` below; see [docs/deploy.md](https://github.com/${{ github.repository }}/blob/v${VERSION}/docs/deploy.md)
+          EOF
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "v${VERSION}" --target "${GITHUB_SHA}" --title "v${VERSION}" --notes-file notes.md \
+            "jarvis-${VERSION}.tgz" "jarvis-${VERSION}.tgz.sha256" jarvis-latest.tgz jarvis-latest.tgz.sha256

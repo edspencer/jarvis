@@ -8,3 +8,4 @@ test-results/
 playwright-report/
 docs/design/img/
 docs/design/mockup/bg-*.jpg
+!examples/**/*.glb

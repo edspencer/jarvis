@@ -1,0 +1,91 @@
+{
+  "living.can.1": {
+    "entity_id": "light.living_room_cans",
+    "conf": "high",
+    "group": "fixture.cans.living"
+  },
+  "living.can.2": {
+    "entity_id": "light.living_room_cans",
+    "conf": "high",
+    "group": "fixture.cans.living"
+  },
+  "living.can.3": {
+    "entity_id": "light.living_room_cans",
+    "conf": "high",
+    "group": "fixture.cans.living"
+  },
+  "living.can.4": {
+    "entity_id": "light.living_room_cans",
+    "conf": "high",
+    "group": "fixture.cans.living"
+  },
+  "kitchen.pendant.1": {
+    "entity_id": "light.kitchen_pendant_1",
+    "conf": "high",
+    "group": "fixture.pendants.kitchen",
+    "unavailable_means": "off"
+  },
+  "kitchen.pendant.2": {
+    "entity_id": "light.kitchen_pendant_2",
+    "conf": "high",
+    "group": "fixture.pendants.kitchen",
+    "unavailable_means": "off"
+  },
+  "kitchen.pendant.3": {
+    "entity_id": "light.kitchen_pendant_3",
+    "conf": "high",
+    "group": "fixture.pendants.kitchen",
+    "unavailable_means": "off"
+  },
+  "hall.pendant": {
+    "entity_id": "light.hall",
+    "conf": "high",
+    "group": "fixture.hall"
+  },
+  "study.ceiling": {
+    "entity_id": "light.study",
+    "conf": "med",
+    "group": "fixture.study"
+  },
+  "bedroom_1.ceiling": {
+    "entity_id": "light.bedroom_1",
+    "conf": "high",
+    "group": "fixture.bedroom_1"
+  },
+  "bedroom_2.ceiling": {
+    "entity_id": null,
+    "conf": "low",
+    "group": "fixture.bedroom_2"
+  },
+  "landing.ceiling": {
+    "entity_id": null,
+    "conf": "low",
+    "group": "fixture.landing"
+  },
+  "bathroom.vanity": {
+    "entity_id": "switch.bathroom_vanity",
+    "conf": "high",
+    "group": "fixture.bathroom",
+    "switch_is_light": true
+  },
+  "porch.lantern": {
+    "entity_id": "light.porch",
+    "conf": "high",
+    "group": "fixture.porch"
+  },
+  "terrace.wall.1": {
+    "entity_id": "light.terrace_wall_lights",
+    "conf": "high",
+    "group": "fixture.terrace"
+  },
+  "terrace.wall.2": {
+    "entity_id": "light.terrace_wall_lights",
+    "conf": "high",
+    "group": "fixture.terrace"
+  },
+  "living.floor_lamp": {
+    "entity_id": "light.floor_lamp",
+    "conf": "high",
+    "group": "fixture.lamp.living"
+  }
+}

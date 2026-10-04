@@ -127,7 +127,9 @@ export function createModel({
       // fixtures are small and mostly under a ceiling: casting would only add shadow-map draw calls
       o.castShadow = !glass && !water && !m.transparent && !isFixture;
       o.receiveShadow = true;
-      o.geometry.computeBoundsTree();
+      // indirect: leave the index alone. Primitives can share one index accessor (gltf-transform and gltfpack dedupe
+      // them), and a BVH that reorders it in place breaks the BVH of every other mesh using it.
+      o.geometry.computeBoundsTree({ indirect: true });
     });
     const facts = { name, extras: node.userData, materials };
     // every layer can be hidden, so none is solid: hiding one never leaves invisible walls (doors are open; roofs and

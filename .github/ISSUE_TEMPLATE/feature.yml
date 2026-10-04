@@ -1,0 +1,20 @@
+name: Feature or idea
+description: A new viewer feature, plugin, model convention or manifest field
+labels: [enhancement]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What you'd like
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: What it would let you do with your building
+  - type: textarea
+    id: how
+    attributes:
+      label: Ideas on how
+      description: Optional. Where it might live (core, a plugin, the manifest, the model format).

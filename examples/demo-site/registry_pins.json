@@ -1,0 +1,401 @@
+{
+  "generated_by": "tools/make-demo-site.ts",
+  "frame": "pos: viewer metres, three.js (X, Z, -Y) of plan metres (X east, Y north, Z up); plan: plan metres",
+  "count": {
+    "items": 12,
+    "pins": 11,
+    "unplaced": 1
+  },
+  "pins": [
+    {
+      "id": "hvac.air-handler",
+      "name": "Air handler",
+      "category": "hvac",
+      "status": "in-service",
+      "conf": "high",
+      "room": "hall",
+      "pos": [11.3, 1, -8.4],
+      "plan": [11.3, 8.4, 1],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": "In the cupboard under the landing.",
+      "room_centre": [9.5, 1.2, -2],
+      "make": "Example Air",
+      "model": "AH-36",
+      "serial": null,
+      "aliases": [],
+      "specs": [
+        ["capacity", "3 ton"],
+        ["filter", "20 × 25 × 4 in"]
+      ],
+      "connections": [],
+      "documents": [
+        {
+          "text": "AH-36 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": []
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": [
+        {
+          "id": "hvac.thermostat",
+          "key": "controls"
+        }
+      ]
+    },
+    {
+      "id": "hvac.thermostat",
+      "name": "Thermostat",
+      "category": "hvac",
+      "status": "in-service",
+      "conf": "high",
+      "room": "hall",
+      "pos": [7.07, 1.5, -0.8],
+      "plan": [7.07, 0.8, 1.5],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [9.5, 1.2, -2],
+      "make": "Example Controls",
+      "model": "T-100",
+      "serial": null,
+      "aliases": [],
+      "specs": [],
+      "connections": [
+        {
+          "key": "controls",
+          "text": "the air handler",
+          "refs": ["hvac.air-handler"]
+        }
+      ],
+      "documents": [
+        {
+          "text": "T-100 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": ["climate.thermostat"]
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "elec.panel",
+      "name": "Consumer unit",
+      "category": "elec",
+      "status": "in-service",
+      "conf": "high",
+      "room": "hall",
+      "pos": [11.98, 1.6, -1],
+      "plan": [11.98, 1, 1.6],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [9.5, 1.2, -2],
+      "make": "Example Electric",
+      "model": "CU-18",
+      "serial": null,
+      "aliases": [],
+      "specs": [
+        ["ways", "18"],
+        ["main", "100 A"]
+      ],
+      "connections": [],
+      "documents": [
+        {
+          "text": "CU-18 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": []
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "net.router",
+      "name": "Router",
+      "category": "net",
+      "status": "in-service",
+      "conf": "high",
+      "room": "study",
+      "pos": [10.1, 0.85, -8.6],
+      "plan": [10.1, 8.6, 0.85],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [8.8, 1.2, -6.5],
+      "make": "Example Networks",
+      "model": "R-6",
+      "serial": null,
+      "aliases": [],
+      "specs": [],
+      "connections": [],
+      "documents": [
+        {
+          "text": "R-6 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": ["device_tracker.router"]
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "net.access-point",
+      "name": "Wi-Fi access point (upstairs)",
+      "category": "net",
+      "status": "in-service",
+      "conf": "high",
+      "room": "landing",
+      "pos": [8.8, 5.4, -6],
+      "plan": [8.8, 6, 5.4],
+      "loc_conf": "low",
+      "approx": "room-centroid",
+      "loc_note": "On the landing ceiling; exactly where is not recorded.",
+      "room_centre": [8.8, 4.4, -6],
+      "make": null,
+      "model": null,
+      "serial": null,
+      "aliases": [],
+      "specs": [],
+      "connections": [],
+      "documents": [],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": []
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "plumb.water-heater",
+      "name": "Water heater",
+      "category": "plumb",
+      "status": "in-service",
+      "conf": "high",
+      "room": "kitchen",
+      "pos": [0.35, 1.6, -8.65],
+      "plan": [0.35, 8.65, 1.6],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [3.5, 1.2, -7],
+      "make": "Example Water",
+      "model": "WH-50",
+      "serial": null,
+      "aliases": [],
+      "specs": [["capacity", "190 l"]],
+      "connections": [],
+      "documents": [
+        {
+          "text": "WH-50 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": []
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "plumb.stopcock",
+      "name": "Main stopcock",
+      "category": "plumb",
+      "status": "in-service",
+      "conf": "high",
+      "room": "kitchen",
+      "pos": [0.3, 0.25, -5.9],
+      "plan": [0.3, 5.9, 0.25],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [3.5, 1.2, -7],
+      "make": null,
+      "model": null,
+      "serial": null,
+      "aliases": [],
+      "specs": [],
+      "connections": [],
+      "documents": [],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": []
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "appliance.fridge",
+      "name": "Fridge-freezer",
+      "category": "appliance",
+      "status": "in-service",
+      "conf": "high",
+      "room": "kitchen",
+      "pos": [6.6, 1, -8.6],
+      "plan": [6.6, 8.6, 1],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [3.5, 1.2, -7],
+      "make": "Example Appliances",
+      "model": "FF-70",
+      "serial": null,
+      "aliases": [],
+      "specs": [],
+      "connections": [],
+      "documents": [
+        {
+          "text": "FF-70 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": []
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "safety.smoke.landing",
+      "name": "Smoke alarm (landing)",
+      "category": "safety",
+      "status": "in-service",
+      "conf": "high",
+      "room": "landing",
+      "pos": [9.6, 5.57, -5],
+      "plan": [9.6, 5, 5.57],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [8.8, 4.4, -6],
+      "make": null,
+      "model": null,
+      "serial": null,
+      "aliases": [],
+      "specs": [],
+      "connections": [],
+      "documents": [],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": ["binary_sensor.smoke_landing"]
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "site.irrigation",
+      "name": "Irrigation controller",
+      "category": "site",
+      "status": "in-service",
+      "conf": "high",
+      "room": "exterior",
+      "pos": [-0.3, 1.3, -6.5],
+      "plan": [-0.3, 6.5, 1.3],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": null,
+      "make": "Example Garden",
+      "model": "IC-4",
+      "serial": null,
+      "aliases": [],
+      "specs": [],
+      "connections": [],
+      "documents": [
+        {
+          "text": "IC-4 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": []
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "fixture.kitchen-pendants",
+      "name": "Kitchen pendants",
+      "category": "fixture",
+      "status": "in-service",
+      "conf": "high",
+      "room": "kitchen",
+      "pos": [3.5, 2, -7],
+      "plan": [3.5, 7, 2],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [3.5, 1.2, -7],
+      "make": null,
+      "model": null,
+      "serial": null,
+      "aliases": [],
+      "specs": [],
+      "connections": [],
+      "documents": [],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": ["kitchen.pendant.1", "kitchen.pendant.2", "kitchen.pendant.3"],
+      "ha": {
+        "entities": ["light.kitchen_pendant_1", "light.kitchen_pendant_2", "light.kitchen_pendant_3"]
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    }
+  ],
+  "unplaced": [
+    {
+      "id": "envelope.gutters",
+      "name": "Gutters and downspouts",
+      "room": "exterior",
+      "note": "Not modelled."
+    }
+  ]
+}

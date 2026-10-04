@@ -1,0 +1,364 @@
+{
+  "about": "tools/make-demo-site.ts: the objects merged into the main model",
+  "parts": {
+    "site": [
+      [
+        "Lawn",
+        [-54, -0.25, -62, 66, -0.15, 52],
+        ["lawn"],
+        {
+          "kind": "ground"
+        }
+      ],
+      ["Front path", [8.8, -0.15, 0.25, 10.2, -0.02, 8], ["path_gravel"], {}],
+      ["Front step", [8.6, -0.15, 0.25, 10.4, 0, 1.2], ["terrace_stone"], {}],
+      ["Back terrace", [2.5, -0.15, -13.2, 9.5, 0, -9.25], ["terrace_stone"], {}]
+    ],
+    "pond_edge": [
+      ["Pond edge (south)", [-6.7, -0.15, 5, -2.3, -0.03, 5.3], ["pond_stone"], {}],
+      ["Pond edge (north)", [-6.7, -0.15, 1.3, -2.3, -0.03, 1.6], ["pond_stone"], {}],
+      ["Pond edge (west)", [-6.7, -0.15, 1.6, -6.4, -0.03, 5], ["pond_stone"], {}],
+      ["Pond edge (east)", [-2.6, -0.15, 1.6, -2.3, -0.03, 5], ["pond_stone"], {}]
+    ],
+    "walls_ground": [
+      [
+        "South wall (ground)",
+        [-0.25, 0, 0, 12.25, 3.2, 0.25],
+        ["render_white"],
+        {
+          "kind": "exterior wall",
+          "thickness_m": 0.25
+        }
+      ],
+      [
+        "North wall (ground)",
+        [-0.25, 0, -9.25, 12.25, 3.2, -9],
+        ["render_white"],
+        {
+          "kind": "exterior wall",
+          "thickness_m": 0.25
+        }
+      ],
+      [
+        "West wall (ground)",
+        [-0.25, 0, -9, 0, 3.2, 0],
+        ["render_white"],
+        {
+          "kind": "exterior wall",
+          "thickness_m": 0.25
+        }
+      ],
+      [
+        "East wall (ground)",
+        [12, 0, -9, 12.25, 3.2, 0],
+        ["render_white"],
+        {
+          "kind": "exterior wall",
+          "thickness_m": 0.25
+        }
+      ],
+      [
+        "Living / hall wall",
+        [6.94, 0, -5, 7.06, 2.9, 0],
+        ["plaster"],
+        {
+          "kind": "interior wall",
+          "thickness_m": 0.12
+        }
+      ],
+      [
+        "Kitchen / study wall",
+        [6.94, 0, -9, 7.06, 2.9, -5],
+        ["plaster"],
+        {
+          "kind": "interior wall",
+          "thickness_m": 0.12
+        }
+      ],
+      [
+        "Living / kitchen wall",
+        [0, 0, -5.06, 6.94, 2.9, -4.94],
+        ["plaster"],
+        {
+          "kind": "interior wall",
+          "thickness_m": 0.12
+        }
+      ],
+      [
+        "Hall / study wall",
+        [7.06, 0, -4.06, 10.66, 2.9, -3.94],
+        ["plaster"],
+        {
+          "kind": "interior wall",
+          "thickness_m": 0.12
+        }
+      ],
+      [
+        "Study / stair wall",
+        [10.54, 0, -9, 10.66, 2.9, -4],
+        ["plaster"],
+        {
+          "kind": "interior wall",
+          "thickness_m": 0.12
+        }
+      ]
+    ],
+    "walls_first": [
+      [
+        "South wall (first)",
+        [-0.25, 3.2, 0, 12.25, 5.95, 0.25],
+        ["render_white"],
+        {
+          "kind": "exterior wall",
+          "thickness_m": 0.25
+        }
+      ],
+      [
+        "North wall (first)",
+        [-0.25, 3.2, -9.25, 12.25, 5.95, -9],
+        ["render_white"],
+        {
+          "kind": "exterior wall",
+          "thickness_m": 0.25
+        }
+      ],
+      [
+        "West wall (first)",
+        [-0.25, 3.2, -9, 0, 5.95, 0],
+        ["render_white"],
+        {
+          "kind": "exterior wall",
+          "thickness_m": 0.25
+        }
+      ],
+      [
+        "East wall (first)",
+        [12, 3.2, -9, 12.25, 5.95, 0],
+        ["render_white"],
+        {
+          "kind": "exterior wall",
+          "thickness_m": 0.25
+        }
+      ],
+      [
+        "Bedrooms / landing wall",
+        [6.94, 3.2, -9, 7.06, 5.6, 0],
+        ["plaster"],
+        {
+          "kind": "interior wall",
+          "thickness_m": 0.12
+        }
+      ],
+      [
+        "Bedroom 1 / 2 wall",
+        [0, 3.2, -5.06, 6.94, 5.6, -4.94],
+        ["plaster"],
+        {
+          "kind": "interior wall",
+          "thickness_m": 0.12
+        }
+      ],
+      [
+        "Bathroom / landing wall",
+        [7.06, 3.2, -3.06, 12, 5.6, -2.94],
+        ["plaster_bath"],
+        {
+          "kind": "interior wall",
+          "thickness_m": 0.12
+        }
+      ],
+      [
+        "Stairwell balustrade",
+        [10.55, 3.2, -7.59, 10.65, 4.2, -3.06],
+        ["rail"],
+        {
+          "kind": "guard",
+          "height_m": 1
+        }
+      ]
+    ],
+    "stair": [
+      [
+        "Stair tread 1",
+        [10.66, 0, -3.27, 12, 0.1778, -3],
+        ["stair_oak"],
+        {
+          "rise_m": 0.1778,
+          "going_m": 0.27
+        }
+      ],
+      [
+        "Stair tread 2",
+        [10.66, 0, -3.54, 12, 0.3556, -3.27],
+        ["stair_oak"],
+        {
+          "rise_m": 0.1778,
+          "going_m": 0.27
+        }
+      ],
+      [
+        "Stair tread 3",
+        [10.66, 0, -3.81, 12, 0.5333, -3.54],
+        ["stair_oak"],
+        {
+          "rise_m": 0.1778,
+          "going_m": 0.27
+        }
+      ],
+      [
+        "Stair tread 4",
+        [10.66, 0, -4.08, 12, 0.7111, -3.81],
+        ["stair_oak"],
+        {
+          "rise_m": 0.1778,
+          "going_m": 0.27
+        }
+      ],
+      [
+        "Stair tread 5",
+        [10.66, 0, -4.35, 12, 0.8889, -4.08],
+        ["stair_oak"],
+        {
+          "rise_m": 0.1778,
+          "going_m": 0.27
+        }
+      ],
+      [
+        "Stair tread 6",
+        [10.66, 0, -4.62, 12, 1.0667, -4.35],
+        ["stair_oak"],
+        {
+          "rise_m": 0.1778,
+          "going_m": 0.27
+        }
+      ],
+      [
+        "Stair tread 7",
+        [10.66, 0, -4.89, 12, 1.2444, -4.62],
+        ["stair_oak"],
+        {
+          "rise_m": 0.1778,
+          "going_m": 0.27
+        }
+      ],
+      [
+        "Stair tread 8",
+        [10.66, 0, -5.16, 12, 1.4222, -4.89],
+        ["stair_oak"],
+        {
+          "rise_m": 0.1778,
+          "going_m": 0.27
+        }
+      ],
+      [
+        "Stair tread 9",
+        [10.66, 0, -5.43, 12, 1.6, -5.16],
+        ["stair_oak"],
+        {
+          "rise_m": 0.1778,
+          "going_m": 0.27
+        }
+      ],
+      [
+        "Stair tread 10",
+        [10.66, 0, -5.7, 12, 1.7778, -5.43],
+        ["stair_oak"],
+        {
+          "rise_m": 0.1778,
+          "going_m": 0.27
+        }
+      ],
+      [
+        "Stair tread 11",
+        [10.66, 0, -5.97, 12, 1.9556, -5.7],
+        ["stair_oak"],
+        {
+          "rise_m": 0.1778,
+          "going_m": 0.27
+        }
+      ],
+      [
+        "Stair tread 12",
+        [10.66, 0, -6.24, 12, 2.1333, -5.97],
+        ["stair_oak"],
+        {
+          "rise_m": 0.1778,
+          "going_m": 0.27
+        }
+      ],
+      [
+        "Stair tread 13",
+        [10.66, 0, -6.51, 12, 2.3111, -6.24],
+        ["stair_oak"],
+        {
+          "rise_m": 0.1778,
+          "going_m": 0.27
+        }
+      ],
+      [
+        "Stair tread 14",
+        [10.66, 0, -6.78, 12, 2.4889, -6.51],
+        ["stair_oak"],
+        {
+          "rise_m": 0.1778,
+          "going_m": 0.27
+        }
+      ],
+      [
+        "Stair tread 15",
+        [10.66, 0, -7.05, 12, 2.6667, -6.78],
+        ["stair_oak"],
+        {
+          "rise_m": 0.1778,
+          "going_m": 0.27
+        }
+      ],
+      [
+        "Stair tread 16",
+        [10.66, 0, -7.32, 12, 2.8444, -7.05],
+        ["stair_oak"],
+        {
+          "rise_m": 0.1778,
+          "going_m": 0.27
+        }
+      ],
+      [
+        "Stair tread 17",
+        [10.66, 0, -7.59, 12, 3.0222, -7.32],
+        ["stair_oak"],
+        {
+          "rise_m": 0.1778,
+          "going_m": 0.27
+        }
+      ],
+      [
+        "Stair handrail",
+        [10.64, 1.07778, -7.59, 10.68, 3.97222, -3],
+        ["rail"],
+        {
+          "kind": "handrail"
+        }
+      ]
+    ],
+    "kitchen_units": [
+      ["Base units (west)", [0, 0, -8.9, 0.6, 0.86, -5.6], ["cabinet"], {}],
+      ["Worktop (west)", [0, 0.86, -8.9, 0.62, 0.9, -5.6], ["worktop"], {}],
+      ["Base units (north)", [0.6, 0, -9, 4.2, 0.86, -8.4], ["cabinet"], {}],
+      ["Worktop (north)", [0.6, 0.86, -9, 4.2, 0.9, -8.38], ["worktop"], {}],
+      ["Tall unit (fridge)", [6.3, 0, -9, 6.94, 2.1, -8.3], ["cabinet"], {}]
+    ],
+    "bathroom_fittings": [
+      [
+        "Bath",
+        [10.2, 3.2, -2.95, 12, 3.75, -1.25],
+        ["sanitary"],
+        {
+          "product": "1700 × 700 bath"
+        }
+      ],
+      ["Vanity unit", [9.3, 3.2, -0.5, 10.3, 4.05, 0], ["cabinet"], {}],
+      ["Basin", [9.45, 4.05, -0.45, 10.15, 4.1, -0.05], ["sanitary"], {}],
+      ["WC", [7.4, 3.2, -0.75, 7.8, 3.62, -0.1], ["sanitary"], {}]
+    ]
+  }
+}

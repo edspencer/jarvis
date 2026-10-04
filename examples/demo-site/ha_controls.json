@@ -1,0 +1,34 @@
+{
+  "controls": [
+    {
+      "id": "film",
+      "label": "Film night",
+      "entity_id": "script.film_night",
+      "action": "run",
+      "mock": {
+        "lights_off": ["living_room", "kitchen", "hall"]
+      }
+    },
+    {
+      "id": "goodnight",
+      "label": "Good night",
+      "entity_id": "script.goodnight",
+      "action": "run",
+      "confirm": "Run Good night? It turns off every light in the house.",
+      "mock": {
+        "lights_off": ["*"]
+      }
+    },
+    {
+      "id": "fountain",
+      "label": "Pond pump",
+      "entity_id": "switch.pond_pump",
+      "action": "toggle",
+      "power": "sensor.pond_pump_power"
+    }
+  ],
+  "fixture_toggle": {
+    "light": true,
+    "switch_marked_as_light": true
+  }
+}

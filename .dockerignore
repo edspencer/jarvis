@@ -1,0 +1,10 @@
+node_modules
+dist
+coverage
+sites
+test-results
+playwright-report
+.git
+.github
+docs/design/img
+*.log
