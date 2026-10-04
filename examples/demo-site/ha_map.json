@@ -24,6 +24,11 @@
     "conf": "high",
     "group": "fixture.lamp.living"
   },
+  "living.table_lamp": {
+    "entity_id": null,
+    "conf": "low",
+    "group": "fixture.lamp.living_table"
+  },
   "kitchen.pendant.1": {
     "entity_id": "light.kitchen_pendant_1",
     "conf": "high",
@@ -42,15 +47,70 @@
     "group": "fixture.pendants.kitchen",
     "unavailable_means": "off"
   },
+  "kitchen.chandelier": {
+    "entity_id": "light.kitchen_chandelier",
+    "conf": "high",
+    "group": "fixture.dining"
+  },
+  "kitchen.can.1": {
+    "entity_id": "light.kitchen_cans",
+    "conf": "high",
+    "group": "fixture.cans.kitchen"
+  },
+  "kitchen.can.2": {
+    "entity_id": "light.kitchen_cans",
+    "conf": "high",
+    "group": "fixture.cans.kitchen"
+  },
+  "kitchen.can.3": {
+    "entity_id": "light.kitchen_cans",
+    "conf": "high",
+    "group": "fixture.cans.kitchen"
+  },
+  "kitchen.can.4": {
+    "entity_id": "light.kitchen_cans",
+    "conf": "high",
+    "group": "fixture.cans.kitchen"
+  },
+  "kitchen.undercab.1": {
+    "entity_id": "light.kitchen_under_cabinet",
+    "conf": "high",
+    "group": "fixture.undercab.kitchen"
+  },
+  "kitchen.undercab.2": {
+    "entity_id": "light.kitchen_under_cabinet",
+    "conf": "high",
+    "group": "fixture.undercab.kitchen"
+  },
   "hall.pendant": {
     "entity_id": "light.hall",
     "conf": "high",
     "group": "fixture.hall"
   },
+  "hall.can.1": {
+    "entity_id": "light.hall_cans",
+    "conf": "high",
+    "group": "fixture.hall_cans"
+  },
+  "hall.can.2": {
+    "entity_id": "light.hall_cans",
+    "conf": "high",
+    "group": "fixture.hall_cans"
+  },
+  "powder_room.vanity": {
+    "entity_id": "light.powder_room",
+    "conf": "high",
+    "group": "fixture.powder_room"
+  },
   "study.ceiling": {
     "entity_id": "light.study",
     "conf": "med",
     "group": "fixture.study"
+  },
+  "study.desk_lamp": {
+    "entity_id": null,
+    "conf": "low",
+    "group": "fixture.lamp.study"
   },
   "bedroom_1.ceiling_fan": {
     "entity_id": "light.bedroom_1",

@@ -59,10 +59,10 @@ Screenshots: every viewpoint and a plan of each storey, taken with `node tools/d
 
 | Where       | Problem                                                                                                                                            | Status |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
-| Living room | The "framed print" on the north wall is a black frame round a flat blue panel: it reads as a second TV, beside the real one on the media unit      | fix    |
-| Living room | So the sofa (facing east, at the media unit) looks as if it faces the wrong way; it is also not centred on the TV (sofa y 1.0-3.6, TV y 0.75-1.95) | fix    |
-| Living room | The TV is a thin black slab with no stand or screen, hard to read as a TV                                                                          | fix    |
-| Kitchen     | No appliances: no range, sink, dishwasher or hood; the fridge is a plain tall cabinet                                                              | fix    |
+| Living room | The "framed print" on the north wall is a black frame round a flat blue panel: it reads as a second TV, beside the real one on the media unit      | done   |
+| Living room | So the sofa (facing east, at the media unit) looks as if it faces the wrong way; it is also not centred on the TV (sofa y 1.0-3.6, TV y 0.75-1.95) | done   |
+| Living room | The TV is a thin black slab with no stand or screen, hard to read as a TV                                                                          | done   |
+| Kitchen     | No appliances: no range, sink, dishwasher or hood; the fridge is a plain tall cabinet                                                              | done   |
 | Bedrooms    | Bedroom 2's bed is pushed against the east wall with its headboard there; no nightstands, dressers or lamps                                        | done   |
 | Bathroom    | One bath, upstairs; no bathroom for the second and third bedrooms, no half bath downstairs                                                         | fix    |
 | House       | Only two bedrooms; no garage, laundry or utility space; the panel is in the hall                                                                   | done   |
@@ -195,78 +195,92 @@ devices. "Breaker" ties each electrical item to the schedule.
 
 ### Living room (`living_room`)
 
-| Item                                                                                       | Kind      | Breaker | Status  |
-| ------------------------------------------------------------------------------------------ | --------- | ------- | ------- |
-| Sofa (three-seat), facing the TV, centred on it                                            | furniture |         | fix     |
-| One TV (65 in, wall-mounted or on the media console), with a screen that reads as a screen | appliance | 5       | fix     |
-| Media console under the TV, soundbar, streaming box                                        | furniture | 5       | fix     |
-| Armchair (or two), side table, coffee table, rug                                           | furniture |         | planned |
-| Framed art that reads as art (light frame, mat, a picture), not a dark slab                | decor     |         | fix     |
-| Bookcase                                                                                   | furniture |         | exists  |
-| Floor lamp (a light fixture in the furniture model, on the switched outlet)                | light     | 5       | exists  |
-| Table lamp on the side table                                                               | light     | 5       | planned |
-| Four recessed cans                                                                         | light     | 7       | exists  |
-| Switches by the hall opening (cans; hall pendant three-way)                                | S         | 7       | exists  |
-| Duplex outlets every ~3.6 m of wall (one half switched for the floor lamp)                 | O         | 5       | planned |
-| Smoke alarm                                                                                | safety    | 26      | planned |
-| Window blinds or curtains                                                                  | decor     |         | planned |
+A family room: the TV on the east wall, the sofa facing it 3.4 m away and centred on it (y 1.5), the coffee table
+between them on a rug under the sofa's front legs, an armchair turned to the TV; a reading corner in the north-west
+(armchair, floor lamp, a framed landscape). The way from the hall to the kitchen passes behind the armchair, clear of
+the TV. Furniture: `Furn_tv`, `Furn_media_unit` (both fed by 5), `Furn_armchair`, `Furn_reading_chair`,
+`Furn_bookcase` and the merged `Furn_living` (sofa, coffee table, rug, side table, sofa table, picture, curtains).
+
+| Item                                                                                       | Kind      | Breaker | Status |
+| ------------------------------------------------------------------------------------------ | --------- | ------- | ------ |
+| Sofa (three-seat), facing the TV, centred on it                                            | furniture |         | done   |
+| One TV (65 in, wall-mounted or on the media console), with a screen that reads as a screen | appliance | 5       | done   |
+| Media console under the TV, soundbar, streaming box                                        | furniture | 5       | done   |
+| Armchair (or two), side table, coffee table, rug                                           | furniture |         | done   |
+| Framed art that reads as art (light frame, mat, a picture), not a dark slab                | decor     |         | done   |
+| Bookcase                                                                                   | furniture |         | done   |
+| Floor lamp (a light fixture in the furniture model, on the switched outlet)                | light     | 5       | done   |
+| Table lamp on the side table (`living.table_lamp`, left unmapped in `ha_map.json`)         | light     | 5       | done   |
+| Four recessed cans                                                                         | light     | 7       | done   |
+| Switches by the hall opening (cans; hall pendant three-way)                                | S         | 7       | done   |
+| Duplex outlets every ~3.6 m of wall (one half switched for the floor lamp): LV-O-A…E       | O         | 5       | done   |
+| Smoke alarm (`safety.smoke.living`)                                                        | safety    | 26      | done   |
+| Window blinds or curtains (curtains at the three windows)                                  | decor     |         | done   |
 
 ### Kitchen and dining (`kitchen`)
 
-| Item                                                                      | Kind      | Breaker  | Status  |
-| ------------------------------------------------------------------------- | --------- | -------- | ------- |
-| Base and wall cabinets, counters (L-shaped run), an island with stools    | built-in  |          | planned |
-| Refrigerator (French door, stainless)                                     | appliance | 11       | planned |
-| Electric range with a hood above                                          | appliance | 1+3      | planned |
-| Dishwasher next to the sink                                               | appliance | 13       | planned |
-| Sink with faucet; disposal under it                                       | appliance | 13       | planned |
-| Over-the-range or built-in microwave                                      | appliance | 15       | planned |
-| Dining table and four chairs                                              | furniture |          | exists  |
-| Three pendants over the island or table                                   | light     | 7        | exists  |
-| Recessed cans; under-cabinet LED strips                                   | light     | 7        | planned |
-| Switches by the openings                                                  | S         | 7        | exists  |
-| Counter outlets (GFCI) every ~1.2 m along the counters, one on the island | O         | 9        | planned |
-| Fridge, dishwasher, microwave outlets (behind or inside cabinets)         | O         | 11/13/15 | planned |
-| Leak sensor under the sink                                                | sensor    |          | exists  |
-| CO alarm (with the smoke alarm, near the stair)                           | safety    | 26       | planned |
+An L of cabinets on the west and north walls and a navy island with three stools; the dining table by the patio door.
+West wall, south to north: the French-door fridge, counter under the window, the range with a chimney hood, the
+corner; north wall: drawers, the sink under the window with the dishwasher on its right, a built-in microwave in the
+wall cabinet right of the window. Nodes: `Kitchen_units` (merged: cabinets, worktops, backsplash), `Kitchen_fridge`
+(11), `Kitchen_range` (1+3), `Kitchen_hood` and `Kitchen_microwave` (15), `Kitchen_dishwasher` and `Kitchen_sink`
+(13); `Furn_dining` (merged: stools, table, chairs).
+
+| Item                                                                           | Kind      | Breaker  | Status |
+| ------------------------------------------------------------------------------ | --------- | -------- | ------ |
+| Base and wall cabinets, counters (L-shaped run), an island with stools         | built-in  |          | done   |
+| Refrigerator (French door, stainless)                                          | appliance | 11       | done   |
+| Electric range with a hood above                                               | appliance | 1+3      | done   |
+| Dishwasher next to the sink                                                    | appliance | 13       | done   |
+| Sink with faucet; disposal under it                                            | appliance | 13       | done   |
+| Over-the-range or built-in microwave (built-in, in a wall cabinet)             | appliance | 15       | done   |
+| Dining table and four chairs                                                   | furniture |          | done   |
+| Three pendants over the island (and a chandelier over the table)               | light     | 7        | done   |
+| Recessed cans; under-cabinet LED strips                                        | light     | 7        | done   |
+| Switches by the openings (KT-S-A, KT-S-B) and on the backsplash (KT-S-C)       | S         | 7        | done   |
+| Counter outlets (GFCI) every ~1.2 m along the counters, one on the island      | O         | 9        | done   |
+| Fridge, dishwasher, microwave outlets (behind or inside cabinets)              | O         | 11/13/15 | done   |
+| Leak sensor under the sink                                                     | sensor    |          | done   |
+| CO alarm (with the smoke alarm, near the stair): in the hall, `safety.co.hall` | safety    | 26       | done   |
 
 ### Hall (`hall`)
 
-| Item                                                                | Kind      | Breaker | Status  |
-| ------------------------------------------------------------------- | --------- | ------- | ------- |
-| Front door, porch lantern outside                                   | light     | 25      | exists  |
-| Pendant (three-way with the living room)                            | light     | 7       | exists  |
-| Console table, mirror, coat hooks or bench                          | furniture |         | planned |
-| Door to the garage (self-closing)                                   | door      |         | done    |
-| Thermostat                                                          | hvac      |         | exists  |
-| Air handler in the closet under the landing (filter, return grille) | hvac      | 6+8     | exists  |
-| Switches at the front door (porch, hall), at the garage door        | S         | 7/25    | planned |
-| Outlets                                                             | O         | 5       | planned |
-| Smoke alarm, CO alarm                                               | safety    | 26      | planned |
-| Doorbell (video) by the front door, chime                           | device    | 27      | planned |
-| Motion sensor                                                       | sensor    |         | exists  |
+| Item                                                                | Kind      | Breaker | Status |
+| ------------------------------------------------------------------- | --------- | ------- | ------ |
+| Front door, porch lantern outside                                   | light     | 25      | exists |
+| Pendant (three-way with the living room), now a short lantern       | light     | 7       | done   |
+| Console table, mirror, coat hooks or bench                          | furniture |         | done   |
+| Door to the garage (self-closing)                                   | door      |         | done   |
+| Thermostat (moved to the powder room's wall, facing the foyer)      | hvac      |         | done   |
+| Air handler in the closet under the landing (filter, return grille) | hvac      | 6+8     | exists |
+| Switches at the front door (porch, hall), at the garage door        | S         | 7/25    | done   |
+| Outlets                                                             | O         | 5       | done   |
+| Smoke alarm, CO alarm                                               | safety    | 26      | done   |
+| Doorbell (video) by the front door, chime                           | device    | 27      | done   |
+| Motion sensor                                                       | sensor    |         | exists |
 
 ### Powder room (`powder_room`)
 
-| Item                      | Kind     | Breaker | Status  |
-| ------------------------- | -------- | ------- | ------- |
-| WC, pedestal sink, mirror | built-in |         | planned |
-| Vanity light, exhaust fan | light    | 7       | planned |
-| Switch (light and fan)    | S        | 7       | planned |
-| GFCI outlet               | O        | 23      | planned |
+| Item                      | Kind     | Breaker | Status |
+| ------------------------- | -------- | ------- | ------ |
+| WC, pedestal sink, mirror | built-in |         | done   |
+| Vanity light, exhaust fan | light    | 7       | done   |
+| Switch (light and fan)    | S        | 7       | done   |
+| GFCI outlet               | O        | 23      | done   |
 
 ### Study (`study`)
 
-| Item                                                           | Kind      | Breaker | Status  |
-| -------------------------------------------------------------- | --------- | ------- | ------- |
-| Desk, task chair (facing the room or the window, not the wall) | furniture |         | exists  |
-| Monitor and computer on the desk (on the desk smart plug)      | appliance | 17      | planned |
-| Bookshelf, filing cabinet, reading chair                       | furniture |         | planned |
-| Router and Wi-Fi access point, network cabinet                 | network   | 17      | exists  |
-| Ceiling light (flush or fan with light kit)                    | light     | 7       | exists  |
-| Desk lamp                                                      | light     | 17      | planned |
-| Switch by the door                                             | S         | 7       | planned |
-| Outlets (one behind the desk)                                  | O         | 17      | planned |
+| Item                                                                              | Kind      | Breaker | Status |
+| --------------------------------------------------------------------------------- | --------- | ------- | ------ |
+| Desk, task chair (facing the room or the window, not the wall)                    | furniture |         | done   |
+| Monitor and computer on the desk (on the desk smart plug)                         | appliance | 17      | done   |
+| Bookshelf, filing cabinet, reading chair                                          | furniture |         | done   |
+| Router and Wi-Fi access point, network cabinet (the router on the filing cabinet) | network   | 17      | done   |
+| Ceiling light (flush or fan with light kit)                                       | light     | 7       | exists |
+| Desk lamp (`study.desk_lamp`, left unmapped in `ha_map.json`)                     | light     | 17      | done   |
+| Switch by the door                                                                | S         | 7       | done   |
+| Outlets (one behind the desk)                                                     | O         | 17      | done   |
+| Smoke alarm (`safety.smoke.study`: it may be a bedroom)                           | safety    | 26      | done   |
 
 ### Garage (`garage`)
 

@@ -62,7 +62,13 @@
               "volts": 240,
               "feeds": [
                 {
-                  "node": "Kitchen_units"
+                  "registry": "appliance.range"
+                },
+                {
+                  "node": "Kitchen_range"
+                },
+                {
+                  "plate": "KT-O-H"
                 },
                 {
                   "room": "kitchen"
@@ -106,13 +112,37 @@
               "volts": 120,
               "feeds": [
                 {
+                  "node": "Furn_tv"
+                },
+                {
                   "node": "Furn_media_unit"
                 },
                 {
                   "plate": "LV-O-A"
                 },
                 {
+                  "plate": "LV-O-B"
+                },
+                {
+                  "plate": "LV-O-C"
+                },
+                {
+                  "plate": "LV-O-D"
+                },
+                {
+                  "plate": "LV-O-E"
+                },
+                {
+                  "plate": "HL-O-A"
+                },
+                {
+                  "plate": "HL-O-B"
+                },
+                {
                   "fixture": "living.floor_lamp"
+                },
+                {
+                  "fixture": "living.table_lamp"
                 },
                 {
                   "room": "living_room"
@@ -162,6 +192,9 @@
                   "registry": "fixture.kitchen-pendants"
                 },
                 {
+                  "node": "Powder_room_fan"
+                },
+                {
                   "fixture": "living.can.1"
                 },
                 {
@@ -183,7 +216,37 @@
                   "fixture": "kitchen.pendant.3"
                 },
                 {
+                  "fixture": "kitchen.chandelier"
+                },
+                {
+                  "fixture": "kitchen.can.1"
+                },
+                {
+                  "fixture": "kitchen.can.2"
+                },
+                {
+                  "fixture": "kitchen.can.3"
+                },
+                {
+                  "fixture": "kitchen.can.4"
+                },
+                {
+                  "fixture": "kitchen.undercab.1"
+                },
+                {
+                  "fixture": "kitchen.undercab.2"
+                },
+                {
                   "fixture": "hall.pendant"
+                },
+                {
+                  "fixture": "hall.can.1"
+                },
+                {
+                  "fixture": "hall.can.2"
+                },
+                {
+                  "fixture": "powder_room.vanity"
                 },
                 {
                   "fixture": "study.ceiling"
@@ -195,7 +258,22 @@
                   "plate": "KT-S-A"
                 },
                 {
+                  "plate": "KT-S-B"
+                },
+                {
+                  "plate": "KT-S-C"
+                },
+                {
                   "plate": "HL-S-A"
+                },
+                {
+                  "plate": "HL-S-B"
+                },
+                {
+                  "plate": "PR-S-A"
+                },
+                {
+                  "plate": "ST-S-A"
                 },
                 {
                   "room": "kitchen"
@@ -205,6 +283,9 @@
                 },
                 {
                   "room": "hall"
+                },
+                {
+                  "room": "powder_room"
                 },
                 {
                   "room": "study"
@@ -227,6 +308,18 @@
               "feeds": [
                 {
                   "node": "Kitchen_units"
+                },
+                {
+                  "plate": "KT-O-A"
+                },
+                {
+                  "plate": "KT-O-B"
+                },
+                {
+                  "plate": "KT-O-C"
+                },
+                {
+                  "plate": "KT-O-D"
                 },
                 {
                   "room": "kitchen"
@@ -276,6 +369,12 @@
                   "registry": "appliance.fridge"
                 },
                 {
+                  "node": "Kitchen_fridge"
+                },
+                {
+                  "plate": "KT-O-E"
+                },
+                {
                   "room": "kitchen"
                 }
               ],
@@ -294,6 +393,18 @@
               "breaker": "13",
               "volts": 120,
               "feeds": [
+                {
+                  "registry": "appliance.dishwasher"
+                },
+                {
+                  "node": "Kitchen_dishwasher"
+                },
+                {
+                  "node": "Kitchen_sink"
+                },
+                {
+                  "plate": "KT-O-F"
+                },
                 {
                   "room": "kitchen"
                 }
@@ -343,6 +454,21 @@
               "feeds": [
                 {
                   "registry": "net.router"
+                },
+                {
+                  "node": "Furn_desk"
+                },
+                {
+                  "plate": "ST-O-A"
+                },
+                {
+                  "plate": "ST-O-B"
+                },
+                {
+                  "plate": "ST-O-C"
+                },
+                {
+                  "fixture": "study.desk_lamp"
                 },
                 {
                   "room": "study"

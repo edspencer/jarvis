@@ -2,11 +2,49 @@
   "generated_by": "tools/make-demo-site.ts",
   "frame": "pos: viewer metres, three.js (X, Z, -Y) of plan metres (X east, Y north, Z up); plan: plan metres",
   "count": {
-    "items": 25,
-    "pins": 24,
+    "items": 32,
+    "pins": 31,
     "unplaced": 1
   },
   "pins": [
+    {
+      "id": "safety.smoke.living",
+      "name": "Smoke alarm (living room)",
+      "category": "safety",
+      "status": "in-service",
+      "conf": "high",
+      "room": "living_room",
+      "pos": [3.5, 2.67, -4.2],
+      "plan": [3.5, 4.2, 2.67],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [3.5, 1.2, -2.5],
+      "make": "Example Safety",
+      "model": "SA-120",
+      "serial": null,
+      "aliases": [],
+      "specs": [
+        ["power", "120 V, battery backup"],
+        ["interconnect", "wired, with every alarm in the house"]
+      ],
+      "connections": [],
+      "documents": [
+        {
+          "text": "SA-120 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": ["binary_sensor.smoke_living_room"]
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
     {
       "id": "appliance.fridge",
       "name": "Fridge-freezer",
@@ -14,21 +52,97 @@
       "status": "in-service",
       "conf": "high",
       "room": "kitchen",
-      "pos": [6.6, 1, -8.6],
-      "plan": [6.6, 8.6, 1],
+      "pos": [0.82, 1.2, -5.55],
+      "plan": [0.82, 5.55, 1.2],
       "loc_conf": "high",
       "approx": null,
-      "loc_note": null,
+      "loc_note": "Plugged in behind it (KT-O-E).",
       "room_centre": [3.5, 1.2, -7],
       "make": "Example Appliances",
       "model": "FF-70",
       "serial": null,
       "aliases": [],
-      "specs": [],
+      "specs": [
+        ["type", "French door, bottom freezer, 36 in"],
+        ["capacity", "25 cu ft"]
+      ],
       "connections": [],
       "documents": [
         {
           "text": "FF-70 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": []
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "appliance.range",
+      "name": "Range",
+      "category": "appliance",
+      "status": "in-service",
+      "conf": "high",
+      "room": "kitchen",
+      "pos": [0.7, 0.95, -7.83],
+      "plan": [0.7, 7.83, 0.95],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [3.5, 1.2, -7],
+      "make": "Example Appliances",
+      "model": "ER-30",
+      "serial": null,
+      "aliases": [],
+      "specs": [
+        ["type", "electric, smooth top, 30 in"],
+        ["supply", "240 V, 40 A"]
+      ],
+      "connections": [],
+      "documents": [
+        {
+          "text": "ER-30 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": []
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "appliance.dishwasher",
+      "name": "Dishwasher",
+      "category": "appliance",
+      "status": "in-service",
+      "conf": "high",
+      "room": "kitchen",
+      "pos": [2.95, 0.5, -8.34],
+      "plan": [2.95, 8.34, 0.5],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [3.5, 1.2, -7],
+      "make": "Example Appliances",
+      "model": "DW-24",
+      "serial": null,
+      "aliases": [],
+      "specs": [["width", "24 in"]],
+      "connections": [],
+      "documents": [
+        {
+          "text": "DW-24 manual (example)",
           "url": null
         }
       ],
@@ -49,8 +163,8 @@
       "status": "in-service",
       "conf": "high",
       "room": "kitchen",
-      "pos": [3.5, 2, -7],
-      "plan": [3.5, 7, 2],
+      "pos": [2.65, 2, -6.84],
+      "plan": [2.65, 6.84, 2],
       "loc_conf": "high",
       "approx": null,
       "loc_note": null,
@@ -126,11 +240,11 @@
       "status": "in-service",
       "conf": "high",
       "room": "hall",
-      "pos": [7.07, 1.5, -0.8],
-      "plan": [7.07, 0.8, 1.5],
+      "pos": [7.6, 1.5, -3.91],
+      "plan": [7.6, 3.91, 1.5],
       "loc_conf": "high",
       "approx": null,
-      "loc_note": null,
+      "loc_note": "On the powder room's wall, facing the foyer.",
       "room_centre": [9.5, 1.2, -2],
       "make": "Example Controls",
       "model": "T-100",
@@ -167,11 +281,11 @@
       "status": "in-service",
       "conf": "high",
       "room": "study",
-      "pos": [10.1, 0.85, -8.6],
-      "plan": [10.1, 8.6, 0.85],
+      "pos": [10.1, 0.8, -8.72],
+      "plan": [10.1, 8.72, 0.8],
       "loc_conf": "high",
       "approx": null,
-      "loc_note": null,
+      "loc_note": "On the filing cabinet by the desk.",
       "room_centre": [8.8, 1.2, -7.3],
       "make": "Example Networks",
       "model": "R-6",
@@ -190,6 +304,155 @@
       "fixtures": [],
       "ha": {
         "entities": ["device_tracker.router"]
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "safety.smoke.hall",
+      "name": "Smoke alarm (hall)",
+      "category": "safety",
+      "status": "in-service",
+      "conf": "high",
+      "room": "hall",
+      "pos": [8.3, 2.67, -2],
+      "plan": [8.3, 2, 2.67],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [9.5, 1.2, -2],
+      "make": "Example Safety",
+      "model": "SA-120",
+      "serial": null,
+      "aliases": [],
+      "specs": [
+        ["power", "120 V, battery backup"],
+        ["interconnect", "wired, with every alarm in the house"]
+      ],
+      "connections": [],
+      "documents": [
+        {
+          "text": "SA-120 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": ["binary_sensor.smoke_hall"]
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "safety.co.hall",
+      "name": "CO alarm (hall)",
+      "category": "safety",
+      "status": "in-service",
+      "conf": "high",
+      "room": "hall",
+      "pos": [9.8, 2.67, -3.5],
+      "plan": [9.8, 3.5, 2.67],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [9.5, 1.2, -2],
+      "make": "Example Safety",
+      "model": "CO-120",
+      "serial": null,
+      "aliases": [],
+      "specs": [
+        ["power", "120 V, battery backup"],
+        ["interconnect", "wired, with every alarm in the house"]
+      ],
+      "connections": [],
+      "documents": [
+        {
+          "text": "CO-120 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": ["binary_sensor.co_hall"]
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "safety.smoke.study",
+      "name": "Smoke alarm (office)",
+      "category": "safety",
+      "status": "in-service",
+      "conf": "high",
+      "room": "study",
+      "pos": [9.6, 2.67, -6.6],
+      "plan": [9.6, 6.6, 2.67],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": null,
+      "room_centre": [8.8, 1.2, -7.3],
+      "make": "Example Safety",
+      "model": "SA-120",
+      "serial": null,
+      "aliases": [],
+      "specs": [
+        ["power", "120 V, battery backup"],
+        ["interconnect", "wired, with every alarm in the house"]
+      ],
+      "connections": [],
+      "documents": [
+        {
+          "text": "SA-120 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": ["binary_sensor.smoke_study"]
+      },
+      "health": null,
+      "file": "examples/demo-site/registry_pins.json",
+      "referenced_by": []
+    },
+    {
+      "id": "security.doorbell",
+      "name": "Video doorbell",
+      "category": "security",
+      "status": "in-service",
+      "conf": "high",
+      "room": "exterior",
+      "pos": [10.2, 1.25, 0.28],
+      "plan": [10.2, -0.28, 1.25],
+      "loc_conf": "high",
+      "approx": null,
+      "loc_note": "Right of the front door; its chime is in the hall, on the powder room wall.",
+      "room_centre": null,
+      "make": "Example Security",
+      "model": "DB-1",
+      "serial": null,
+      "aliases": [],
+      "specs": [["power", "16 V AC, from a transformer on circuit 27"]],
+      "connections": [],
+      "documents": [
+        {
+          "text": "DB-1 manual (example)",
+          "url": null
+        }
+      ],
+      "photos": [],
+      "open_questions": [],
+      "fixtures": [],
+      "ha": {
+        "entities": ["binary_sensor.doorbell"]
       },
       "health": null,
       "file": "examples/demo-site/registry_pins.json",

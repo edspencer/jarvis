@@ -376,7 +376,7 @@ Without `storeys` there is one, the ground floor at 0, and no U.
 ```json
   "viewpoints": [
     { "name": "Front of the house", "at": [9.4, -14, -0.15], "yaw": 0 },
-    { "name": "Living room", "at": [3.6, 4.5, 0], "yaw": 180 },
+    { "name": "Living room", "at": [2.0, 4.6, 0], "yaw": 225 },
     { "name": "Landing", "at": [10.2, 4.6, 3.2], "yaw": 90 }
   ],
   "startView": 2,
@@ -486,8 +486,8 @@ It exits 1 on errors; warnings alone pass. The demo:
 
 ```
 /…/examples/demo-site/site.json: Demo house (demo-house)
-  · main model: demo.glb: 173 top-level nodes, 30 fixtures, 14 rooms, 16 merged keys, 120.0 × 114.0 m
-  · model furniture: furniture.glb: 44 top-level nodes, 6 fixtures, 0 rooms, 1 merged keys, 17.8 × 9.0 m
+  · main model: demo.glb: 198 top-level nodes, 40 fixtures, 14 rooms, 16 merged keys, 120.0 × 114.0 m
+  · model furniture: furniture.glb: 48 top-level nodes, 8 fixtures, 0 rooms, 4 merged keys, 17.8 × 9.1 m
   · blueprints: 2 sheets
   · energy map: 22 meters (1 low confidence)
 ok

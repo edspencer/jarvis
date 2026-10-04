@@ -55,8 +55,8 @@
     },
     {
       "name": "Living room",
-      "at": [3.6, 4.5, 0],
-      "yaw": 180
+      "at": [2, 4.6, 0],
+      "yaw": 225
     },
     {
       "name": "Kitchen",

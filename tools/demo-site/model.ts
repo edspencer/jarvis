@@ -190,6 +190,8 @@ export interface Piece {
   name: string;
   material: string;
   boxes: number[][];
+  /** convex plan polygons swept along a vector (a sloped rail), besides the boxes */
+  prisms?: [V3[], V3][];
   extras?: Record<string, unknown>;
 }
 export function merged(
@@ -210,6 +212,14 @@ export function merged(
         lo[i] = Math.min(lo[i], b[i]);
         hi[i] = Math.max(hi[i], b[i + 3]);
       }
+    }
+    for (const [poly, by] of p.prisms ?? []) {
+      shape.on(p.material).prism(poly, by);
+      for (const q of [...poly, ...poly.map((v) => [v[0] + by[0], v[1] + by[1], v[2] + by[2]])])
+        for (let i = 0; i < 3; i++) {
+          lo[i] = Math.min(lo[i], q[i]);
+          hi[i] = Math.max(hi[i], q[i]);
+        }
     }
     list.push([p.name, Geo.gltfBox(lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]), [p.material], p.extras || {}]);
   }

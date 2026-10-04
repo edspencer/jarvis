@@ -182,10 +182,29 @@ function stair(m: Model): void {
   treads.push({
     name: 'Stair handrail',
     material: 'rail',
-    boxes: Array.from({ length: RISERS - 1 }, (_, i) => {
-      const z = ((i + 1) * UP) / RISERS + 0.9;
-      return [STAIR_X[0] - 0.02, STAIR_Y0 + i * TREAD, z, STAIR_X[0] + 0.02, STAIR_Y0 + (i + 1) * TREAD, z + 0.05];
-    }),
+    // newel posts at the foot and the head, a baluster on every other tread, and one sloped rail 0.9 m above the
+    // nosings (a prism: its section in the plan's Y-Z plane, swept 4 cm across)
+    boxes: [
+      [STAIR_X[0] - 0.04, STAIR_Y0 - 0.04, 0, STAIR_X[0] + 0.04, STAIR_Y0 + 0.04, 1.05],
+      [STAIR_X[0] - 0.04, STAIR_Y1 - 0.04, UP, STAIR_X[0] + 0.04, STAIR_Y1 + 0.04, UP + 1.05],
+      ...Array.from({ length: Math.floor((RISERS - 2) / 2) }, (_, k) => {
+        const i = 2 * k + 1,
+          y = STAIR_Y0 + (i + 0.5) * TREAD,
+          z = ((i + 1) * UP) / RISERS;
+        return [STAIR_X[0] - 0.012, y - 0.012, z, STAIR_X[0] + 0.012, y + 0.012, z + 0.9];
+      }),
+    ],
+    prisms: [
+      [
+        [
+          [STAIR_X[0] - 0.02, STAIR_Y0, 0.9 + UP / RISERS],
+          [STAIR_X[0] - 0.02, STAIR_Y1, 0.9 + UP],
+          [STAIR_X[0] - 0.02, STAIR_Y1, 0.95 + UP],
+          [STAIR_X[0] - 0.02, STAIR_Y0, 0.95 + UP / RISERS],
+        ],
+        [0.04, 0, 0],
+      ],
+    ],
     extras: { kind: 'handrail' },
   });
   merged(m, 'Stair', 'stair', treads, { room: 'hall' });

@@ -338,7 +338,7 @@ describe('site tools', () => {
     expect(out.find((r: { id: string }) => r.id === 'kitchen')).toMatchObject({
       storey: 'ground floor',
       subject: 'room:kitchen',
-      fixtures: 3,
+      fixtures: 10,
     });
   });
 

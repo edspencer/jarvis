@@ -431,7 +431,7 @@
       ],
       [
         "Stair handrail",
-        [10.64, 1.07778, -7.59, 10.68, 3.97222, -3],
+        [10.62, 0, -7.63, 10.7, 4.25, -2.96],
         ["rail"],
         {
           "kind": "handrail"
@@ -439,11 +439,12 @@
       ]
     ],
     "kitchen_units": [
-      ["Base units (west)", [0, 0, -8.9, 0.6, 0.86, -5.6], ["cabinet"], {}],
-      ["Worktop (west)", [0, 0.86, -8.9, 0.62, 0.9, -5.6], ["worktop"], {}],
-      ["Base units (north)", [0.6, 0, -9, 4.2, 0.86, -8.4], ["cabinet"], {}],
-      ["Worktop (north)", [0.6, 0.86, -9, 4.2, 0.9, -8.38], ["worktop"], {}],
-      ["Tall unit (fridge)", [6.3, 0, -9, 6.94, 2.1, -8.3], ["cabinet"], {}]
+      ["Base cabinets, west", [0, 0, -9, 0.605, 0.88, -6.02], ["cabinet_carcass", "black_steel", "cabinet"], {}],
+      ["Base cabinets, north", [0.6, 0, -9, 4.2, 0.88, -8.395], ["cabinet_carcass", "black_steel", "cabinet"], {}],
+      ["Island", [1.8, 0, -7.325, 3.5, 0.88, -6.7], ["cabinet_navy", "black_steel"], {}],
+      ["Worktops", [0, 0.88, -9, 4.2, 0.92, -6], ["worktop"], {}],
+      ["Wall cabinets", [0, 1.45, -9, 4.2, 2.2, -5.1], ["cabinet_carcass", "cabinet", "black_steel"], {}],
+      ["Backsplash", [0, 0.92, -9, 4.2, 1.62, -6], ["backsplash"], {}]
     ],
     "primary_bath_fittings": [
       ["WC", [7.42, 3.2, -0.64, 7.82, 4.03, 0], ["black_steel", "sanitary"], {}],
