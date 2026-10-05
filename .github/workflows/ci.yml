@@ -162,7 +162,7 @@ jobs:
         if: needs.e2e-shard.result != 'success'
       - name: Download blob reports
         if: needs.e2e-shard.result != 'success'
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           path: all-blob-reports
           pattern: blob-report-*
